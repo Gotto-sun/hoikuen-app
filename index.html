@@ -278,6 +278,29 @@
       line-height: 1.7;
     }
 
+    .code-example {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .code-example summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: var(--primary-dark);
+    }
+
+    .code-example pre {
+      overflow-x: auto;
+      margin: 8px 0 0;
+      padding: 10px;
+      border: 1px solid #fed7aa;
+      border-radius: 12px;
+      background: #fffdf9;
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
     .hidden { display: none; }
 
     @media (max-width: 640px) {
@@ -394,14 +417,21 @@
         <label for="csvInput">献立表データ</label>
         <div class="ocr-panel">
           <strong>スマホのカメラ・画像から読み取り</strong>
-          <p class="small">「カメラで撮る」または「画像から選ぶ」のどちらでも、選んだ画像内の文字を読み取って入力欄へ入れます。初回の読み取りにはインターネット接続が必要です。読み取り後は内容を確認し、必要に応じて手直ししてください。</p>
+          <p class="small">「カメラで撮る」は背面カメラを起動し、「画像を選ぶ」はアルバムから画像を開きます。どちらを使っても同じOCR処理で文字を読み取り、入力欄へ入れます。初回の読み取りにはインターネット接続が必要です。読み取り後は内容を確認し、必要に応じて手直ししてください。</p>
           <div class="actions">
-            <label class="file-button camera" for="cameraInput">📷 カメラで撮る</label>
-            <label class="file-button secondary" for="imageInput">🖼️ 画像から選ぶ</label>
+            <button class="camera" id="openCameraButton" type="button">📷 カメラで撮る</button>
+            <button class="secondary" id="openAlbumButton" type="button">🖼️ 画像を選ぶ</button>
             <button class="secondary" id="retryOcrButton" type="button" disabled>もう一度読み取る</button>
           </div>
           <input class="hidden" id="cameraInput" type="file" accept="image/*" capture="environment" aria-label="カメラで撮る">
-          <input class="hidden" id="imageInput" type="file" accept="image/*" aria-label="画像から選ぶ">
+          <input class="hidden" id="albumInput" type="file" accept="image/*" aria-label="画像を選ぶ">
+          <details class="code-example">
+            <summary>カメラ・アルバム呼び出しのコード例</summary>
+            <pre><code>&lt;input id="cameraInput" type="file" accept="image/*" capture="environment"&gt;
+&lt;input id="albumInput" type="file" accept="image/*"&gt;
+&lt;button type="button" onclick="cameraInput.click()"&gt;カメラで撮る&lt;/button&gt;
+&lt;button type="button" onclick="albumInput.click()"&gt;画像を選ぶ&lt;/button&gt;</code></pre>
+          </details>
           <p class="ocr-status" id="ocrStatus" aria-live="polite"></p>
           <img class="preview-image" id="imagePreview" alt="選択した献立表画像のプレビュー">
         </div>
@@ -492,8 +522,10 @@
     let itemCount;
     let excludedCount;
     let sourceCount;
+    let openCameraButton;
+    let openAlbumButton;
     let cameraInput;
-    let imageInput;
+    let albumInput;
     let retryOcrButton;
     let ocrStatus;
     let imagePreview;
@@ -512,8 +544,10 @@
       itemCount = document.querySelector('#itemCount');
       excludedCount = document.querySelector('#excludedCount');
       sourceCount = document.querySelector('#sourceCount');
+      openCameraButton = document.querySelector('#openCameraButton');
+      openAlbumButton = document.querySelector('#openAlbumButton');
       cameraInput = document.querySelector('#cameraInput');
-      imageInput = document.querySelector('#imageInput');
+      albumInput = document.querySelector('#albumInput');
       retryOcrButton = document.querySelector('#retryOcrButton');
       ocrStatus = document.querySelector('#ocrStatus');
       imagePreview = document.querySelector('#imagePreview');
@@ -524,7 +558,7 @@
       const clearButton = document.querySelector('#clearButton');
       const copyButton = document.querySelector('#copyButton');
 
-      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !cameraInput || !imageInput || !retryOcrButton || !ocrStatus || !imagePreview || !excelButton || !makeButton || !sampleButton || !clearButton || !copyButton) {
+      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !openCameraButton || !openAlbumButton || !cameraInput || !albumInput || !retryOcrButton || !ocrStatus || !imagePreview || !excelButton || !makeButton || !sampleButton || !clearButton || !copyButton) {
         console.error('必要な画面部品が見つかりません。画面部品の設定を確認してください。');
         return;
       }
@@ -537,8 +571,10 @@
       clearButton.addEventListener('click', clearOrder);
       copyButton.addEventListener('click', copyTsv);
       excelButton.addEventListener('click', downloadExcel);
+      openCameraButton.addEventListener('click', () => cameraInput.click());
+      openAlbumButton.addEventListener('click', () => albumInput.click());
       cameraInput.addEventListener('change', event => handleImageSelection(event, 'カメラで撮影した画像'));
-      imageInput.addEventListener('change', event => handleImageSelection(event, 'アルバムから選んだ画像'));
+      albumInput.addEventListener('change', event => handleImageSelection(event, 'アルバムから選んだ画像'));
       retryOcrButton.addEventListener('click', () => {
         if (lastImageFile) readImageAsCsv(lastImageFile);
       });
@@ -556,7 +592,7 @@
       lastImageFile = null;
       retryOcrButton.disabled = true;
       cameraInput.value = '';
-      imageInput.value = '';
+      albumInput.value = '';
       imagePreview.removeAttribute('src');
       imagePreview.style.display = 'none';
     }
@@ -644,8 +680,10 @@
     }
 
     function setOcrBusy(isBusy, message = '') {
+      openCameraButton.disabled = isBusy;
+      openAlbumButton.disabled = isBusy;
       cameraInput.disabled = isBusy;
-      imageInput.disabled = isBusy;
+      albumInput.disabled = isBusy;
       retryOcrButton.disabled = isBusy || !lastImageFile;
       if (message) ocrStatus.textContent = message;
     }
