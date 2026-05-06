@@ -422,7 +422,7 @@
 <body>
   <header>
     <h1>保育園の発注書作成ツール</h1>
-    <p class="lead">献立表の写真を取り込むだけで、写真OCR、献立解析、食品名と数量の集計、発注書Excelの作成までまとめて行えます。</p>
+    <p class="lead">献立表の写真を取り込むだけで、食材名だけを抽出し、食品名・数量・単位の発注書Excelを作成します。</p>
   </header>
 
   <main>
@@ -432,7 +432,7 @@
         <label for="csvInput">献立表データ</label>
         <div class="ocr-panel">
           <strong>スマホのカメラ・画像から読み取り</strong>
-          <p class="small">「カメラで撮る」は背面カメラを起動し、「画像を選ぶ」はアルバムから画像を開きます。写真OCR→献立内容の解析→食品名と数量の集計→発注書xlsx出力まで自動で進みます。初回の読み取りにはインターネット接続が必要です。読み取り後は内容を確認し、必要に応じて手直ししてください。</p>
+          <p class="small">「カメラで撮る」は背面カメラを起動し、「画像を選ぶ」はアルバムから画像を開きます。写真OCR→食材名だけの抽出→同じ食材の数量集計→発注書xlsx出力まで自動で進みます。初回の読み取りにはインターネット接続が必要です。読み取り後は内容を確認し、必要に応じて手直ししてください。</p>
           <div class="actions">
             <button class="camera" id="openCameraButton" type="button">📷 カメラで撮る</button>
             <button class="secondary" id="openAlbumButton" type="button">🖼️ 画像を選ぶ</button>
@@ -452,7 +452,7 @@
           <img class="preview-image" id="imagePreview" alt="選択した献立表画像のプレビュー">
         </div>
         <textarea id="csvInput" placeholder="例）&#10;日付,献立名,食品名,3歳未満児量,単位&#10;5/1,昼食,鶏もも肉,40,g&#10;5/1,昼食,米,50,g&#10;5/1,おやつ,牛乳,100,ml"></textarea>
-        <p class="small">見出し名は「食品名・食材名・材料名」と「3歳未満児量・未満児量・3歳未満」などを自動で判定します。</p>
+        <p class="small">見出し名は「食品名・食材名・材料名」と「3歳未満児量・未満児量・3歳未満」などを自動で判定します。日付、曜日、献立名、昼食、おやつ、分量、単位、備考などは材料にしません。</p>
         <div class="actions">
           <button class="primary" id="makeButton" type="button">発注書を作る</button>
           <button class="secondary" id="sampleButton" type="button">サンプルを入れる</button>
@@ -471,6 +471,8 @@
           <li>きのこ類は<strong>1袋</strong></li>
           <li>ヨーグルトは<strong>牧場の朝3個パックを2個</strong></li>
           <li>りんご1個、オレンジ2個、バナナ1房は固定</li>
+          <li>発注書に入れる列は<strong>食品名・数量・単位</strong>のみ</li>
+          <li>日付、曜日、献立名、昼食、おやつ、分量、単位、備考は材料にしない</li>
         </ul>
       </aside>
     </div>
@@ -501,13 +503,13 @@
 
   <script>
     const FIXED_ITEMS = [
-      { name: '牛乳', order: '450ml×2本', note: '固定' },
-      { name: 'キャベツ', order: '1/4個', note: '固定' },
-      { name: '白菜', order: '1/8個', note: '固定' },
-      { name: 'ヨーグルト', order: '牧場の朝3個パック×2個', note: '固定' },
-      { name: 'りんご', order: '1個', note: '固定' },
-      { name: 'オレンジ', order: '2個', note: '固定' },
-      { name: 'バナナ', order: '1房', note: '固定' }
+      { name: '牛乳', quantity: '450ml×2', unit: '本' },
+      { name: 'キャベツ', quantity: '1/4', unit: '個' },
+      { name: '白菜', quantity: '1/8', unit: '個' },
+      { name: 'ヨーグルト', quantity: '牧場の朝3個パック×2', unit: '個' },
+      { name: 'りんご', quantity: '1', unit: '個' },
+      { name: 'オレンジ', quantity: '2', unit: '個' },
+      { name: 'バナナ', quantity: '1', unit: '房' }
     ];
 
     const EXCLUDE_WORDS = [
@@ -526,18 +528,39 @@
       { test: name => name.includes('りんご') || name.includes('リンゴ') || name.includes('林檎'), fixedName: 'りんご' },
       { test: name => name.includes('オレンジ'), fixedName: 'オレンジ' },
       { test: name => name.includes('バナナ'), fixedName: 'バナナ' },
-      { test: name => MUSHROOM_WORDS.some(word => name.includes(word)), fixedName: 'きのこ類', item: { name: 'きのこ類', order: '1袋', note: '固定' } }
+      { test: name => MUSHROOM_WORDS.some(word => name.includes(word)), fixedName: 'きのこ類', item: { name: 'きのこ類', quantity: '1', unit: '袋' } }
     ];
 
     const sampleCsv = `日付,献立名,食品名,3歳未満児量,単位\n5/1,昼食,鶏もも肉,40,g\n5/1,昼食,じゃがいも,35,g\n5/1,昼食,にんじん,15,g\n5/1,昼食,キャベツ,20,g\n5/1,昼食,しめじ,8,g\n5/1,昼食,米,45,g\n5/1,昼食,しょうゆ,3,g\n5/1,おやつ,牛乳,100,ml\n5/1,おやつ,ヨーグルト,80,g\n5/1,おやつ,りんご,20,g`;
 
     const OCR_INGREDIENT_WORDS = [
-      '鶏もも肉', '鶏むね肉', '豚ひき肉', '豚もも肉', '豚肉', '牛肉', '鮭', 'さば', 'たら', 'ツナ',
+      '鶏もも肉', '鶏むね肉', '鶏ささみ', '鶏ひき肉', '鶏肉', '豚ひき肉', '豚もも肉', '豚肉', '牛肉',
+      '鮭', 'さけ', 'さば', 'たら', 'ぶり', 'あじ', 'ツナ', '白身魚', 'しらす', 'ちくわ', 'かまぼこ',
       'じゃがいも', 'さつまいも', '里芋', '玉ねぎ', 'たまねぎ', 'にんじん', '人参', '大根', 'きゅうり',
-      'トマト', 'ミニトマト', 'ほうれん草', '小松菜', 'ブロッコリー', 'ピーマン', 'キャベツ', '白菜',
-      'しめじ', 'えのき', 'しいたけ', 'まいたけ', 'エリンギ', '豆腐', '油揚げ', '厚揚げ', '卵', '牛乳',
-      'ヨーグルト', 'チーズ', 'りんご', 'オレンジ', 'バナナ', 'みかん', '米', 'しょうゆ', 'みそ', '砂糖'
+      'トマト', 'ミニトマト', 'ほうれん草', '小松菜', 'ブロッコリー', 'ピーマン', 'かぼちゃ', 'なす',
+      'キャベツ', '白菜', 'レタス', 'もやし', 'ねぎ', '長ねぎ', '枝豆', 'コーン', 'グリンピース',
+      'しめじ', 'えのき', 'しいたけ', 'まいたけ', 'エリンギ', '豆腐', '油揚げ', '厚揚げ', '納豆',
+      '卵', 'たまご', '牛乳', 'ヨーグルト', 'チーズ', 'りんご', 'オレンジ', 'バナナ', 'みかん', 'いちご',
+      '小麦粉', '片栗粉', 'パン粉', '食パン', 'ロールパン', 'うどん', 'スパゲティ', 'マカロニ',
+      '米', 'しょうゆ', 'みそ', '砂糖'
     ].sort((a, b) => b.length - a.length);
+
+    const NON_INGREDIENT_HEADERS = [
+      '日付', '曜日', '献立名', '献立', '昼食', 'おやつ', '午前', '午後', '分量', '数量', '使用量',
+      '単位', '備考', '3歳未満児量', '未満児量', '乳児', '幼児', 'エネルギー', 'たんぱく', '脂質', '塩分'
+    ];
+
+    const NON_FOOD_VALUES = [
+      '月', '火', '水', '木', '金', '土', '日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日', '日曜日',
+      '昼食', 'おやつ', '午前おやつ', '午後おやつ', '主食', '主菜', '副菜', '汁物', '備考', '単位', '分量',
+      '献立名', '食品名', '食材名', '材料名', '使用量', '未満児量', '普通食', '離乳食'
+    ];
+
+    const FOOD_NAME_HINTS = [
+      '肉', '魚', '鶏', '豚', '牛', '卵', '豆', '乳', '粉', '麺', 'パン', '米', '芋', '油揚げ', '厚揚げ',
+      '菜', '草', 'ねぎ', 'トマト', 'キャベツ', '白菜', 'にんじん', '人参', '大根', 'きゅうり', 'かぼちゃ',
+      'じゃがいも', 'さつまいも', 'りんご', 'バナナ', 'オレンジ', 'みかん', 'チーズ', 'ヨーグルト'
+    ];
 
     let csvInput;
     let tsvOutput;
@@ -721,7 +744,7 @@
         .filter(Boolean);
       const csvCandidate = normalizedLines.join('\n');
 
-      if (looksLikeMenuCsv(csvCandidate)) return csvCandidate;
+      if (looksLikeMenuCsv(csvCandidate)) return filterMenuCsvToIngredientCsv(csvCandidate);
 
       const extractedRows = extractIngredientRowsFromOcr(text);
       if (extractedRows.length) {
@@ -755,12 +778,33 @@
     function looksLikeMenuCsv(csvText) {
       try {
         const rows = parseCsv(csvText);
-        const headers = rows[0].map(normalizeHeader);
-        return findIndex(headers, ['食品名', '食材名', '材料名', '品名', '食品', '食材', '材料']) !== -1
-          && findIndex(headers, ['3歳未満児量', '未満児量', '3歳未満', '三歳未満児量', '未満児']) !== -1;
+        const indexes = findMenuCsvIndexes(rows);
+        return indexes.nameIndex !== -1 && indexes.amountIndex !== -1;
       } catch (error) {
         return false;
       }
+    }
+
+    function filterMenuCsvToIngredientCsv(csvText) {
+      const rows = parseCsv(csvText);
+      const { nameIndex, amountIndex, unitIndex } = findMenuCsvIndexes(rows);
+      const ingredientRows = rows.slice(1).map(row => {
+        const name = normalizeIngredientName(row[nameIndex]);
+        const amount = parseNumber(row[amountIndex]);
+        const unit = unitIndex === -1 ? guessUnit(name) : normalizeUnit(row[unitIndex] || guessUnit(name));
+        return [name, amount, unit];
+      }).filter(([name, amount]) => name && amount > 0 && isAllowedIngredientName(name));
+
+      return ['食品名,3歳未満児量,単位', ...ingredientRows.map(row => row.join(','))].join('\n');
+    }
+
+    function findMenuCsvIndexes(rows) {
+      const headers = rows[0].map(normalizeHeader);
+      return {
+        nameIndex: findIndex(headers, ['食品名', '食材名', '材料名', '品名', '食品', '食材', '材料']),
+        amountIndex: findIndex(headers, ['3歳未満児量', '未満児量', '3歳未満', '三歳未満児量', '未満児']),
+        unitIndex: findIndex(headers, ['単位', '使用単位', '単位名'])
+      };
     }
 
     function extractIngredientRowsFromOcr(text) {
@@ -784,9 +828,9 @@
 
         const fallback = cleanLine.match(/([一-龠ぁ-んァ-ンーA-Za-z]{2,})\s*([0-9]+(?:\.[0-9]+)?)\s*(g|ｇ|G|ml|mL|ML|ｍｌ|個|本|袋|房)?/);
         if (fallback) {
-          const row = [cleanupIngredientName(fallback[1]), fallback[2], normalizeUnit(fallback[3] || 'g')];
+          const row = [normalizeIngredientName(fallback[1]), fallback[2], normalizeUnit(fallback[3] || 'g')];
           const key = row.join('__');
-          if (row[0] && !seen.has(key)) {
+          if (isAllowedIngredientName(row[0]) && !seen.has(key)) {
             rows.push(row);
             seen.add(key);
           }
@@ -805,8 +849,8 @@
         const afterName = compactLine.slice(index + name.length, index + name.length + 12);
         const amountMatch = afterName.match(/([0-9]+(?:\.[0-9]+)?)(g|G|ml|mL|ML|個|本|袋|房)?/);
         if (amountMatch) {
-          rows.push([name, amountMatch[1], normalizeUnit(amountMatch[2] || guessUnit(name))]);
-        } else if (getFixedItem(name)) {
+          if (isAllowedIngredientName(name)) rows.push([name, amountMatch[1], normalizeUnit(amountMatch[2] || guessUnit(name))]);
+        } else if (getFixedItem(name) && isAllowedIngredientName(name)) {
           rows.push([name, '1', guessUnit(name)]);
         }
       }
@@ -818,8 +862,44 @@
         && !/[0-9]+\s*(g|ｇ|ml|ｍｌ|個|本|袋|房)/i.test(line);
     }
 
+    function normalizeIngredientName(name) {
+      const cleaned = cleanupIngredientName(name);
+      const aliases = {
+        '人参': 'にんじん',
+        'たまねぎ': '玉ねぎ',
+        '玉葱': '玉ねぎ',
+        'たまご': '卵',
+        'リンゴ': 'りんご',
+        '林檎': 'りんご'
+      };
+      return aliases[cleaned] || cleaned;
+    }
+
     function cleanupIngredientName(name) {
-      return String(name || '').replace(/^(昼食|おやつ|午前|午後|材料|食品|食材|品名)+/, '').trim();
+      return String(name || '')
+        .replace(/[「」『』（）()［］\[\]【】]/g, '')
+        .replace(/^[0-9０-９./年月日\-]+/, '')
+        .replace(/^(月|火|水|木|金|土|日|昼食|おやつ|午前|午後|材料|食品|食材|品名|分量|単位|備考)+/, '')
+        .replace(/[0-9０-９]+(?:\.[0-9０-９]+)?\s*(g|ｇ|G|ml|mL|ML|ｍｌ|個|本|袋|房).*$/i, '')
+        .replace(/[^一-龠ぁ-んァ-ンーA-Za-z]/g, '')
+        .trim();
+    }
+
+    function isAllowedIngredientName(name) {
+      const cleaned = cleanupIngredientName(name);
+      if (!cleaned || cleaned.length < 2) return false;
+      if (NON_INGREDIENT_HEADERS.some(word => cleaned.includes(word))) return false;
+      if (NON_FOOD_VALUES.includes(cleaned)) return false;
+      if (/^[月火水木金土日]曜日?$/.test(cleaned)) return false;
+      if (/^[0-9０-９./年月日\-]+$/.test(cleaned)) return false;
+      if (/献立|昼食|おやつ|曜日|日付|備考|分量|単位|使用量|エネルギー|たんぱく|脂質|塩分/.test(cleaned)) return false;
+      if (/カレー|シチュー|スープ|みそ汁|味噌汁|すまし汁|サラダ|和え|炒め|煮|焼き|揚げ|丼|ごはん|御飯|ライス|うどん汁/.test(cleaned)) {
+        return OCR_INGREDIENT_WORDS.includes(cleaned);
+      }
+      if (OCR_INGREDIENT_WORDS.includes(cleaned)) return true;
+      if (MUSHROOM_WORDS.some(word => cleaned.includes(word))) return true;
+      if (FOOD_NAME_HINTS.some(word => cleaned.includes(word))) return true;
+      return /^[一-龠ぁ-んァ-ンー]{2,12}$/.test(cleaned) && !/^[ァ-ンー]{2,}$/.test(cleaned);
     }
 
     function normalizeUnit(unit) {
@@ -955,21 +1035,26 @@
         if (!rawName) continue;
         sourceRows++;
 
-        if (shouldExclude(rawName)) {
+        const ingredientName = normalizeIngredientName(rawName);
+        if (!isAllowedIngredientName(ingredientName) || shouldExclude(ingredientName)) {
           excluded++;
           continue;
         }
 
-        const fixedItem = getFixedItem(rawName);
+        const fixedItem = getFixedItem(ingredientName);
         if (fixedItem) {
           fixed.set(fixedItem.name, fixedItem);
           continue;
         }
 
         const amount = parseNumber(row[amountIndex]);
-        const unit = unitIndex === -1 ? '' : (row[unitIndex] || '').trim();
-        const key = `${rawName}__${unit}`;
-        const current = totals.get(key) || { name: rawName, amount: 0, unit, note: '3歳未満児量を合計' };
+        if (amount <= 0) {
+          excluded++;
+          continue;
+        }
+        const unit = unitIndex === -1 ? guessUnit(ingredientName) : normalizeUnit(row[unitIndex] || guessUnit(ingredientName));
+        const key = `${ingredientName}__${unit}`;
+        const current = totals.get(key) || { name: ingredientName, amount: 0, unit };
         current.amount += amount;
         totals.set(key, current);
       }
@@ -981,8 +1066,8 @@
       const normalItems = Array.from(totals.values())
         .map(item => ({
           name: item.name,
-          order: formatAmount(item.amount, item.unit),
-          note: item.note
+          quantity: formatQuantity(item.amount),
+          unit: item.unit
         }))
         .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
 
@@ -1020,9 +1105,9 @@
       return Number.isFinite(number) ? number : 0;
     }
 
-    function formatAmount(amount, unit) {
+    function formatQuantity(amount) {
       const rounded = Math.round(amount * 100) / 100;
-      return `${rounded}${unit || ''}`;
+      return String(rounded);
     }
 
     function renderTable(items) {
@@ -1035,17 +1120,16 @@
       tableWrap.className = 'table-scroller';
       const rows = items.map((item, index) => `
         <tr>
-          <td data-label="番号">${index + 1}</td>
-          <td data-label="品名">${escapeHtml(item.name)}</td>
-          <td data-label="発注量">${escapeHtml(item.order)}</td>
-          <td data-label="備考">${escapeHtml(item.note)}</td>
+          <td data-label="食品名">${escapeHtml(item.name)}</td>
+          <td data-label="数量">${escapeHtml(item.quantity)}</td>
+          <td data-label="単位">${escapeHtml(item.unit)}</td>
         </tr>
       `).join('');
 
       tableWrap.innerHTML = `
         <table>
           <thead>
-            <tr><th>番号</th><th>品名</th><th>発注量</th><th>備考</th></tr>
+            <tr><th>食品名</th><th>数量</th><th>単位</th></tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
@@ -1057,8 +1141,8 @@
     }
 
     function getOrderRows(items) {
-      const header = ['番号', '品名', '発注量', '備考'];
-      const lines = items.map((item, index) => [index + 1, item.name, item.order, item.note]);
+      const header = ['食品名', '数量', '単位'];
+      const lines = items.map(item => [item.name, item.quantity, item.unit]);
       return [header, ...lines];
     }
 
@@ -1152,7 +1236,7 @@
 
       return '<?xml version="1.0" encoding="UTF-8"?>'
         + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        + '<cols><col min="1" max="1" width="8" customWidth="1"/><col min="2" max="2" width="24" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="4" width="24" customWidth="1"/></cols>'
+        + '<cols><col min="1" max="1" width="24" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="12" customWidth="1"/></cols>'
         + `<sheetData>${worksheetRows}</sheetData>`
         + '</worksheet>';
     }
