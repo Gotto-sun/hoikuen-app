@@ -1,83 +1,527 @@
 <!doctype html>
 <html lang="ja">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#7cc7b2" />
-    <title>ほいくえんアプリ</title>
-    <style>
-      :root {
-        color-scheme: light;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #f6fbf8;
-        color: #263238;
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>保育園 発注書メーカー</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #fff8ed;
+      --panel: #ffffff;
+      --ink: #27313f;
+      --muted: #697386;
+      --primary: #f97316;
+      --primary-dark: #c2410c;
+      --line: #f0d8be;
+      --ok: #15803d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: linear-gradient(180deg, #fff1d6 0%, var(--bg) 38%, #fff 100%);
+      color: var(--ink);
+      line-height: 1.6;
+    }
+
+    header {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 40px 20px 24px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 5vw, 44px);
+      letter-spacing: .02em;
+    }
+
+    .lead {
+      margin: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    main {
+      max-width: 1100px;
+      margin: 0 auto 48px;
+      padding: 0 20px;
+      display: grid;
+      gap: 20px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, .8fr);
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+
+    section, .card {
+      background: rgba(255, 255, 255, .9);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: 0 18px 50px rgba(146, 64, 14, .10);
+      padding: 20px;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+    }
+
+    label {
+      display: block;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    textarea, input {
+      width: 100%;
+      border: 1px solid #e6c5a3;
+      border-radius: 14px;
+      padding: 12px 14px;
+      font: inherit;
+      background: #fffdf9;
+      color: var(--ink);
+    }
+
+    textarea {
+      min-height: 260px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+
+    .primary {
+      color: white;
+      background: var(--primary);
+      box-shadow: 0 10px 24px rgba(249, 115, 22, .28);
+    }
+
+    .primary:hover { background: var(--primary-dark); }
+
+    .secondary {
+      color: var(--primary-dark);
+      background: #ffedd5;
+    }
+
+    .rules {
+      margin: 0;
+      padding-left: 1.2em;
+      color: var(--muted);
+    }
+
+    .rules strong { color: var(--ink); }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    @media (max-width: 640px) {
+      .summary { grid-template-columns: 1fr; }
+    }
+
+    .metric {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .metric b {
+      display: block;
+      font-size: 26px;
+      line-height: 1.1;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 14px;
+      background: white;
+    }
+
+    th, td {
+      border-bottom: 1px solid #f3e3d2;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #ffedd5;
+      color: #7c2d12;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover { background: #fffaf3; }
+
+    .empty {
+      color: var(--muted);
+      text-align: center;
+      padding: 28px 10px;
+    }
+
+    .notice {
+      color: var(--ok);
+      font-weight: 700;
+      min-height: 1.5em;
+    }
+
+    .small {
+      color: var(--muted);
+      font-size: 13px;
+      margin: 8px 0 0;
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>保育園 発注書メーカー</h1>
+    <p class="lead">献立CSVを貼り付けるだけで、3歳未満児量をもとに発注書とExcel貼り付け用TSVを作ります。</p>
+  </header>
+
+  <main>
+    <div class="grid">
+      <section>
+        <h2>1. 献立CSVを貼る</h2>
+        <label for="csvInput">CSVデータ</label>
+        <textarea id="csvInput" placeholder="例）&#10;日付,献立名,食品名,3歳未満児量,単位&#10;5/1,昼食,鶏もも肉,40,g&#10;5/1,昼食,米,50,g&#10;5/1,おやつ,牛乳,100,ml"></textarea>
+        <p class="small">ヘッダー名は「食品名/食材名/材料名」と「3歳未満児量/未満児量/3歳未満」などを自動判定します。</p>
+        <div class="actions">
+          <button class="primary" id="makeButton">発注書を作る</button>
+          <button class="secondary" id="sampleButton" type="button">サンプルCSVを入れる</button>
+          <button class="secondary" id="clearButton" type="button">クリア</button>
+        </div>
+      </section>
+
+      <aside class="card">
+        <h2>発注ルール</h2>
+        <ul class="rules">
+          <li><strong>3歳未満児の量</strong>を使用</li>
+          <li>米、だし汁、調味料は除外</li>
+          <li>牛乳は<strong>450mlを2本</strong></li>
+          <li>キャベツは<strong>1/4個</strong></li>
+          <li>白菜は<strong>1/8個</strong></li>
+          <li>きのこ類は<strong>1袋</strong></li>
+          <li>ヨーグルトは<strong>牧場の朝3個パックを2個</strong></li>
+          <li>りんご1個、オレンジ2個、バナナ1房は固定</li>
+        </ul>
+      </aside>
+    </div>
+
+    <section>
+      <h2>2. 発注書</h2>
+      <div class="summary" aria-live="polite">
+        <div class="metric"><span>発注品目</span><b id="itemCount">0</b></div>
+        <div class="metric"><span>除外した行</span><b id="excludedCount">0</b></div>
+        <div class="metric"><span>読み込んだ食材行</span><b id="sourceCount">0</b></div>
+      </div>
+      <p class="notice" id="notice"></p>
+      <div id="tableWrap" class="empty">CSVを貼って「発注書を作る」を押してください。</div>
+    </section>
+
+    <section>
+      <h2>3. Excelに貼れるタブ区切り出力</h2>
+      <label for="tsvOutput">TSV</label>
+      <textarea id="tsvOutput" readonly placeholder="ここにタブ区切りの発注書が表示されます"></textarea>
+      <div class="actions">
+        <button class="secondary" id="copyButton" type="button">TSVをコピー</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const FIXED_ITEMS = [
+      { name: '牛乳', order: '450ml×2本', note: '固定' },
+      { name: 'キャベツ', order: '1/4個', note: '固定' },
+      { name: '白菜', order: '1/8個', note: '固定' },
+      { name: 'ヨーグルト', order: '牧場の朝3個パック×2個', note: '固定' },
+      { name: 'りんご', order: '1個', note: '固定' },
+      { name: 'オレンジ', order: '2個', note: '固定' },
+      { name: 'バナナ', order: '1房', note: '固定' }
+    ];
+
+    const EXCLUDE_WORDS = [
+      '米', '精白米', 'ごはん', 'だし汁', '出汁', 'だし', '水',
+      'しょうゆ', '醤油', '塩', '食塩', '砂糖', '酢', 'みそ', '味噌',
+      '油', 'サラダ油', 'ごま油', '酒', 'みりん', 'こしょう', '胡椒',
+      'ソース', 'ケチャップ', 'マヨネーズ', 'コンソメ', 'カレー粉'
+    ];
+
+    const MUSHROOM_WORDS = ['きのこ', 'しめじ', 'えのき', 'しいたけ', '椎茸', 'まいたけ', '舞茸', 'エリンギ', 'なめこ', 'マッシュルーム'];
+    const FIXED_MATCHERS = [
+      { test: name => name.includes('牛乳'), fixedName: '牛乳' },
+      { test: name => name.includes('キャベツ'), fixedName: 'キャベツ' },
+      { test: name => name.includes('白菜'), fixedName: '白菜' },
+      { test: name => name.includes('ヨーグルト'), fixedName: 'ヨーグルト' },
+      { test: name => name.includes('りんご') || name.includes('リンゴ') || name.includes('林檎'), fixedName: 'りんご' },
+      { test: name => name.includes('オレンジ'), fixedName: 'オレンジ' },
+      { test: name => name.includes('バナナ'), fixedName: 'バナナ' },
+      { test: name => MUSHROOM_WORDS.some(word => name.includes(word)), fixedName: 'きのこ類', item: { name: 'きのこ類', order: '1袋', note: '固定' } }
+    ];
+
+    const sampleCsv = `日付,献立名,食品名,3歳未満児量,単位\n5/1,昼食,鶏もも肉,40,g\n5/1,昼食,じゃがいも,35,g\n5/1,昼食,にんじん,15,g\n5/1,昼食,キャベツ,20,g\n5/1,昼食,しめじ,8,g\n5/1,昼食,米,45,g\n5/1,昼食,しょうゆ,3,g\n5/1,おやつ,牛乳,100,ml\n5/1,おやつ,ヨーグルト,80,g\n5/1,おやつ,りんご,20,g`;
+
+    const csvInput = document.querySelector('#csvInput');
+    const tsvOutput = document.querySelector('#tsvOutput');
+    const tableWrap = document.querySelector('#tableWrap');
+    const notice = document.querySelector('#notice');
+    const itemCount = document.querySelector('#itemCount');
+    const excludedCount = document.querySelector('#excludedCount');
+    const sourceCount = document.querySelector('#sourceCount');
+
+    document.querySelector('#makeButton').addEventListener('click', makeOrder);
+    document.querySelector('#sampleButton').addEventListener('click', () => {
+      csvInput.value = sampleCsv;
+      makeOrder();
+    });
+    document.querySelector('#clearButton').addEventListener('click', () => {
+      csvInput.value = '';
+      tsvOutput.value = '';
+      renderTable([]);
+      updateSummary(0, 0, 0);
+      notice.textContent = '';
+    });
+    document.querySelector('#copyButton').addEventListener('click', async () => {
+      if (!tsvOutput.value.trim()) return;
+      await navigator.clipboard.writeText(tsvOutput.value);
+      notice.textContent = 'TSVをコピーしました。Excelにそのまま貼り付けできます。';
+    });
+
+    function makeOrder() {
+      notice.textContent = '';
+      const text = csvInput.value.trim();
+      if (!text) {
+        notice.textContent = 'CSVを貼り付けてください。';
+        return;
       }
 
-      * {
-        box-sizing: border-box;
+      try {
+        const rows = parseCsv(text);
+        const result = buildOrder(rows);
+        renderTable(result.items);
+        tsvOutput.value = toTsv(result.items);
+        updateSummary(result.items.length, result.excluded, result.sourceRows);
+        notice.textContent = '発注書を作成しました。';
+      } catch (error) {
+        renderTable([]);
+        tsvOutput.value = '';
+        updateSummary(0, 0, 0);
+        notice.textContent = error.message;
+      }
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let current = [];
+      let field = '';
+      let inQuotes = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const next = text[i + 1];
+
+        if (char === '"') {
+          if (inQuotes && next === '"') {
+            field += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === ',' && !inQuotes) {
+          current.push(field.trim());
+          field = '';
+        } else if ((char === '\n' || char === '\r') && !inQuotes) {
+          if (char === '\r' && next === '\n') i++;
+          current.push(field.trim());
+          if (current.some(value => value !== '')) rows.push(current);
+          current = [];
+          field = '';
+        } else {
+          field += char;
+        }
       }
 
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        padding: 24px;
+      current.push(field.trim());
+      if (current.some(value => value !== '')) rows.push(current);
+      if (rows.length < 2) throw new Error('ヘッダー行と食材行があるCSVを貼り付けてください。');
+      return rows;
+    }
+
+    function buildOrder(rows) {
+      const headers = rows[0].map(normalizeHeader);
+      const nameIndex = findIndex(headers, ['食品名', '食材名', '材料名', '品名', '食品', '食材', '材料']);
+      const amountIndex = findIndex(headers, ['3歳未満児量', '未満児量', '3歳未満', '三歳未満児量', '未満児']);
+      const unitIndex = findIndex(headers, ['単位', '使用単位', '単位名']);
+
+      if (nameIndex === -1) throw new Error('食品名・食材名・材料名の列が見つかりません。');
+      if (amountIndex === -1) throw new Error('3歳未満児量の列が見つかりません。');
+
+      const totals = new Map();
+      const fixed = new Map();
+      let excluded = 0;
+      let sourceRows = 0;
+
+      for (const row of rows.slice(1)) {
+        const rawName = (row[nameIndex] || '').trim();
+        if (!rawName) continue;
+        sourceRows++;
+
+        if (shouldExclude(rawName)) {
+          excluded++;
+          continue;
+        }
+
+        const fixedItem = getFixedItem(rawName);
+        if (fixedItem) {
+          fixed.set(fixedItem.name, fixedItem);
+          continue;
+        }
+
+        const amount = parseNumber(row[amountIndex]);
+        const unit = unitIndex === -1 ? '' : (row[unitIndex] || '').trim();
+        const key = `${rawName}__${unit}`;
+        const current = totals.get(key) || { name: rawName, amount: 0, unit, note: '3歳未満児量を合計' };
+        current.amount += amount;
+        totals.set(key, current);
       }
 
-      main {
-        width: min(100%, 480px);
-        padding: 32px 24px;
-        border-radius: 28px;
-        background: #ffffff;
-        box-shadow: 0 18px 50px rgb(38 50 56 / 12%);
-        text-align: center;
+      for (const item of FIXED_ITEMS) {
+        if (fixed.has(item.name)) fixed.set(item.name, item);
       }
 
-      .badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 14px;
-        border-radius: 999px;
-        background: #e3f4ee;
-        color: #16765f;
-        font-weight: 700;
-        font-size: 14px;
+      const normalItems = Array.from(totals.values())
+        .map(item => ({
+          name: item.name,
+          order: formatAmount(item.amount, item.unit),
+          note: item.note
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
+      const fixedItems = Array.from(fixed.values()).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      return { items: [...normalItems, ...fixedItems], excluded, sourceRows };
+    }
+
+    function normalizeHeader(value) {
+      return String(value || '').replace(/[\s　]/g, '').replace(/[()（）]/g, '').toLowerCase();
+    }
+
+    function findIndex(headers, candidates) {
+      const normalized = candidates.map(normalizeHeader);
+      return headers.findIndex(header => normalized.some(candidate => header.includes(candidate)));
+    }
+
+    function shouldExclude(name) {
+      const normalized = name.replace(/[\s　]/g, '');
+      const exactOnlyWords = ['米', '水', '油', '塩', '酢', '酒'];
+      return EXCLUDE_WORDS.some(word => {
+        if (exactOnlyWords.includes(word)) return normalized === word;
+        return normalized === word || normalized.includes(word);
+      });
+    }
+
+    function getFixedItem(name) {
+      const matcher = FIXED_MATCHERS.find(rule => rule.test(name));
+      if (!matcher) return null;
+      if (matcher.item) return matcher.item;
+      return FIXED_ITEMS.find(item => item.name === matcher.fixedName) || null;
+    }
+
+    function parseNumber(value) {
+      const number = Number(String(value || '').replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function formatAmount(amount, unit) {
+      const rounded = Math.round(amount * 100) / 100;
+      return `${rounded}${unit || ''}`;
+    }
+
+    function renderTable(items) {
+      if (!items.length) {
+        tableWrap.className = 'empty';
+        tableWrap.textContent = 'CSVを貼って「発注書を作る」を押してください。';
+        return;
       }
 
-      h1 {
-        margin: 20px 0 12px;
-        font-size: clamp(30px, 10vw, 44px);
-        line-height: 1.15;
-      }
+      tableWrap.className = '';
+      const rows = items.map((item, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.order)}</td>
+          <td>${escapeHtml(item.note)}</td>
+        </tr>
+      `).join('');
 
-      p {
-        margin: 0;
-        color: #546e7a;
-        line-height: 1.8;
-        font-size: 16px;
-      }
+      tableWrap.innerHTML = `
+        <table>
+          <thead>
+            <tr><th>No.</th><th>品名</th><th>発注量</th><th>備考</th></tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    }
 
-      .card {
-        margin-top: 24px;
-        padding: 18px;
-        border-radius: 20px;
-        background: #fff8df;
-        color: #6d5200;
-        font-weight: 700;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <span class="badge">📱 スマホ対応</span>
-      <h1>ほいくえんアプリ</h1>
-      <p>
-        GitHub Pagesで公開する準備ができています。<br />
-        スマホのブラウザでURLを開いて使えます。
-      </p>
-      <div class="card">このページを好きな内容に書きかえてください。</div>
-    </main>
-  </body>
+    function toTsv(items) {
+      const header = ['No.', '品名', '発注量', '備考'];
+      const lines = items.map((item, index) => [index + 1, item.name, item.order, item.note]);
+      return [header, ...lines].map(row => row.join('\t')).join('\n');
+    }
+
+    function updateSummary(items, excluded, sources) {
+      itemCount.textContent = items;
+      excludedCount.textContent = excluded;
+      sourceCount.textContent = sources;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      }[char]));
+    }
+  </script>
+</body>
 </html>
