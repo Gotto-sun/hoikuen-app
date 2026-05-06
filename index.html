@@ -3,224 +3,195 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>保育園の発注書作成ツール</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #fff8ed;
-      --panel: #ffffff;
-      --ink: #27313f;
-      --muted: #697386;
-      --primary: #f97316;
-      --primary-dark: #c2410c;
-      --line: #f0d8be;
-      --ok: #15803d;
-      --info: #2563eb;
-      --excel: #16a34a;
-      --excel-dark: #15803d;
-    }
+  <title>献立表OCR 発注書作成</title>
 
-    * { box-sizing: border-box; }
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Noto Sans JP", "Segoe UI", sans-serif;
-      background: linear-gradient(180deg, #fff1d6 0%, var(--bg) 38%, #fff 100%);
-      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+      background: #fff7ed;
+      color: #1f2937;
       line-height: 1.7;
-      word-break: normal;
-      overflow-wrap: anywhere;
     }
 
     header {
-      max-width: 1100px;
-      margin: 0 auto;
-      padding: 40px 20px 24px;
+      padding: 20px 16px 10px;
+      background: linear-gradient(135deg, #fb923c, #f97316);
+      color: #fff;
     }
 
-    h1 {
-      margin: 0 0 8px;
-      font-size: clamp(28px, 5vw, 44px);
-      letter-spacing: .03em;
-      line-height: 1.25;
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
     }
 
-    .lead {
+    header p {
       margin: 0;
-      color: var(--muted);
-      font-size: 18px;
-      max-width: 42em;
+      font-size: 14px;
+      opacity: 0.95;
     }
 
     main {
-      max-width: 1100px;
-      margin: 0 auto 48px;
-      padding: 0 20px;
-      display: grid;
-      gap: 20px;
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 16px;
     }
 
-    .table-scroller {
-      width: 100%;
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(320px, .8fr);
-      gap: 20px;
-      align-items: start;
-    }
-
-    @media (max-width: 860px) {
-      .grid { grid-template-columns: 1fr; }
-    }
-
-    section, .card {
-      background: rgba(255, 255, 255, .9);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      box-shadow: 0 18px 50px rgba(146, 64, 14, .10);
-      padding: 20px;
+    section {
+      background: #fff;
+      border: 1px solid #fed7aa;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(154, 52, 18, 0.08);
     }
 
     h2 {
       margin: 0 0 12px;
-      font-size: 22px;
+      font-size: 18px;
+    }
+
+    .note {
+      margin: 0 0 12px;
+      color: #667085;
+      font-size: 14px;
+    }
+
+    .buttons {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin: 12px 0;
+    }
+
+    button {
+      min-height: 46px;
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: inherit;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .primary {
+      background: #f97316;
+    }
+
+    .blue {
+      background: #2563eb;
+    }
+
+    .green {
+      background: #16a34a;
+    }
+
+    .gray {
+      background: #64748b;
+    }
+
+    .red {
+      background: #dc2626;
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    textarea,
+    input {
+      width: 100%;
+      border: 1px solid #fdba74;
+      border-radius: 12px;
+      padding: 10px;
+      font: inherit;
+      background: #fffdf8;
+    }
+
+    textarea {
+      min-height: 180px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 14px;
     }
 
     label {
       display: block;
+      margin: 12px 0 6px;
       font-weight: 700;
-      margin-bottom: 8px;
     }
 
-    textarea, input {
+    #preview {
+      display: none;
       width: 100%;
-      border: 1px solid #e6c5a3;
-      border-radius: 14px;
-      padding: 12px 14px;
-      font: inherit;
-      background: #fffdf9;
-      color: var(--ink);
+      max-height: 260px;
+      object-fit: contain;
+      margin-top: 12px;
+      border: 1px solid #fed7aa;
+      border-radius: 12px;
+      background: #fff;
     }
 
-    textarea {
-      min-height: 260px;
-      resize: vertical;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    .status {
+      min-height: 1.8em;
+      margin: 10px 0 0;
+      color: #475569;
+      font-weight: 700;
       font-size: 14px;
-      line-height: 1.5;
     }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    button, .file-button {
-      border: 0;
-      border-radius: 999px;
-      padding: 12px 18px;
-      font: inherit;
-      font-weight: 800;
-      cursor: pointer;
-      transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      text-decoration: none;
-    }
-
-    button:hover, .file-button:hover { transform: translateY(-1px); }
-    button:active, .file-button:active { transform: translateY(0); }
-    button:disabled {
-      cursor: not-allowed;
-      opacity: .6;
-      transform: none;
-    }
-
-    .primary {
-      color: white;
-      background: var(--primary);
-      box-shadow: 0 10px 24px rgba(249, 115, 22, .28);
-    }
-
-    .primary:hover { background: var(--primary-dark); }
-
-    .secondary {
-      color: var(--primary-dark);
-      background: #ffedd5;
-    }
-
-    .camera {
-      color: white;
-      background: var(--info);
-      box-shadow: 0 10px 24px rgba(37, 99, 235, .22);
-    }
-
-    .camera:hover { background: #1d4ed8; }
-
-    .excel {
-      color: white;
-      background: var(--excel);
-      box-shadow: 0 10px 24px rgba(22, 163, 74, .22);
-    }
-
-    .excel:hover { background: var(--excel-dark); }
-
-    .rules {
-      margin: 0;
-      padding-left: 1.2em;
-      color: var(--muted);
-    }
-
-    .rules strong { color: var(--ink); }
 
     .summary {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 12px;
     }
 
-    @media (max-width: 640px) {
-      .summary { grid-template-columns: 1fr; }
-    }
-
-    .metric {
+    .summary div {
       background: #fff7ed;
       border: 1px solid #fed7aa;
-      border-radius: 16px;
-      padding: 14px;
+      border-radius: 12px;
+      padding: 10px;
     }
 
-    .metric span {
+    .summary span {
       display: block;
-      color: var(--muted);
-      font-size: 13px;
+      color: #667085;
+      font-size: 12px;
     }
 
-    .metric b {
-      display: block;
-      font-size: 26px;
-      line-height: 1.1;
+    .summary b {
+      font-size: 22px;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
     }
 
     table {
       width: 100%;
+      min-width: 680px;
       border-collapse: collapse;
-      overflow: hidden;
-      border-radius: 14px;
-      background: white;
+      background: #fff;
     }
 
-    th, td {
-      border-bottom: 1px solid #f3e3d2;
-      padding: 10px 12px;
+    th,
+    td {
+      border-bottom: 1px solid #ffedd5;
+      padding: 8px;
       text-align: left;
       vertical-align: top;
     }
@@ -231,1119 +202,608 @@
       white-space: nowrap;
     }
 
-    tbody tr:hover { background: #fffaf3; }
+    td input {
+      min-width: 100px;
+    }
 
     .empty {
-      color: var(--muted);
+      padding: 20px;
       text-align: center;
-      padding: 28px 10px;
-    }
-
-    .notice {
-      color: var(--ok);
-      font-weight: 700;
-      min-height: 1.5em;
-    }
-
-    .ocr-panel {
-      margin: 14px 0 0;
-      padding: 14px;
-      border: 1px dashed #f59e0b;
-      border-radius: 16px;
+      color: #667085;
+      border: 1px dashed #fdba74;
+      border-radius: 12px;
       background: #fff7ed;
     }
 
-    .ocr-status {
-      color: var(--muted);
-      font-weight: 700;
-      min-height: 1.5em;
-      margin: 8px 0 0;
-    }
-
-    .preview-image {
-      display: none;
-      max-width: 100%;
-      max-height: 220px;
-      margin-top: 10px;
-      border: 1px solid #fed7aa;
-      border-radius: 14px;
-      object-fit: contain;
-      background: white;
-    }
-
-    .small {
-      color: var(--muted);
-      font-size: 13px;
-      margin: 8px 0 0;
-      line-height: 1.7;
-    }
-
-    .inline-option {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      margin: 12px 0 0;
-      color: var(--ink);
-      font-size: 14px;
-      font-weight: 700;
-    }
-
-    .inline-option input {
-      width: auto;
-      accent-color: var(--primary);
-    }
-
-    .code-example {
-      margin-top: 10px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .code-example summary {
-      cursor: pointer;
-      font-weight: 700;
-      color: var(--primary-dark);
-    }
-
-    .code-example pre {
-      overflow-x: auto;
-      margin: 8px 0 0;
-      padding: 10px;
-      border: 1px solid #fed7aa;
-      border-radius: 12px;
-      background: #fffdf9;
-      color: var(--ink);
-      line-height: 1.5;
-    }
-
-    .hidden { display: none; }
-
-    @media (max-width: 640px) {
-      body {
-        background: var(--bg);
-        font-size: 16px;
-      }
-
-      header {
-        padding: 24px 14px 16px;
-      }
-
-      h1 {
-        font-size: 26px;
-      }
-
-      .lead {
-        font-size: 15px;
-      }
-
+    @media (max-width: 720px) {
       main {
-        margin-bottom: 28px;
-        padding: 0 12px;
-        gap: 14px;
+        padding: 12px;
       }
 
-      section, .card {
-        border-radius: 16px;
-        padding: 16px;
-        box-shadow: 0 8px 28px rgba(146, 64, 14, .08);
-      }
-
-      h2 {
-        font-size: 19px;
-      }
-
-      textarea {
-        min-height: 220px;
-        font-size: 16px;
-      }
-
-      .actions {
-        display: grid;
+      .buttons,
+      .summary {
         grid-template-columns: 1fr;
-      }
-
-      button, .file-button {
-        width: 100%;
-        min-height: 48px;
-        padding: 13px 16px;
-      }
-
-      .table-scroller {
-        overflow: visible;
       }
 
       table,
       thead,
       tbody,
       tr,
-      th,
       td {
         display: block;
         width: 100%;
+        min-width: 0;
       }
 
       thead {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
+        display: none;
       }
 
-      tbody tr {
-        border: 1px solid #f3e3d2;
-        border-radius: 14px;
+      tr {
+        border: 1px solid #ffedd5;
+        border-radius: 12px;
         margin-bottom: 10px;
-        padding: 10px 12px;
-        background: #fffdf9;
+        padding: 10px;
       }
 
-      th,
       td {
-        border-bottom: 0;
+        border: 0;
         padding: 6px 0;
-      }
-
-      td {
-        display: grid;
-        grid-template-columns: 7em minmax(0, 1fr);
-        gap: 10px;
-        align-items: start;
       }
 
       td::before {
         content: attr(data-label);
-        color: var(--muted);
+        display: block;
+        font-size: 12px;
         font-weight: 700;
+        color: #667085;
+        margin-bottom: 3px;
       }
     }
   </style>
 </head>
+
 <body>
   <header>
-    <h1>保育園の発注書作成ツール</h1>
-    <p class="lead">献立表の写真を取り込むだけで、食材名だけを抽出し、食品名・数量・単位の発注書Excelを作成します。</p>
+    <h1>献立表OCR 発注書作成</h1>
+    <p>スマホで撮影 → OCR → 食材抽出 → 合算 → Excel出力</p>
   </header>
 
   <main>
-    <div class="grid">
-      <section>
-        <h2>1. 献立表のデータを入れる</h2>
-        <label for="csvInput">献立表データ</label>
-        <div class="ocr-panel">
-          <strong>スマホのカメラ・画像から読み取り</strong>
-          <p class="small">「カメラで撮る」は背面カメラを起動し、「画像を選ぶ」はアルバムから画像を開きます。写真OCR→食材名だけの抽出→同じ食材の数量集計→発注書xlsx出力まで自動で進みます。初回の読み取りにはインターネット接続が必要です。読み取り後は内容を確認し、必要に応じて手直ししてください。</p>
-          <div class="actions">
-            <button class="camera" id="openCameraButton" type="button">📷 カメラで撮る</button>
-            <button class="secondary" id="openAlbumButton" type="button">🖼️ 画像を選ぶ</button>
-            <button class="secondary" id="retryOcrButton" type="button" disabled>もう一度読み取る</button>
-          </div>
-          <label class="inline-option"><input id="autoExcelCheckbox" type="checkbox" checked> OCR後に発注書Excelを自動ダウンロードする</label>
-          <input class="hidden" id="cameraInput" type="file" accept="image/*" capture="environment" aria-label="カメラで撮る">
-          <input class="hidden" id="albumInput" type="file" accept="image/*" aria-label="画像を選ぶ">
-          <details class="code-example">
-            <summary>カメラ・アルバム呼び出しのコード例</summary>
-            <pre><code>&lt;input id="cameraInput" type="file" accept="image/*" capture="environment"&gt;
-&lt;input id="albumInput" type="file" accept="image/*"&gt;
-&lt;button type="button" onclick="cameraInput.click()"&gt;カメラで撮る&lt;/button&gt;
-&lt;button type="button" onclick="albumInput.click()"&gt;画像を選ぶ&lt;/button&gt;</code></pre>
-          </details>
-          <p class="ocr-status" id="ocrStatus" aria-live="polite"></p>
-          <img class="preview-image" id="imagePreview" alt="選択した献立表画像のプレビュー">
-        </div>
-        <textarea id="csvInput" placeholder="例）&#10;日付,献立名,食品名,3歳未満児量,単位&#10;5/1,昼食,鶏もも肉,40,g&#10;5/1,昼食,米,50,g&#10;5/1,おやつ,牛乳,100,ml"></textarea>
-        <p class="small">見出し名は「食品名・食材名・材料名」と「3歳未満児量・未満児量・3歳未満」などを自動で判定します。日付、曜日、献立名、昼食、おやつ、分量、単位、備考などは材料にしません。</p>
-        <div class="actions">
-          <button class="primary" id="makeButton" type="button">発注書を作る</button>
-          <button class="secondary" id="sampleButton" type="button">サンプルを入れる</button>
-          <button class="secondary" id="clearButton" type="button">入力を消す</button>
-        </div>
-      </section>
-
-      <aside class="card">
-        <h2>発注ルール</h2>
-        <ul class="rules">
-          <li><strong>3歳未満児の量</strong>を使用</li>
-          <li>米、だし汁、調味料は除外</li>
-          <li>牛乳は<strong>450mlを2本</strong></li>
-          <li>キャベツは<strong>1/4個</strong></li>
-          <li>白菜は<strong>1/8個</strong></li>
-          <li>きのこ類は<strong>1袋</strong></li>
-          <li>ヨーグルトは<strong>牧場の朝3個パックを2個</strong></li>
-          <li>りんご1個、オレンジ2個、バナナ1房は固定</li>
-          <li>発注書に入れる列は<strong>食品名・数量・単位</strong>のみ</li>
-          <li>日付、曜日、献立名、昼食、おやつ、分量、単位、備考は材料にしない</li>
-        </ul>
-      </aside>
-    </div>
-
     <section>
-      <h2>2. 発注書</h2>
-      <div class="summary" aria-live="polite">
-        <div class="metric"><span>発注品目</span><b id="itemCount">0</b></div>
-        <div class="metric"><span>除外した行</span><b id="excludedCount">0</b></div>
-        <div class="metric"><span>読み込んだ食材行</span><b id="sourceCount">0</b></div>
+      <h2>1. 献立表を撮影 / 画像選択</h2>
+      <p class="note">画像と文字はブラウザ内で処理します。発注前に必ず確認してください。</p>
+
+      <div class="buttons">
+        <button class="blue" type="button" id="cameraBtn">📷 カメラで撮る</button>
+        <button class="gray" type="button" id="imageBtn">🖼️ 画像を選ぶ</button>
       </div>
-      <p class="notice" id="notice"></p>
-      <div id="tableWrap" class="empty">献立表データを入れて「発注書を作る」を押してください。</div>
-      <div class="actions">
-        <button class="excel" id="excelButton" type="button" disabled>発注書Excel（.xlsx）を作成</button>
+
+      <input id="cameraInput" type="file" accept="image/*" capture="environment">
+      <input id="imageInput" type="file" accept="image/*">
+
+      <img id="preview" alt="選択した画像">
+      <p id="ocrStatus" class="status"></p>
+
+      <label for="ocrText">OCR結果 / 手入力</label>
+      <textarea id="ocrText" placeholder="OCR結果がここに入ります。手入力やコピー貼り付けでも使えます。"></textarea>
+
+      <div class="buttons">
+        <button class="primary" type="button" id="extractBtn">食材を抽出して合算</button>
+        <button class="gray" type="button" id="sampleBtn">サンプルを入れる</button>
+        <button class="red" type="button" id="clearBtn">消す</button>
+        <button class="gray" type="button" id="retryBtn" disabled>もう一度OCR</button>
       </div>
     </section>
 
     <section>
-      <h2>3. 表計算ソフトに貼れるタブ区切り出力</h2>
-      <label for="tsvOutput">タブ区切りデータ</label>
-      <textarea id="tsvOutput" readonly placeholder="ここにタブ区切りの発注書データが表示されます"></textarea>
-      <div class="actions">
-        <button class="secondary" id="copyButton" type="button">タブ区切りデータをコピー</button>
+      <h2>2. 確認画面</h2>
+
+      <div class="summary">
+        <div>
+          <span>食材数</span>
+          <b id="itemCount">0</b>
+        </div>
+        <div>
+          <span>合算件数</span>
+          <b id="mergedCount">0</b>
+        </div>
+        <div>
+          <span>除外件数</span>
+          <b id="excludedCount">0</b>
+        </div>
+      </div>
+
+      <p id="notice" class="status"></p>
+
+      <div id="tableArea" class="empty">
+        まだ食材がありません。
+      </div>
+
+      <div class="buttons">
+        <button class="gray" type="button" id="addBtn">＋ 食材を追加</button>
+        <button class="green" type="button" id="excelBtn" disabled>Excel（.xlsx）をダウンロード</button>
       </div>
     </section>
   </main>
 
   <script>
-    const FIXED_ITEMS = [
-      { name: '牛乳', quantity: '450ml×2', unit: '本' },
-      { name: 'キャベツ', quantity: '1/4', unit: '個' },
-      { name: '白菜', quantity: '1/8', unit: '個' },
-      { name: 'ヨーグルト', quantity: '牧場の朝3個パック×2', unit: '個' },
-      { name: 'りんご', quantity: '1', unit: '個' },
-      { name: 'オレンジ', quantity: '2', unit: '個' },
-      { name: 'バナナ', quantity: '1', unit: '房' }
-    ];
+    const aliases = {
+      "人参": "にんじん",
+      "ニンジン": "にんじん",
+      "玉葱": "玉ねぎ",
+      "たまねぎ": "玉ねぎ",
+      "じゃが芋": "じゃがいも",
+      "ジャガイモ": "じゃがいも",
+      "馬鈴薯": "じゃがいも",
+      "鶏肉": "鶏もも肉",
+      "とり肉": "鶏もも肉",
+      "豚肉": "豚こま肉",
+      "ほうれんそう": "ほうれん草",
+      "ホウレン草": "ほうれん草",
+      "椎茸": "しいたけ",
+      "リンゴ": "りんご",
+      "林檎": "りんご",
+      "たまご": "卵"
+    };
 
-    const EXCLUDE_WORDS = [
-      '米', '精白米', 'ごはん', 'だし汁', '出汁', 'だし', '水',
-      'しょうゆ', '醤油', '塩', '食塩', '砂糖', '酢', 'みそ', '味噌',
-      '油', 'サラダ油', 'ごま油', '酒', 'みりん', 'こしょう', '胡椒',
-      'ソース', 'ケチャップ', 'マヨネーズ', 'コンソメ', 'カレー粉'
-    ];
-
-    const MUSHROOM_WORDS = ['きのこ', 'しめじ', 'えのき', 'しいたけ', '椎茸', 'まいたけ', '舞茸', 'エリンギ', 'なめこ', 'マッシュルーム'];
-    const FIXED_MATCHERS = [
-      { test: name => name.includes('牛乳'), fixedName: '牛乳' },
-      { test: name => name.includes('キャベツ'), fixedName: 'キャベツ' },
-      { test: name => name.includes('白菜'), fixedName: '白菜' },
-      { test: name => name.includes('ヨーグルト'), fixedName: 'ヨーグルト' },
-      { test: name => name.includes('りんご') || name.includes('リンゴ') || name.includes('林檎'), fixedName: 'りんご' },
-      { test: name => name.includes('オレンジ'), fixedName: 'オレンジ' },
-      { test: name => name.includes('バナナ'), fixedName: 'バナナ' },
-      { test: name => MUSHROOM_WORDS.some(word => name.includes(word)), fixedName: 'きのこ類', item: { name: 'きのこ類', quantity: '1', unit: '袋' } }
-    ];
-
-    const sampleCsv = `日付,献立名,食品名,3歳未満児量,単位\n5/1,昼食,鶏もも肉,40,g\n5/1,昼食,じゃがいも,35,g\n5/1,昼食,にんじん,15,g\n5/1,昼食,キャベツ,20,g\n5/1,昼食,しめじ,8,g\n5/1,昼食,米,45,g\n5/1,昼食,しょうゆ,3,g\n5/1,おやつ,牛乳,100,ml\n5/1,おやつ,ヨーグルト,80,g\n5/1,おやつ,りんご,20,g`;
-
-    const OCR_INGREDIENT_WORDS = [
-      '鶏もも肉', '鶏むね肉', '鶏ささみ', '鶏ひき肉', '鶏肉', '豚ひき肉', '豚もも肉', '豚肉', '牛肉',
-      '鮭', 'さけ', 'さば', 'たら', 'ぶり', 'あじ', 'ツナ', '白身魚', 'しらす', 'ちくわ', 'かまぼこ',
-      'じゃがいも', 'さつまいも', '里芋', '玉ねぎ', 'たまねぎ', 'にんじん', '人参', '大根', 'きゅうり',
-      'トマト', 'ミニトマト', 'ほうれん草', '小松菜', 'ブロッコリー', 'ピーマン', 'かぼちゃ', 'なす',
-      'キャベツ', '白菜', 'レタス', 'もやし', 'ねぎ', '長ねぎ', '枝豆', 'コーン', 'グリンピース',
-      'しめじ', 'えのき', 'しいたけ', 'まいたけ', 'エリンギ', '豆腐', '油揚げ', '厚揚げ', '納豆',
-      '卵', 'たまご', '牛乳', 'ヨーグルト', 'チーズ', 'りんご', 'オレンジ', 'バナナ', 'みかん', 'いちご',
-      '小麦粉', '片栗粉', 'パン粉', '食パン', 'ロールパン', 'うどん', 'スパゲティ', 'マカロニ',
-      '米', 'しょうゆ', 'みそ', '砂糖'
+    const ingredients = [
+      "鶏もも肉", "鶏むね肉", "鶏ひき肉", "鶏肉", "豚こま肉", "豚ひき肉", "豚肉", "牛肉",
+      "鮭", "さけ", "さば", "たら", "ツナ", "しらす", "ちくわ", "かまぼこ",
+      "じゃがいも", "じゃが芋", "ジャガイモ", "馬鈴薯", "さつまいも", "里芋",
+      "玉ねぎ", "たまねぎ", "玉葱", "にんじん", "人参", "ニンジン", "大根", "きゅうり",
+      "トマト", "ミニトマト", "ほうれん草", "ほうれんそう", "小松菜", "ブロッコリー",
+      "ピーマン", "かぼちゃ", "なす", "キャベツ", "白菜", "レタス", "もやし", "ねぎ", "長ねぎ",
+      "コーン", "しめじ", "えのき", "しいたけ", "椎茸", "まいたけ", "エリンギ",
+      "豆腐", "油揚げ", "厚揚げ", "納豆", "卵", "たまご", "牛乳", "ヨーグルト", "チーズ",
+      "りんご", "リンゴ", "林檎", "オレンジ", "バナナ", "みかん", "いちご",
+      "小麦粉", "片栗粉", "パン粉", "食パン", "ロールパン", "うどん", "スパゲティ", "マカロニ"
     ].sort((a, b) => b.length - a.length);
 
-    const NON_INGREDIENT_HEADERS = [
-      '日付', '曜日', '献立名', '献立', '昼食', 'おやつ', '午前', '午後', '分量', '数量', '使用量',
-      '単位', '備考', '3歳未満児量', '未満児量', '乳児', '幼児', 'エネルギー', 'たんぱく', '脂質', '塩分'
+    const excludeWords = [
+      "日付", "曜日", "献立", "献立名", "昼食", "おやつ", "午前", "午後", "材料", "食品名", "食材名", "数量", "分量", "単位", "備考",
+      "米", "ごはん", "精白米", "だし汁", "だし", "水", "しょうゆ", "醤油", "塩", "砂糖", "酢", "みそ", "味噌",
+      "油", "サラダ油", "ごま油", "酒", "みりん", "こしょう", "ソース", "ケチャップ", "マヨネーズ"
     ];
 
-    const NON_FOOD_VALUES = [
-      '月', '火', '水', '木', '金', '土', '日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日', '日曜日',
-      '昼食', 'おやつ', '午前おやつ', '午後おやつ', '主食', '主菜', '副菜', '汁物', '備考', '単位', '分量',
-      '献立名', '食品名', '食材名', '材料名', '使用量', '未満児量', '普通食', '離乳食'
-    ];
+    const sampleText =
+      "日付,献立名,食品名,数量,単位\n" +
+      "5/1,昼食,鶏もも肉,40,g\n" +
+      "5/1,昼食,にんじん,15,g\n" +
+      "5/1,昼食,人参,10,g\n" +
+      "5/1,昼食,玉ねぎ,30,g\n" +
+      "5/1,昼食,たまねぎ,20,g\n" +
+      "5/1,昼食,米,50,g\n" +
+      "5/1,おやつ,牛乳,100,ml\n" +
+      "5/1,おやつ,りんご,0.5,個";
 
-    const FOOD_NAME_HINTS = [
-      '肉', '魚', '鶏', '豚', '牛', '卵', '豆', '乳', '粉', '麺', 'パン', '米', '芋', '油揚げ', '厚揚げ',
-      '菜', '草', 'ねぎ', 'トマト', 'キャベツ', '白菜', 'にんじん', '人参', '大根', 'きゅうり', 'かぼちゃ',
-      'じゃがいも', 'さつまいも', 'りんご', 'バナナ', 'オレンジ', 'みかん', 'チーズ', 'ヨーグルト'
-    ];
+    let lastImage = null;
+    let rows = [];
+    let stats = {
+      merged: 0,
+      excluded: 0
+    };
 
-    let csvInput;
-    let tsvOutput;
-    let tableWrap;
-    let notice;
-    let itemCount;
-    let excludedCount;
-    let sourceCount;
-    let openCameraButton;
-    let openAlbumButton;
-    let cameraInput;
-    let albumInput;
-    let retryOcrButton;
-    let ocrStatus;
-    let imagePreview;
-    let excelButton;
-    let autoExcelCheckbox;
-    let lastImageFile = null;
-    let lastOrderItems = [];
-    let tesseractLoaderPromise = null;
+    const cameraBtn = document.getElementById("cameraBtn");
+    const imageBtn = document.getElementById("imageBtn");
+    const retryBtn = document.getElementById("retryBtn");
+    const extractBtn = document.getElementById("extractBtn");
+    const sampleBtn = document.getElementById("sampleBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const addBtn = document.getElementById("addBtn");
+    const excelBtn = document.getElementById("excelBtn");
 
-    document.addEventListener('DOMContentLoaded', initializeApp);
+    const cameraInput = document.getElementById("cameraInput");
+    const imageInput = document.getElementById("imageInput");
+    const preview = document.getElementById("preview");
+    const ocrText = document.getElementById("ocrText");
+    const ocrStatus = document.getElementById("ocrStatus");
+    const notice = document.getElementById("notice");
+    const tableArea = document.getElementById("tableArea");
 
-    function initializeApp() {
-      csvInput = document.querySelector('#csvInput');
-      tsvOutput = document.querySelector('#tsvOutput');
-      tableWrap = document.querySelector('#tableWrap');
-      notice = document.querySelector('#notice');
-      itemCount = document.querySelector('#itemCount');
-      excludedCount = document.querySelector('#excludedCount');
-      sourceCount = document.querySelector('#sourceCount');
-      openCameraButton = document.querySelector('#openCameraButton');
-      openAlbumButton = document.querySelector('#openAlbumButton');
-      cameraInput = document.querySelector('#cameraInput');
-      albumInput = document.querySelector('#albumInput');
-      retryOcrButton = document.querySelector('#retryOcrButton');
-      ocrStatus = document.querySelector('#ocrStatus');
-      imagePreview = document.querySelector('#imagePreview');
-      excelButton = document.querySelector('#excelButton');
-      autoExcelCheckbox = document.querySelector('#autoExcelCheckbox');
+    const itemCount = document.getElementById("itemCount");
+    const mergedCount = document.getElementById("mergedCount");
+    const excludedCount = document.getElementById("excludedCount");
 
-      const makeButton = document.querySelector('#makeButton');
-      const sampleButton = document.querySelector('#sampleButton');
-      const clearButton = document.querySelector('#clearButton');
-      const copyButton = document.querySelector('#copyButton');
+    cameraBtn.addEventListener("click", () => cameraInput.click());
+    imageBtn.addEventListener("click", () => imageInput.click());
+    retryBtn.addEventListener("click", () => lastImage && runOcr(lastImage));
+    extractBtn.addEventListener("click", extractAndRender);
+    sampleBtn.addEventListener("click", () => {
+      ocrText.value = sampleText;
+      extractAndRender();
+    });
+    clearBtn.addEventListener("click", clearAll);
+    addBtn.addEventListener("click", addRow);
+    excelBtn.addEventListener("click", downloadExcel);
 
-      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !openCameraButton || !openAlbumButton || !cameraInput || !albumInput || !retryOcrButton || !ocrStatus || !imagePreview || !excelButton || !autoExcelCheckbox || !makeButton || !sampleButton || !clearButton || !copyButton) {
-        console.error('必要な画面部品が見つかりません。画面部品の設定を確認してください。');
-        return;
-      }
+    cameraInput.addEventListener("change", e => handleImage(e.target.files[0]));
+    imageInput.addEventListener("change", e => handleImage(e.target.files[0]));
 
-      makeButton.addEventListener('click', makeOrder);
-      sampleButton.addEventListener('click', () => {
-        csvInput.value = sampleCsv;
-        makeOrder();
-      });
-      clearButton.addEventListener('click', clearOrder);
-      copyButton.addEventListener('click', copyTsv);
-      excelButton.addEventListener('click', downloadExcel);
-      openCameraButton.addEventListener('click', () => cameraInput.click());
-      openAlbumButton.addEventListener('click', () => albumInput.click());
-      cameraInput.addEventListener('change', event => handleImageSelection(event, 'カメラで撮影した画像'));
-      albumInput.addEventListener('change', event => handleImageSelection(event, 'アルバムから選んだ画像'));
-      retryOcrButton.addEventListener('click', () => {
-        if (lastImageFile) readImageAsCsv(lastImageFile);
-      });
-    }
-
-    function clearOrder() {
-      csvInput.value = '';
-      tsvOutput.value = '';
-      lastOrderItems = [];
-      excelButton.disabled = true;
-      renderTable([]);
-      updateSummary(0, 0, 0);
-      notice.textContent = '';
-      ocrStatus.textContent = '';
-      lastImageFile = null;
-      retryOcrButton.disabled = true;
-      cameraInput.value = '';
-      albumInput.value = '';
-      imagePreview.removeAttribute('src');
-      imagePreview.style.display = 'none';
-    }
-
-    function handleImageSelection(event, sourceLabel) {
-      const input = event.target;
-      const file = input.files && input.files[0];
+    function handleImage(file) {
       if (!file) return;
-      if (!file.type.startsWith('image/')) {
-        ocrStatus.textContent = '画像ファイルを選んでください。';
-        input.value = '';
+
+      lastImage = file;
+      retryBtn.disabled = false;
+
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = "block";
+
+      runOcr(file);
+    }
+
+    async function runOcr(file) {
+      if (!window.Tesseract) {
+        ocrStatus.textContent = "OCRライブラリを読み込めませんでした。ネット接続を確認してください。";
         return;
       }
 
-      lastImageFile = file;
-      retryOcrButton.disabled = false;
-      ocrStatus.textContent = `${sourceLabel}を読み取りに送ります。`;
-      showImagePreview(file);
-      readImageAsCsv(file);
-      input.value = '';
-    }
-
-    function showImagePreview(file) {
-      if (imagePreview.src) URL.revokeObjectURL(imagePreview.src);
-      imagePreview.src = URL.createObjectURL(file);
-      imagePreview.style.display = 'block';
-    }
-
-    async function readImageAsCsv(file) {
-      setOcrBusy(true, '文字読み取り機能を準備しています。初回は少し時間がかかります。');
-      notice.textContent = '';
+      setWorking(true);
+      ocrStatus.textContent = "OCRを開始します。初回は時間がかかることがあります。";
 
       try {
-        await loadTesseract();
-        setOcrBusy(true, '画像から文字を読み取っています。');
-        const result = await Tesseract.recognize(file, 'jpn+eng', {
-          logger: progress => updateOcrProgress(progress)
+        const result = await Tesseract.recognize(file, "jpn+eng", {
+          logger: message => {
+            if (message.status === "recognizing text") {
+              ocrStatus.textContent = "OCR中です：" + Math.round(message.progress * 100) + "%";
+            }
+          }
         });
-        const text = result && result.data ? result.data.text : '';
-        const csvText = convertOcrTextToCsv(text);
 
-        if (!csvText.trim()) {
-          ocrStatus.textContent = '文字を読み取れませんでした。明るい場所で献立表全体を大きく撮影して、もう一度お試しください。';
-          return;
-        }
-
-        csvInput.value = csvText;
-        ocrStatus.textContent = 'OCRが完了しました。献立内容を解析して発注書を作成しています。';
-        tryBuildOrderFromOcr();
+        ocrText.value = result.data.text.trim();
+        ocrStatus.textContent = "OCRが終わりました。内容を確認してください。";
+        extractAndRender();
       } catch (error) {
-        ocrStatus.textContent = '文字の読み取りに失敗しました。インターネット接続を確認するか、献立表データを手入力してください。';
-        console.error(error);
+        ocrStatus.textContent = "OCRに失敗しました。画像を撮り直すか、文字を手入力してください。";
       } finally {
-        setOcrBusy(false);
+        setWorking(false);
       }
     }
 
-    function loadTesseract() {
-      if (window.Tesseract) return Promise.resolve();
-      if (tesseractLoaderPromise) return tesseractLoaderPromise;
-
-      tesseractLoaderPromise = new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-        script.async = true;
-        script.onload = () => resolve();
-        script.onerror = () => reject(new Error('文字読み取り機能を読み込めませんでした。'));
-        document.head.appendChild(script);
-      });
-      return tesseractLoaderPromise;
+    function setWorking(isWorking) {
+      cameraBtn.disabled = isWorking;
+      imageBtn.disabled = isWorking;
+      retryBtn.disabled = isWorking || !lastImage;
+      extractBtn.disabled = isWorking;
     }
 
-    function updateOcrProgress(progress) {
-      if (!progress || !progress.status) return;
-      const percent = Math.round((progress.progress || 0) * 100);
-      const statusMessages = {
-        'loading tesseract core': '文字読み取り機能を準備中',
-        'initializing tesseract': '文字読み取り機能を起動中',
-        'loading language traineddata': '日本語の読み取りデータを読み込み中',
-        'initializing api': '読み取りの準備中',
-        'recognizing text': '文字を読み取り中'
-      };
-      const status = statusMessages[progress.status] || '文字読み取りを処理中';
-      ocrStatus.textContent = percent > 0 ? `${status} ${percent}%` : status;
+    function extractAndRender() {
+      const text = ocrText.value.trim();
+
+      if (!text) {
+        notice.textContent = "OCR結果または献立の文字を入力してください。";
+        return;
+      }
+
+      const result = extractIngredients(text);
+      rows = result.rows;
+      stats = result.stats;
+
+      renderTable();
+      updateSummary();
+
+      notice.textContent = rows.length
+        ? "食材を抽出しました。内容を確認して、必要なら修正してください。"
+        : "食材を見つけられませんでした。文字を直してから再実行してください。";
     }
 
-    function setOcrBusy(isBusy, message = '') {
-      openCameraButton.disabled = isBusy;
-      openAlbumButton.disabled = isBusy;
-      cameraInput.disabled = isBusy;
-      albumInput.disabled = isBusy;
-      retryOcrButton.disabled = isBusy || !lastImageFile;
-      if (message) ocrStatus.textContent = message;
-    }
+    function extractIngredients(text) {
+      const totals = new Map();
+      let foundCount = 0;
+      let excludedCount = 0;
 
-    function convertOcrTextToCsv(text) {
-      const normalizedLines = normalizeOcrText(text)
-        .split(/\r?\n/)
-        .map(line => normalizeOcrCsvLine(line))
+      const lines = text
+        .replace(/\r/g, "\n")
+        .split("\n")
+        .map(line => line.trim())
         .filter(Boolean);
-      const csvCandidate = normalizedLines.join('\n');
-
-      if (looksLikeMenuCsv(csvCandidate)) return filterMenuCsvToIngredientCsv(csvCandidate);
-
-      const extractedRows = extractIngredientRowsFromOcr(text);
-      if (extractedRows.length) {
-        return ['食品名,3歳未満児量,単位', ...extractedRows.map(row => row.join(','))].join('\n');
-      }
-
-      return csvCandidate;
-    }
-
-    function normalizeOcrText(text) {
-      return String(text || '')
-        .replace(/[，、]/g, ',')
-        .replace(/[｜|]/g, ',')
-        .replace(/[：]/g, ':')
-        .replace(/[０-９．]/g, char => char === '．' ? '.' : String.fromCharCode(char.charCodeAt(0) - 0xFEE0));
-    }
-
-    function normalizeOcrCsvLine(line) {
-      const trimmed = line.replace(/[\u200b\u00a0]/g, ' ').trim();
-      if (!trimmed) return '';
-      if (trimmed.includes(',')) {
-        return trimmed.replace(/\s*,\s*/g, ',');
-      }
-
-      const parts = trimmed.split(/[\t ]{2,}/).map(part => part.trim()).filter(Boolean);
-      if (parts.length >= 3) return parts.join(',');
-
-      return trimmed.replace(/\s+/g, ',');
-    }
-
-    function looksLikeMenuCsv(csvText) {
-      try {
-        const rows = parseCsv(csvText);
-        const indexes = findMenuCsvIndexes(rows);
-        return indexes.nameIndex !== -1 && indexes.amountIndex !== -1;
-      } catch (error) {
-        return false;
-      }
-    }
-
-    function filterMenuCsvToIngredientCsv(csvText) {
-      const rows = parseCsv(csvText);
-      const { nameIndex, amountIndex, unitIndex } = findMenuCsvIndexes(rows);
-      const ingredientRows = rows.slice(1).map(row => {
-        const name = normalizeIngredientName(row[nameIndex]);
-        const amount = parseNumber(row[amountIndex]);
-        const unit = unitIndex === -1 ? guessUnit(name) : normalizeUnit(row[unitIndex] || guessUnit(name));
-        return [name, amount, unit];
-      }).filter(([name, amount]) => name && amount > 0 && isAllowedIngredientName(name));
-
-      return ['食品名,3歳未満児量,単位', ...ingredientRows.map(row => row.join(','))].join('\n');
-    }
-
-    function findMenuCsvIndexes(rows) {
-      const headers = rows[0].map(normalizeHeader);
-      return {
-        nameIndex: findIndex(headers, ['食品名', '食材名', '材料名', '品名', '食品', '食材', '材料']),
-        amountIndex: findIndex(headers, ['3歳未満児量', '未満児量', '3歳未満', '三歳未満児量', '未満児']),
-        unitIndex: findIndex(headers, ['単位', '使用単位', '単位名'])
-      };
-    }
-
-    function extractIngredientRowsFromOcr(text) {
-      const lines = normalizeOcrText(text).split(/\r?\n/);
-      const rows = [];
-      const seen = new Set();
 
       for (const line of lines) {
-        const cleanLine = line.replace(/[\u200b\u00a0]/g, ' ').trim();
-        if (!cleanLine || isLikelyMenuTitleLine(cleanLine)) continue;
+        const compact = line.replace(/\s/g, "");
 
-        const knownRows = extractKnownIngredientRows(cleanLine);
-        for (const row of knownRows) {
-          const key = row.join('__');
-          if (!seen.has(key)) {
-            rows.push(row);
-            seen.add(key);
-          }
-        }
-        if (knownRows.length) continue;
-
-        const fallback = cleanLine.match(/([一-龠ぁ-んァ-ンーA-Za-z]{2,})\s*([0-9]+(?:\.[0-9]+)?)\s*(g|ｇ|G|ml|mL|ML|ｍｌ|個|本|袋|房)?/);
-        if (fallback) {
-          const row = [normalizeIngredientName(fallback[1]), fallback[2], normalizeUnit(fallback[3] || 'g')];
-          const key = row.join('__');
-          if (isAllowedIngredientName(row[0]) && !seen.has(key)) {
-            rows.push(row);
-            seen.add(key);
-          }
-        }
-      }
-
-      return rows;
-    }
-
-    function extractKnownIngredientRows(line) {
-      const rows = [];
-      const compactLine = line.replace(/[\s,]/g, '');
-      for (const name of OCR_INGREDIENT_WORDS) {
-        const index = compactLine.indexOf(name);
-        if (index === -1) continue;
-        const afterName = compactLine.slice(index + name.length, index + name.length + 12);
-        const amountMatch = afterName.match(/([0-9]+(?:\.[0-9]+)?)(g|G|ml|mL|ML|個|本|袋|房)?/);
-        if (amountMatch) {
-          if (isAllowedIngredientName(name)) rows.push([name, amountMatch[1], normalizeUnit(amountMatch[2] || guessUnit(name))]);
-        } else if (getFixedItem(name) && isAllowedIngredientName(name)) {
-          rows.push([name, '1', guessUnit(name)]);
-        }
-      }
-      return rows;
-    }
-
-    function isLikelyMenuTitleLine(line) {
-      return /献立|予定|日付|曜日|午前|午後|昼食|おやつ|栄養|エネルギー|たんぱく|脂質|塩分/.test(line)
-        && !/[0-9]+\s*(g|ｇ|ml|ｍｌ|個|本|袋|房)/i.test(line);
-    }
-
-    function normalizeIngredientName(name) {
-      const cleaned = cleanupIngredientName(name);
-      const aliases = {
-        '人参': 'にんじん',
-        'たまねぎ': '玉ねぎ',
-        '玉葱': '玉ねぎ',
-        'たまご': '卵',
-        'リンゴ': 'りんご',
-        '林檎': 'りんご'
-      };
-      return aliases[cleaned] || cleaned;
-    }
-
-    function cleanupIngredientName(name) {
-      return String(name || '')
-        .replace(/[「」『』（）()［］\[\]【】]/g, '')
-        .replace(/^[0-9０-９./年月日\-]+/, '')
-        .replace(/^(月|火|水|木|金|土|日|昼食|おやつ|午前|午後|材料|食品|食材|品名|分量|単位|備考)+/, '')
-        .replace(/[0-9０-９]+(?:\.[0-9０-９]+)?\s*(g|ｇ|G|ml|mL|ML|ｍｌ|個|本|袋|房).*$/i, '')
-        .replace(/[^一-龠ぁ-んァ-ンーA-Za-z]/g, '')
-        .trim();
-    }
-
-    function isAllowedIngredientName(name) {
-      const cleaned = cleanupIngredientName(name);
-      if (!cleaned || cleaned.length < 2) return false;
-      if (NON_INGREDIENT_HEADERS.some(word => cleaned.includes(word))) return false;
-      if (NON_FOOD_VALUES.includes(cleaned)) return false;
-      if (/^[月火水木金土日]曜日?$/.test(cleaned)) return false;
-      if (/^[0-9０-９./年月日\-]+$/.test(cleaned)) return false;
-      if (/献立|昼食|おやつ|曜日|日付|備考|分量|単位|使用量|エネルギー|たんぱく|脂質|塩分/.test(cleaned)) return false;
-      if (/カレー|シチュー|スープ|みそ汁|味噌汁|すまし汁|サラダ|和え|炒め|煮|焼き|揚げ|丼|ごはん|御飯|ライス|うどん汁/.test(cleaned)) {
-        return OCR_INGREDIENT_WORDS.includes(cleaned);
-      }
-      if (OCR_INGREDIENT_WORDS.includes(cleaned)) return true;
-      if (MUSHROOM_WORDS.some(word => cleaned.includes(word))) return true;
-      if (FOOD_NAME_HINTS.some(word => cleaned.includes(word))) return true;
-      return /^[一-龠ぁ-んァ-ンー]{2,12}$/.test(cleaned) && !/^[ァ-ンー]{2,}$/.test(cleaned);
-    }
-
-    function normalizeUnit(unit) {
-      const normalized = String(unit || '').toLowerCase().replace('ｍｌ', 'ml').replace('ｇ', 'g');
-      if (normalized === 'ml') return 'ml';
-      if (normalized === 'g') return 'g';
-      return unit || 'g';
-    }
-
-    function guessUnit(name) {
-      if (String(name).includes('牛乳')) return 'ml';
-      return 'g';
-    }
-
-    function tryBuildOrderFromOcr() {
-      if (makeOrder()) {
-        if (autoExcelCheckbox.checked) {
-          ocrStatus.textContent = '集計が完了しました。発注書Excelを作成しています。';
-          downloadExcel('ocr');
-          notice.textContent = '写真OCRから発注書Excelまで自動作成しました。読み取り間違いがないか確認してください。';
-          ocrStatus.textContent = '完了：写真OCR→献立解析→数量集計→発注書Excel作成まで終了しました。';
-        } else {
-          notice.textContent = '読み取り結果から発注書を作成しました。読み取り間違いがないか確認してください。';
-          ocrStatus.textContent = '完了：写真OCR→献立解析→数量集計まで終了しました。';
-        }
-      } else {
-        notice.textContent = '読み取り結果を入力欄に入れました。列ずれを直してから発注書を作ってください。';
-      }
-    }
-
-    async function copyTsv() {
-      if (!tsvOutput.value.trim()) {
-        notice.textContent = 'コピーするタブ区切りデータがありません。先に発注書を作ってください。';
-        return;
-      }
-
-      try {
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText(tsvOutput.value);
-        } else {
-          tsvOutput.focus();
-          tsvOutput.select();
-          document.execCommand('copy');
-        }
-        notice.textContent = 'タブ区切りデータをコピーしました。表計算ソフトにそのまま貼り付けできます。';
-      } catch (error) {
-        notice.textContent = '自動コピーできませんでした。タブ区切りデータ欄を選択して手動でコピーしてください。';
-      }
-    }
-
-    function makeOrder() {
-      notice.textContent = '';
-      const text = csvInput.value.trim();
-      if (!text) {
-        notice.textContent = '献立表データを貼り付けてください。';
-        return false;
-      }
-
-      try {
-        const rows = parseCsv(text);
-        const result = buildOrder(rows);
-        renderTable(result.items);
-        tsvOutput.value = toTsv(result.items);
-        lastOrderItems = result.items;
-        excelButton.disabled = result.items.length === 0;
-        updateSummary(result.items.length, result.excluded, result.sourceRows);
-        notice.textContent = '発注書を作成しました。';
-        return true;
-      } catch (error) {
-        renderTable([]);
-        tsvOutput.value = '';
-        lastOrderItems = [];
-        excelButton.disabled = true;
-        updateSummary(0, 0, 0);
-        notice.textContent = error.message;
-        return false;
-      }
-    }
-
-    function parseCsv(text) {
-      const rows = [];
-      let current = [];
-      let field = '';
-      let inQuotes = false;
-
-      for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-        const next = text[i + 1];
-
-        if (char === '"') {
-          if (inQuotes && next === '"') {
-            field += '"';
-            i++;
-          } else {
-            inQuotes = !inQuotes;
-          }
-        } else if (char === ',' && !inQuotes) {
-          current.push(field.trim());
-          field = '';
-        } else if ((char === '\n' || char === '\r') && !inQuotes) {
-          if (char === '\r' && next === '\n') i++;
-          current.push(field.trim());
-          if (current.some(value => value !== '')) rows.push(current);
-          current = [];
-          field = '';
-        } else {
-          field += char;
-        }
-      }
-
-      current.push(field.trim());
-      if (current.some(value => value !== '')) rows.push(current);
-      if (rows.length < 2) throw new Error('見出し行と食材行がある献立表データを貼り付けてください。');
-      return rows;
-    }
-
-    function buildOrder(rows) {
-      const headers = rows[0].map(normalizeHeader);
-      const nameIndex = findIndex(headers, ['食品名', '食材名', '材料名', '品名', '食品', '食材', '材料']);
-      const amountIndex = findIndex(headers, ['3歳未満児量', '未満児量', '3歳未満', '三歳未満児量', '未満児']);
-      const unitIndex = findIndex(headers, ['単位', '使用単位', '単位名']);
-
-      if (nameIndex === -1) throw new Error('「食品名」「食材名」「材料名」のいずれかの列が見つかりません。');
-      if (amountIndex === -1) throw new Error('「3歳未満児量」の列が見つかりません。');
-
-      const totals = new Map();
-      const fixed = new Map();
-      let excluded = 0;
-      let sourceRows = 0;
-
-      for (const row of rows.slice(1)) {
-        const rawName = (row[nameIndex] || '').trim();
-        if (!rawName) continue;
-        sourceRows++;
-
-        const ingredientName = normalizeIngredientName(rawName);
-        if (!isAllowedIngredientName(ingredientName) || shouldExclude(ingredientName)) {
-          excluded++;
+        if (!compact || excludeWords.slice(0, 15).includes(compact)) {
+          excludedCount++;
           continue;
         }
 
-        const fixedItem = getFixedItem(ingredientName);
-        if (fixedItem) {
-          fixed.set(fixedItem.name, fixedItem);
+        const foundNames = findNames(line);
+
+        if (foundNames.length === 0) {
           continue;
         }
 
-        const amount = parseNumber(row[amountIndex]);
-        if (amount <= 0) {
-          excluded++;
-          continue;
+        const amount = findAmount(line);
+
+        for (const rawName of foundNames) {
+          const name = normalizeName(rawName);
+
+          if (shouldExclude(name)) {
+            excludedCount++;
+            continue;
+          }
+
+          foundCount++;
+
+          const key = name + "__" + amount.unit;
+          const current = totals.get(key) || {
+            name,
+            quantity: 0,
+            unit: amount.unit,
+            count: 0
+          };
+
+          current.quantity += amount.quantity;
+          current.count += 1;
+          totals.set(key, current);
         }
-        const unit = unitIndex === -1 ? guessUnit(ingredientName) : normalizeUnit(row[unitIndex] || guessUnit(ingredientName));
-        const key = `${ingredientName}__${unit}`;
-        const current = totals.get(key) || { name: ingredientName, amount: 0, unit };
-        current.amount += amount;
-        totals.set(key, current);
       }
 
-      for (const item of FIXED_ITEMS) {
-        if (fixed.has(item.name)) fixed.set(item.name, item);
-      }
-
-      const normalItems = Array.from(totals.values())
+      const outputRows = Array.from(totals.values())
         .map(item => ({
           name: item.name,
-          quantity: formatQuantity(item.amount),
-          unit: item.unit
+          quantity: round(item.quantity),
+          unit: item.unit,
+          note: item.count > 1 ? item.count + "件を合算" : ""
         }))
-        .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+        .sort((a, b) => a.name.localeCompare(b.name, "ja"));
 
-      const fixedItems = Array.from(fixed.values()).sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-      return { items: [...normalItems, ...fixedItems], excluded, sourceRows };
+      return {
+        rows: outputRows,
+        stats: {
+          merged: Math.max(0, foundCount - outputRows.length),
+          excluded: excludedCount
+        }
+      };
     }
 
-    function normalizeHeader(value) {
-      return String(value || '').replace(/[\s　]/g, '').replace(/[()（）]/g, '').toLowerCase();
+    function findNames(line) {
+      const compact = line.replace(/[\s,，、|｜\t]/g, "");
+      const found = [];
+
+      for (const word of ingredients) {
+        if (compact.includes(word)) {
+          const normalized = normalizeName(word);
+          const exists = found.some(name => normalizeName(name) === normalized);
+
+          if (!exists) {
+            found.push(word);
+          }
+        }
+      }
+
+      return found.filter(name => {
+        const normalized = normalizeName(name);
+
+        return !found.some(other => {
+          const otherNormalized = normalizeName(other);
+          return otherNormalized !== normalized && otherNormalized.includes(normalized);
+        });
+      });
     }
 
-    function findIndex(headers, candidates) {
-      const normalized = candidates.map(normalizeHeader);
-      return headers.findIndex(header => normalized.some(candidate => header.includes(candidate)));
+    function findAmount(line) {
+      const normalizedLine = line
+        .replace(/[０-９．]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/ｇ/g, "g")
+        .replace(/ｍｌ/g, "ml");
+
+      const match = normalizedLine.match(/(\d+(?:\.\d+)?)\s*(kg|g|ml|l|個|本|枚|袋|束|缶|パック|玉|房)?/i);
+
+      let quantity = match ? Number(match[1]) : 1;
+      let unit = match && match[2] ? match[2].toLowerCase() : "個";
+
+      if (unit === "kg") {
+        quantity *= 1000;
+        unit = "g";
+      }
+
+      if (unit === "l") {
+        quantity *= 1000;
+        unit = "ml";
+      }
+
+      return {
+        quantity,
+        unit
+      };
+    }
+
+    function normalizeName(name) {
+      const trimmed = String(name || "").trim();
+      return aliases[trimmed] || trimmed;
     }
 
     function shouldExclude(name) {
-      const normalized = name.replace(/[\s　]/g, '');
-      const exactOnlyWords = ['米', '水', '油', '塩', '酢', '酒'];
-      return EXCLUDE_WORDS.some(word => {
-        if (exactOnlyWords.includes(word)) return normalized === word;
-        return normalized === word || normalized.includes(word);
+      return excludeWords.slice(15).some(word => name === word || name.includes(word));
+    }
+
+    function round(value) {
+      return Math.round(value * 100) / 100;
+    }
+
+    function renderTable() {
+      if (rows.length === 0) {
+        tableArea.className = "empty";
+        tableArea.textContent = "まだ食材がありません。";
+        excelBtn.disabled = true;
+        return;
+      }
+
+      tableArea.className = "table-wrap";
+      tableArea.innerHTML =
+        "<table>" +
+          "<thead>" +
+            "<tr>" +
+              "<th>食材名</th>" +
+              "<th>数量</th>" +
+              "<th>単位</th>" +
+              "<th>備考</th>" +
+              "<th>操作</th>" +
+            "</tr>" +
+          "</thead>" +
+          "<tbody>" +
+            rows.map((row, index) => rowHtml(row, index)).join("") +
+          "</tbody>" +
+        "</table>";
+
+      tableArea.querySelectorAll("input").forEach(input => {
+        input.addEventListener("input", syncRows);
       });
+
+      tableArea.querySelectorAll("[data-delete]").forEach(button => {
+        button.addEventListener("click", () => deleteRow(Number(button.dataset.delete)));
+      });
+
+      excelBtn.disabled = false;
     }
 
-    function getFixedItem(name) {
-      const matcher = FIXED_MATCHERS.find(rule => rule.test(name));
-      if (!matcher) return null;
-      if (matcher.item) return matcher.item;
-      return FIXED_ITEMS.find(item => item.name === matcher.fixedName) || null;
+    function rowHtml(row, index) {
+      return (
+        "<tr>" +
+          '<td data-label="食材名"><input data-index="' + index + '" data-field="name" value="' + escapeHtml(row.name) + '"></td>' +
+          '<td data-label="数量"><input type="number" step="0.01" data-index="' + index + '" data-field="quantity" value="' + escapeHtml(row.quantity) + '"></td>' +
+          '<td data-label="単位"><input data-index="' + index + '" data-field="unit" value="' + escapeHtml(row.unit) + '"></td>' +
+          '<td data-label="備考"><input data-index="' + index + '" data-field="note" value="' + escapeHtml(row.note || "") + '"></td>' +
+          '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
+        "</tr>"
+      );
     }
 
-    function parseNumber(value) {
-      const number = Number(String(value || '').replace(/[^0-9.-]/g, ''));
-      return Number.isFinite(number) ? number : 0;
+    function syncRows() {
+      const next = rows.map(row => ({ ...row }));
+
+      tableArea.querySelectorAll("input[data-index]").forEach(input => {
+        const index = Number(input.dataset.index);
+        const field = input.dataset.field;
+
+        if (!next[index]) return;
+
+        next[index][field] = field === "quantity"
+          ? Number(input.value || 0)
+          : input.value;
+      });
+
+      rows = next;
+      updateSummary();
     }
 
-    function formatQuantity(amount) {
-      const rounded = Math.round(amount * 100) / 100;
-      return String(rounded);
+    function addRow() {
+      syncRowsIfNeeded();
+
+      rows.push({
+        name: "",
+        quantity: 1,
+        unit: "個",
+        note: "手入力"
+      });
+
+      renderTable();
+      updateSummary();
+      notice.textContent = "食材行を追加しました。";
     }
 
-    function renderTable(items) {
-      if (!items.length) {
-        tableWrap.className = 'empty';
-        tableWrap.textContent = '献立表データを入れて「発注書を作る」を押してください。';
+    function deleteRow(index) {
+      syncRowsIfNeeded();
+      rows.splice(index, 1);
+
+      renderTable();
+      updateSummary();
+      notice.textContent = "食材行を削除しました。";
+    }
+
+    function syncRowsIfNeeded() {
+      if (tableArea.querySelector("table")) {
+        syncRows();
+      }
+    }
+
+    function updateSummary() {
+      const validRows = rows.filter(row => String(row.name || "").trim());
+
+      itemCount.textContent = validRows.length;
+      mergedCount.textContent = stats.merged;
+      excludedCount.textContent = stats.excluded;
+
+      excelBtn.disabled = validRows.length === 0;
+    }
+
+    function downloadExcel() {
+      syncRowsIfNeeded();
+
+      const excelRows = rows
+        .filter(row => String(row.name || "").trim())
+        .map(row => ({
+          食材名: String(row.name || "").trim(),
+          数量: Number(row.quantity || 0),
+          単位: row.unit || "",
+          備考: row.note || ""
+        }));
+
+      if (excelRows.length === 0) {
+        notice.textContent = "Excelにする食材がありません。";
         return;
       }
 
-      tableWrap.className = 'table-scroller';
-      const rows = items.map((item, index) => `
-        <tr>
-          <td data-label="食品名">${escapeHtml(item.name)}</td>
-          <td data-label="数量">${escapeHtml(item.quantity)}</td>
-          <td data-label="単位">${escapeHtml(item.unit)}</td>
-        </tr>
-      `).join('');
-
-      tableWrap.innerHTML = `
-        <table>
-          <thead>
-            <tr><th>食品名</th><th>数量</th><th>単位</th></tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      `;
-    }
-
-    function toTsv(items) {
-      return getOrderRows(items).map(row => row.join('\t')).join('\n');
-    }
-
-    function getOrderRows(items) {
-      const header = ['食品名', '数量', '単位'];
-      const lines = items.map(item => [item.name, item.quantity, item.unit]);
-      return [header, ...lines];
-    }
-
-    function downloadExcel(source = 'manual') {
-      if (!lastOrderItems.length) {
-        notice.textContent = '表計算ファイルにする発注書がありません。先に発注書を作ってください。';
+      if (!window.XLSX) {
+        notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してください。";
         return;
       }
 
-      const rows = getOrderRows(lastOrderItems);
-      const xlsxBlob = createXlsxBlob(rows, '発注書');
-      const url = URL.createObjectURL(xlsxBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `hoikuen-hacchusho-${formatDateForFileName(new Date())}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      if (source === 'manual') {
-        notice.textContent = '表計算ファイルを作成しました。ダウンロードを確認してください。';
-      }
+      const worksheet = XLSX.utils.json_to_sheet(excelRows, {
+        header: ["食材名", "数量", "単位", "備考"]
+      });
+
+      worksheet["!cols"] = [
+        { wch: 24 },
+        { wch: 10 },
+        { wch: 10 },
+        { wch: 24 }
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
+
+      XLSX.writeFile(workbook, "発注書_" + formatDate(new Date()) + ".xlsx");
+
+      notice.textContent = "Excelをダウンロードしました。";
     }
 
-    function createXlsxBlob(rows, sheetName) {
-      const files = {
-        '[Content_Types].xml': buildContentTypesXml(),
-        '_rels/.rels': buildRootRelationshipsXml(),
-        'xl/workbook.xml': buildWorkbookXml(sheetName),
-        'xl/_rels/workbook.xml.rels': buildWorkbookRelationshipsXml(),
-        'xl/styles.xml': buildStylesXml(),
-        'xl/worksheets/sheet1.xml': buildWorksheetXml(rows)
+    function clearAll() {
+      lastImage = null;
+      rows = [];
+      stats = {
+        merged: 0,
+        excluded: 0
       };
 
-      return new Blob([zipFiles(files)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      ocrText.value = "";
+      ocrStatus.textContent = "";
+      notice.textContent = "入力を消しました。";
+      preview.removeAttribute("src");
+      preview.style.display = "none";
+      cameraInput.value = "";
+      imageInput.value = "";
+      retryBtn.disabled = true;
+
+      renderTable();
+      updateSummary();
     }
 
-    function buildContentTypesXml() {
-      return '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-        + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-        + '<Default Extension="xml" ContentType="application/xml"/>'
-        + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-        + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
-        + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
-        + '</Types>';
-    }
-
-    function buildRootRelationshipsXml() {
-      return '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
-        + '</Relationships>';
-    }
-
-    function buildWorkbookXml(sheetName) {
-      return '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        + `<sheets><sheet name="${escapeXmlAttribute(sheetName)}" sheetId="1" r:id="rId1"/></sheets>`
-        + '</workbook>';
-    }
-
-    function buildWorkbookRelationshipsXml() {
-      return '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
-        + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
-        + '</Relationships>';
-    }
-
-    function buildStylesXml() {
-      return '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        + '<fonts count="2"><font><sz val="11"/><name val="Yu Gothic"/></font><font><b/><sz val="11"/><name val="Yu Gothic"/></font></fonts>'
-        + '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>'
-        + '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
-        + '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-        + '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
-        + '</styleSheet>';
-    }
-
-    function buildWorksheetXml(rows) {
-      const worksheetRows = rows.map((row, rowIndex) => {
-        const cells = row.map((value, columnIndex) => {
-          const cellRef = `${columnName(columnIndex + 1)}${rowIndex + 1}`;
-          const style = rowIndex === 0 ? ' s="1"' : '';
-          return `<c r="${cellRef}" t="inlineStr"${style}><is><t>${escapeXmlText(value)}</t></is></c>`;
-        }).join('');
-        return `<row r="${rowIndex + 1}">${cells}</row>`;
-      }).join('');
-
-      return '<?xml version="1.0" encoding="UTF-8"?>'
-        + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        + '<cols><col min="1" max="1" width="24" customWidth="1"/><col min="2" max="2" width="18" customWidth="1"/><col min="3" max="3" width="12" customWidth="1"/></cols>'
-        + `<sheetData>${worksheetRows}</sheetData>`
-        + '</worksheet>';
-    }
-
-    function zipFiles(files) {
-      const encoder = new TextEncoder();
-      const localParts = [];
-      const centralParts = [];
-      let offset = 0;
-
-      Object.entries(files).forEach(([path, content]) => {
-        const nameBytes = encoder.encode(path);
-        const dataBytes = encoder.encode(content);
-        const crc = crc32(dataBytes);
-        const localHeader = concatBytes(
-          uint32(0x04034b50), uint16(20), uint16(0), uint16(0), uint16(0), uint16(0),
-          uint32(crc), uint32(dataBytes.length), uint32(dataBytes.length), uint16(nameBytes.length), uint16(0), nameBytes
-        );
-        localParts.push(localHeader, dataBytes);
-
-        const centralHeader = concatBytes(
-          uint32(0x02014b50), uint16(20), uint16(20), uint16(0), uint16(0), uint16(0), uint16(0),
-          uint32(crc), uint32(dataBytes.length), uint32(dataBytes.length), uint16(nameBytes.length), uint16(0), uint16(0),
-          uint16(0), uint16(0), uint32(0), uint32(offset), nameBytes
-        );
-        centralParts.push(centralHeader);
-        offset += localHeader.length + dataBytes.length;
-      });
-
-      const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
-      const endRecord = concatBytes(
-        uint32(0x06054b50), uint16(0), uint16(0), uint16(Object.keys(files).length), uint16(Object.keys(files).length),
-        uint32(centralSize), uint32(offset), uint16(0)
-      );
-
-      return concatBytes(...localParts, ...centralParts, endRecord);
-    }
-
-    function crc32(bytes) {
-      let crc = 0xffffffff;
-      for (const byte of bytes) {
-        crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ byte) & 0xff];
-      }
-      return (crc ^ 0xffffffff) >>> 0;
-    }
-
-    const CRC_TABLE = Array.from({ length: 256 }, (_, index) => {
-      let crc = index;
-      for (let bit = 0; bit < 8; bit++) {
-        crc = (crc & 1) ? (0xedb88320 ^ (crc >>> 1)) : (crc >>> 1);
-      }
-      return crc >>> 0;
-    });
-
-    function uint16(value) {
-      return new Uint8Array([value & 0xff, (value >>> 8) & 0xff]);
-    }
-
-    function uint32(value) {
-      return new Uint8Array([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]);
-    }
-
-    function concatBytes(...arrays) {
-      const length = arrays.reduce((sum, array) => sum + array.length, 0);
-      const output = new Uint8Array(length);
-      let offset = 0;
-      arrays.forEach(array => {
-        output.set(array, offset);
-        offset += array.length;
-      });
-      return output;
-    }
-
-    function columnName(number) {
-      let name = '';
-      while (number > 0) {
-        const remainder = (number - 1) % 26;
-        name = String.fromCharCode(65 + remainder) + name;
-        number = Math.floor((number - 1) / 26);
-      }
-      return name;
-    }
-
-    function formatDateForFileName(date) {
+    function formatDate(date) {
       const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      return `${year}${month}${day}`;
-    }
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
 
-    function escapeXmlText(value) {
-      return String(value).replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[char]));
-    }
-
-    function escapeXmlAttribute(value) {
-      return escapeXmlText(value).replace(/["']/g, char => ({ '"': '&quot;', "'": '&apos;' }[char]));
-    }
-
-    function updateSummary(items, excluded, sources) {
-      itemCount.textContent = items;
-      excludedCount.textContent = excluded;
-      sourceCount.textContent = sources;
+      return year + month + day;
     }
 
     function escapeHtml(value) {
       return String(value).replace(/[&<>'"]/g, char => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "'": "&#39;",
+        '"': "&quot;"
       }[char]));
     }
   </script>
