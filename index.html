@@ -278,6 +278,21 @@
       line-height: 1.7;
     }
 
+    .inline-option {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0 0;
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .inline-option input {
+      width: auto;
+      accent-color: var(--primary);
+    }
+
     .code-example {
       margin-top: 10px;
       color: var(--muted);
@@ -407,7 +422,7 @@
 <body>
   <header>
     <h1>保育園の発注書作成ツール</h1>
-    <p class="lead">献立表のデータを貼り付けるだけで、3歳未満児の分量をもとに発注書と表計算用ファイルを作成できます。</p>
+    <p class="lead">献立表の写真を取り込むだけで、写真OCR、献立解析、食品名と数量の集計、発注書Excelの作成までまとめて行えます。</p>
   </header>
 
   <main>
@@ -417,12 +432,13 @@
         <label for="csvInput">献立表データ</label>
         <div class="ocr-panel">
           <strong>スマホのカメラ・画像から読み取り</strong>
-          <p class="small">「カメラで撮る」は背面カメラを起動し、「画像を選ぶ」はアルバムから画像を開きます。どちらを使っても同じOCR処理で文字を読み取り、入力欄へ入れます。初回の読み取りにはインターネット接続が必要です。読み取り後は内容を確認し、必要に応じて手直ししてください。</p>
+          <p class="small">「カメラで撮る」は背面カメラを起動し、「画像を選ぶ」はアルバムから画像を開きます。写真OCR→献立内容の解析→食品名と数量の集計→発注書xlsx出力まで自動で進みます。初回の読み取りにはインターネット接続が必要です。読み取り後は内容を確認し、必要に応じて手直ししてください。</p>
           <div class="actions">
             <button class="camera" id="openCameraButton" type="button">📷 カメラで撮る</button>
             <button class="secondary" id="openAlbumButton" type="button">🖼️ 画像を選ぶ</button>
             <button class="secondary" id="retryOcrButton" type="button" disabled>もう一度読み取る</button>
           </div>
+          <label class="inline-option"><input id="autoExcelCheckbox" type="checkbox" checked> OCR後に発注書Excelを自動ダウンロードする</label>
           <input class="hidden" id="cameraInput" type="file" accept="image/*" capture="environment" aria-label="カメラで撮る">
           <input class="hidden" id="albumInput" type="file" accept="image/*" aria-label="画像を選ぶ">
           <details class="code-example">
@@ -469,7 +485,7 @@
       <p class="notice" id="notice"></p>
       <div id="tableWrap" class="empty">献立表データを入れて「発注書を作る」を押してください。</div>
       <div class="actions">
-        <button class="excel" id="excelButton" type="button" disabled>表計算ファイルを作成</button>
+        <button class="excel" id="excelButton" type="button" disabled>発注書Excel（.xlsx）を作成</button>
       </div>
     </section>
 
@@ -515,6 +531,14 @@
 
     const sampleCsv = `日付,献立名,食品名,3歳未満児量,単位\n5/1,昼食,鶏もも肉,40,g\n5/1,昼食,じゃがいも,35,g\n5/1,昼食,にんじん,15,g\n5/1,昼食,キャベツ,20,g\n5/1,昼食,しめじ,8,g\n5/1,昼食,米,45,g\n5/1,昼食,しょうゆ,3,g\n5/1,おやつ,牛乳,100,ml\n5/1,おやつ,ヨーグルト,80,g\n5/1,おやつ,りんご,20,g`;
 
+    const OCR_INGREDIENT_WORDS = [
+      '鶏もも肉', '鶏むね肉', '豚ひき肉', '豚もも肉', '豚肉', '牛肉', '鮭', 'さば', 'たら', 'ツナ',
+      'じゃがいも', 'さつまいも', '里芋', '玉ねぎ', 'たまねぎ', 'にんじん', '人参', '大根', 'きゅうり',
+      'トマト', 'ミニトマト', 'ほうれん草', '小松菜', 'ブロッコリー', 'ピーマン', 'キャベツ', '白菜',
+      'しめじ', 'えのき', 'しいたけ', 'まいたけ', 'エリンギ', '豆腐', '油揚げ', '厚揚げ', '卵', '牛乳',
+      'ヨーグルト', 'チーズ', 'りんご', 'オレンジ', 'バナナ', 'みかん', '米', 'しょうゆ', 'みそ', '砂糖'
+    ].sort((a, b) => b.length - a.length);
+
     let csvInput;
     let tsvOutput;
     let tableWrap;
@@ -530,6 +554,7 @@
     let ocrStatus;
     let imagePreview;
     let excelButton;
+    let autoExcelCheckbox;
     let lastImageFile = null;
     let lastOrderItems = [];
     let tesseractLoaderPromise = null;
@@ -552,13 +577,14 @@
       ocrStatus = document.querySelector('#ocrStatus');
       imagePreview = document.querySelector('#imagePreview');
       excelButton = document.querySelector('#excelButton');
+      autoExcelCheckbox = document.querySelector('#autoExcelCheckbox');
 
       const makeButton = document.querySelector('#makeButton');
       const sampleButton = document.querySelector('#sampleButton');
       const clearButton = document.querySelector('#clearButton');
       const copyButton = document.querySelector('#copyButton');
 
-      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !openCameraButton || !openAlbumButton || !cameraInput || !albumInput || !retryOcrButton || !ocrStatus || !imagePreview || !excelButton || !makeButton || !sampleButton || !clearButton || !copyButton) {
+      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !openCameraButton || !openAlbumButton || !cameraInput || !albumInput || !retryOcrButton || !ocrStatus || !imagePreview || !excelButton || !autoExcelCheckbox || !makeButton || !sampleButton || !clearButton || !copyButton) {
         console.error('必要な画面部品が見つかりません。画面部品の設定を確認してください。');
         return;
       }
@@ -640,7 +666,7 @@
         }
 
         csvInput.value = csvText;
-        ocrStatus.textContent = '読み取り結果を入力欄へ入れました。内容を確認して「発注書を作る」を押してください。';
+        ocrStatus.textContent = 'OCRが完了しました。献立内容を解析して発注書を作成しています。';
         tryBuildOrderFromOcr();
       } catch (error) {
         ocrStatus.textContent = '文字の読み取りに失敗しました。インターネット接続を確認するか、献立表データを手入力してください。';
@@ -689,13 +715,28 @@
     }
 
     function convertOcrTextToCsv(text) {
+      const normalizedLines = normalizeOcrText(text)
+        .split(/\r?\n/)
+        .map(line => normalizeOcrCsvLine(line))
+        .filter(Boolean);
+      const csvCandidate = normalizedLines.join('\n');
+
+      if (looksLikeMenuCsv(csvCandidate)) return csvCandidate;
+
+      const extractedRows = extractIngredientRowsFromOcr(text);
+      if (extractedRows.length) {
+        return ['食品名,3歳未満児量,単位', ...extractedRows.map(row => row.join(','))].join('\n');
+      }
+
+      return csvCandidate;
+    }
+
+    function normalizeOcrText(text) {
       return String(text || '')
         .replace(/[，、]/g, ',')
         .replace(/[｜|]/g, ',')
-        .split(/\r?\n/)
-        .map(line => normalizeOcrCsvLine(line))
-        .filter(Boolean)
-        .join('\n');
+        .replace(/[：]/g, ':')
+        .replace(/[０-９．]/g, char => char === '．' ? '.' : String.fromCharCode(char.charCodeAt(0) - 0xFEE0));
     }
 
     function normalizeOcrCsvLine(line) {
@@ -711,9 +752,99 @@
       return trimmed.replace(/\s+/g, ',');
     }
 
+    function looksLikeMenuCsv(csvText) {
+      try {
+        const rows = parseCsv(csvText);
+        const headers = rows[0].map(normalizeHeader);
+        return findIndex(headers, ['食品名', '食材名', '材料名', '品名', '食品', '食材', '材料']) !== -1
+          && findIndex(headers, ['3歳未満児量', '未満児量', '3歳未満', '三歳未満児量', '未満児']) !== -1;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    function extractIngredientRowsFromOcr(text) {
+      const lines = normalizeOcrText(text).split(/\r?\n/);
+      const rows = [];
+      const seen = new Set();
+
+      for (const line of lines) {
+        const cleanLine = line.replace(/[\u200b\u00a0]/g, ' ').trim();
+        if (!cleanLine || isLikelyMenuTitleLine(cleanLine)) continue;
+
+        const knownRows = extractKnownIngredientRows(cleanLine);
+        for (const row of knownRows) {
+          const key = row.join('__');
+          if (!seen.has(key)) {
+            rows.push(row);
+            seen.add(key);
+          }
+        }
+        if (knownRows.length) continue;
+
+        const fallback = cleanLine.match(/([一-龠ぁ-んァ-ンーA-Za-z]{2,})\s*([0-9]+(?:\.[0-9]+)?)\s*(g|ｇ|G|ml|mL|ML|ｍｌ|個|本|袋|房)?/);
+        if (fallback) {
+          const row = [cleanupIngredientName(fallback[1]), fallback[2], normalizeUnit(fallback[3] || 'g')];
+          const key = row.join('__');
+          if (row[0] && !seen.has(key)) {
+            rows.push(row);
+            seen.add(key);
+          }
+        }
+      }
+
+      return rows;
+    }
+
+    function extractKnownIngredientRows(line) {
+      const rows = [];
+      const compactLine = line.replace(/[\s,]/g, '');
+      for (const name of OCR_INGREDIENT_WORDS) {
+        const index = compactLine.indexOf(name);
+        if (index === -1) continue;
+        const afterName = compactLine.slice(index + name.length, index + name.length + 12);
+        const amountMatch = afterName.match(/([0-9]+(?:\.[0-9]+)?)(g|G|ml|mL|ML|個|本|袋|房)?/);
+        if (amountMatch) {
+          rows.push([name, amountMatch[1], normalizeUnit(amountMatch[2] || guessUnit(name))]);
+        } else if (getFixedItem(name)) {
+          rows.push([name, '1', guessUnit(name)]);
+        }
+      }
+      return rows;
+    }
+
+    function isLikelyMenuTitleLine(line) {
+      return /献立|予定|日付|曜日|午前|午後|昼食|おやつ|栄養|エネルギー|たんぱく|脂質|塩分/.test(line)
+        && !/[0-9]+\s*(g|ｇ|ml|ｍｌ|個|本|袋|房)/i.test(line);
+    }
+
+    function cleanupIngredientName(name) {
+      return String(name || '').replace(/^(昼食|おやつ|午前|午後|材料|食品|食材|品名)+/, '').trim();
+    }
+
+    function normalizeUnit(unit) {
+      const normalized = String(unit || '').toLowerCase().replace('ｍｌ', 'ml').replace('ｇ', 'g');
+      if (normalized === 'ml') return 'ml';
+      if (normalized === 'g') return 'g';
+      return unit || 'g';
+    }
+
+    function guessUnit(name) {
+      if (String(name).includes('牛乳')) return 'ml';
+      return 'g';
+    }
+
     function tryBuildOrderFromOcr() {
       if (makeOrder()) {
-        notice.textContent = '読み取り結果から発注書を作成しました。読み取り間違いがないか確認してください。';
+        if (autoExcelCheckbox.checked) {
+          ocrStatus.textContent = '集計が完了しました。発注書Excelを作成しています。';
+          downloadExcel('ocr');
+          notice.textContent = '写真OCRから発注書Excelまで自動作成しました。読み取り間違いがないか確認してください。';
+          ocrStatus.textContent = '完了：写真OCR→献立解析→数量集計→発注書Excel作成まで終了しました。';
+        } else {
+          notice.textContent = '読み取り結果から発注書を作成しました。読み取り間違いがないか確認してください。';
+          ocrStatus.textContent = '完了：写真OCR→献立解析→数量集計まで終了しました。';
+        }
       } else {
         notice.textContent = '読み取り結果を入力欄に入れました。列ずれを直してから発注書を作ってください。';
       }
@@ -931,7 +1062,7 @@
       return [header, ...lines];
     }
 
-    function downloadExcel() {
+    function downloadExcel(source = 'manual') {
       if (!lastOrderItems.length) {
         notice.textContent = '表計算ファイルにする発注書がありません。先に発注書を作ってください。';
         return;
@@ -947,7 +1078,9 @@
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      notice.textContent = '表計算ファイルを作成しました。ダウンロードを確認してください。';
+      if (source === 'manual') {
+        notice.textContent = '表計算ファイルを作成しました。ダウンロードを確認してください。';
+      }
     }
 
     function createXlsxBlob(rows, sheetName) {
