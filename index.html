@@ -229,7 +229,7 @@
         <textarea id="csvInput" placeholder="例）&#10;日付,献立名,食品名,3歳未満児量,単位&#10;5/1,昼食,鶏もも肉,40,g&#10;5/1,昼食,米,50,g&#10;5/1,おやつ,牛乳,100,ml"></textarea>
         <p class="small">ヘッダー名は「食品名/食材名/材料名」と「3歳未満児量/未満児量/3歳未満」などを自動判定します。</p>
         <div class="actions">
-          <button class="primary" id="makeButton">発注書を作る</button>
+          <button class="primary" id="makeButton" type="button">発注書を作る</button>
           <button class="secondary" id="sampleButton" type="button">サンプルCSVを入れる</button>
           <button class="secondary" id="clearButton" type="button">クリア</button>
         </div>
@@ -303,31 +303,71 @@
 
     const sampleCsv = `日付,献立名,食品名,3歳未満児量,単位\n5/1,昼食,鶏もも肉,40,g\n5/1,昼食,じゃがいも,35,g\n5/1,昼食,にんじん,15,g\n5/1,昼食,キャベツ,20,g\n5/1,昼食,しめじ,8,g\n5/1,昼食,米,45,g\n5/1,昼食,しょうゆ,3,g\n5/1,おやつ,牛乳,100,ml\n5/1,おやつ,ヨーグルト,80,g\n5/1,おやつ,りんご,20,g`;
 
-    const csvInput = document.querySelector('#csvInput');
-    const tsvOutput = document.querySelector('#tsvOutput');
-    const tableWrap = document.querySelector('#tableWrap');
-    const notice = document.querySelector('#notice');
-    const itemCount = document.querySelector('#itemCount');
-    const excludedCount = document.querySelector('#excludedCount');
-    const sourceCount = document.querySelector('#sourceCount');
+    let csvInput;
+    let tsvOutput;
+    let tableWrap;
+    let notice;
+    let itemCount;
+    let excludedCount;
+    let sourceCount;
 
-    document.querySelector('#makeButton').addEventListener('click', makeOrder);
-    document.querySelector('#sampleButton').addEventListener('click', () => {
-      csvInput.value = sampleCsv;
-      makeOrder();
-    });
-    document.querySelector('#clearButton').addEventListener('click', () => {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+
+    function initializeApp() {
+      csvInput = document.querySelector('#csvInput');
+      tsvOutput = document.querySelector('#tsvOutput');
+      tableWrap = document.querySelector('#tableWrap');
+      notice = document.querySelector('#notice');
+      itemCount = document.querySelector('#itemCount');
+      excludedCount = document.querySelector('#excludedCount');
+      sourceCount = document.querySelector('#sourceCount');
+
+      const makeButton = document.querySelector('#makeButton');
+      const sampleButton = document.querySelector('#sampleButton');
+      const clearButton = document.querySelector('#clearButton');
+      const copyButton = document.querySelector('#copyButton');
+
+      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !makeButton || !sampleButton || !clearButton || !copyButton) {
+        console.error('必要な画面部品が見つかりません。index.htmlのid属性を確認してください。');
+        return;
+      }
+
+      makeButton.addEventListener('click', makeOrder);
+      sampleButton.addEventListener('click', () => {
+        csvInput.value = sampleCsv;
+        makeOrder();
+      });
+      clearButton.addEventListener('click', clearOrder);
+      copyButton.addEventListener('click', copyTsv);
+    }
+
+    function clearOrder() {
       csvInput.value = '';
       tsvOutput.value = '';
       renderTable([]);
       updateSummary(0, 0, 0);
       notice.textContent = '';
-    });
-    document.querySelector('#copyButton').addEventListener('click', async () => {
-      if (!tsvOutput.value.trim()) return;
-      await navigator.clipboard.writeText(tsvOutput.value);
-      notice.textContent = 'TSVをコピーしました。Excelにそのまま貼り付けできます。';
-    });
+    }
+
+    async function copyTsv() {
+      if (!tsvOutput.value.trim()) {
+        notice.textContent = 'コピーするTSVがありません。先に発注書を作ってください。';
+        return;
+      }
+
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(tsvOutput.value);
+        } else {
+          tsvOutput.focus();
+          tsvOutput.select();
+          document.execCommand('copy');
+        }
+        notice.textContent = 'TSVをコピーしました。Excelにそのまま貼り付けできます。';
+      } catch (error) {
+        notice.textContent = '自動コピーできませんでした。TSV欄を選択して手動でコピーしてください。';
+      }
+    }
 
     function makeOrder() {
       notice.textContent = '';
