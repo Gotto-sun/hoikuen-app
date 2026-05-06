@@ -15,6 +15,7 @@
       --primary-dark: #c2410c;
       --line: #f0d8be;
       --ok: #15803d;
+      --info: #2563eb;
     }
 
     * { box-sizing: border-box; }
@@ -108,7 +109,7 @@
       margin-top: 14px;
     }
 
-    button {
+    button, .file-button {
       border: 0;
       border-radius: 999px;
       padding: 12px 18px;
@@ -116,10 +117,20 @@
       font-weight: 800;
       cursor: pointer;
       transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      text-decoration: none;
     }
 
-    button:hover { transform: translateY(-1px); }
-    button:active { transform: translateY(0); }
+    button:hover, .file-button:hover { transform: translateY(-1px); }
+    button:active, .file-button:active { transform: translateY(0); }
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .6;
+      transform: none;
+    }
 
     .primary {
       color: white;
@@ -133,6 +144,14 @@
       color: var(--primary-dark);
       background: #ffedd5;
     }
+
+    .camera {
+      color: white;
+      background: var(--info);
+      box-shadow: 0 10px 24px rgba(37, 99, 235, .22);
+    }
+
+    .camera:hover { background: #1d4ed8; }
 
     .rules {
       margin: 0;
@@ -206,6 +225,32 @@
       min-height: 1.5em;
     }
 
+    .ocr-panel {
+      margin: 14px 0 0;
+      padding: 14px;
+      border: 1px dashed #f59e0b;
+      border-radius: 16px;
+      background: #fff7ed;
+    }
+
+    .ocr-status {
+      color: var(--muted);
+      font-weight: 700;
+      min-height: 1.5em;
+      margin: 8px 0 0;
+    }
+
+    .preview-image {
+      display: none;
+      max-width: 100%;
+      max-height: 220px;
+      margin-top: 10px;
+      border: 1px solid #fed7aa;
+      border-radius: 14px;
+      object-fit: contain;
+      background: white;
+    }
+
     .small {
       color: var(--muted);
       font-size: 13px;
@@ -226,6 +271,19 @@
       <section>
         <h2>1. 献立CSVを貼る</h2>
         <label for="csvInput">CSVデータ</label>
+        <div class="ocr-panel">
+          <strong>スマホのカメラ・画像から読み取り</strong>
+          <p class="small">カメラでCSV表を撮影するか、保存済み画像を選ぶとOCRで文字を読み取り、CSV欄へ入れます。OCR初回はインターネット接続が必要です。読み取り後は必要に応じて手直ししてください。</p>
+          <div class="actions">
+            <label class="file-button camera" for="cameraInput">📷 カメラ起動</label>
+            <label class="file-button secondary" for="imageInput">画像をアップロード</label>
+            <button class="secondary" id="retryOcrButton" type="button" disabled>OCR再実行</button>
+          </div>
+          <input class="hidden" id="cameraInput" type="file" accept="image/*" capture="environment">
+          <input class="hidden" id="imageInput" type="file" accept="image/*">
+          <p class="ocr-status" id="ocrStatus" aria-live="polite"></p>
+          <img class="preview-image" id="imagePreview" alt="選択したCSV画像のプレビュー">
+        </div>
         <textarea id="csvInput" placeholder="例）&#10;日付,献立名,食品名,3歳未満児量,単位&#10;5/1,昼食,鶏もも肉,40,g&#10;5/1,昼食,米,50,g&#10;5/1,おやつ,牛乳,100,ml"></textarea>
         <p class="small">ヘッダー名は「食品名/食材名/材料名」と「3歳未満児量/未満児量/3歳未満」などを自動判定します。</p>
         <div class="actions">
@@ -310,6 +368,13 @@
     let itemCount;
     let excludedCount;
     let sourceCount;
+    let cameraInput;
+    let imageInput;
+    let retryOcrButton;
+    let ocrStatus;
+    let imagePreview;
+    let lastImageFile = null;
+    let tesseractLoaderPromise = null;
 
     document.addEventListener('DOMContentLoaded', initializeApp);
 
@@ -321,13 +386,18 @@
       itemCount = document.querySelector('#itemCount');
       excludedCount = document.querySelector('#excludedCount');
       sourceCount = document.querySelector('#sourceCount');
+      cameraInput = document.querySelector('#cameraInput');
+      imageInput = document.querySelector('#imageInput');
+      retryOcrButton = document.querySelector('#retryOcrButton');
+      ocrStatus = document.querySelector('#ocrStatus');
+      imagePreview = document.querySelector('#imagePreview');
 
       const makeButton = document.querySelector('#makeButton');
       const sampleButton = document.querySelector('#sampleButton');
       const clearButton = document.querySelector('#clearButton');
       const copyButton = document.querySelector('#copyButton');
 
-      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !makeButton || !sampleButton || !clearButton || !copyButton) {
+      if (!csvInput || !tsvOutput || !tableWrap || !notice || !itemCount || !excludedCount || !sourceCount || !cameraInput || !imageInput || !retryOcrButton || !ocrStatus || !imagePreview || !makeButton || !sampleButton || !clearButton || !copyButton) {
         console.error('必要な画面部品が見つかりません。index.htmlのid属性を確認してください。');
         return;
       }
@@ -339,6 +409,11 @@
       });
       clearButton.addEventListener('click', clearOrder);
       copyButton.addEventListener('click', copyTsv);
+      cameraInput.addEventListener('change', event => handleImageSelection(event.target.files));
+      imageInput.addEventListener('change', event => handleImageSelection(event.target.files));
+      retryOcrButton.addEventListener('click', () => {
+        if (lastImageFile) readImageAsCsv(lastImageFile);
+      });
     }
 
     function clearOrder() {
@@ -347,6 +422,122 @@
       renderTable([]);
       updateSummary(0, 0, 0);
       notice.textContent = '';
+      ocrStatus.textContent = '';
+      lastImageFile = null;
+      retryOcrButton.disabled = true;
+      cameraInput.value = '';
+      imageInput.value = '';
+      imagePreview.removeAttribute('src');
+      imagePreview.style.display = 'none';
+    }
+
+    function handleImageSelection(files) {
+      const file = files && files[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        ocrStatus.textContent = '画像ファイルを選んでください。';
+        return;
+      }
+
+      lastImageFile = file;
+      retryOcrButton.disabled = false;
+      showImagePreview(file);
+      readImageAsCsv(file);
+    }
+
+    function showImagePreview(file) {
+      if (imagePreview.src) URL.revokeObjectURL(imagePreview.src);
+      imagePreview.src = URL.createObjectURL(file);
+      imagePreview.style.display = 'block';
+    }
+
+    async function readImageAsCsv(file) {
+      setOcrBusy(true, 'OCRエンジンを読み込んでいます。初回は少し時間がかかります。');
+      notice.textContent = '';
+
+      try {
+        await loadTesseract();
+        setOcrBusy(true, '画像から文字を読み取っています。');
+        const result = await Tesseract.recognize(file, 'jpn+eng', {
+          logger: progress => updateOcrProgress(progress)
+        });
+        const text = result && result.data ? result.data.text : '';
+        const csvText = convertOcrTextToCsv(text);
+
+        if (!csvText.trim()) {
+          ocrStatus.textContent = '文字を読み取れませんでした。明るい場所でCSV全体を大きく撮影して、もう一度お試しください。';
+          return;
+        }
+
+        csvInput.value = csvText;
+        ocrStatus.textContent = 'OCR結果をCSV欄へ入れました。内容を確認して「発注書を作る」を押してください。';
+        tryBuildOrderFromOcr();
+      } catch (error) {
+        ocrStatus.textContent = 'OCRに失敗しました。インターネット接続を確認するか、CSVを手入力してください。';
+        console.error(error);
+      } finally {
+        setOcrBusy(false);
+      }
+    }
+
+    function loadTesseract() {
+      if (window.Tesseract) return Promise.resolve();
+      if (tesseractLoaderPromise) return tesseractLoaderPromise;
+
+      tesseractLoaderPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+        script.async = true;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error('Tesseract.jsを読み込めませんでした。'));
+        document.head.appendChild(script);
+      });
+      return tesseractLoaderPromise;
+    }
+
+    function updateOcrProgress(progress) {
+      if (!progress || !progress.status) return;
+      const percent = Math.round((progress.progress || 0) * 100);
+      const status = progress.status === 'recognizing text' ? '文字を読み取り中' : progress.status;
+      ocrStatus.textContent = percent > 0 ? `${status} ${percent}%` : status;
+    }
+
+    function setOcrBusy(isBusy, message = '') {
+      cameraInput.disabled = isBusy;
+      imageInput.disabled = isBusy;
+      retryOcrButton.disabled = isBusy || !lastImageFile;
+      if (message) ocrStatus.textContent = message;
+    }
+
+    function convertOcrTextToCsv(text) {
+      return String(text || '')
+        .replace(/[，、]/g, ',')
+        .replace(/[｜|]/g, ',')
+        .split(/\r?\n/)
+        .map(line => normalizeOcrCsvLine(line))
+        .filter(Boolean)
+        .join('\n');
+    }
+
+    function normalizeOcrCsvLine(line) {
+      const trimmed = line.replace(/[\u200b\u00a0]/g, ' ').trim();
+      if (!trimmed) return '';
+      if (trimmed.includes(',')) {
+        return trimmed.replace(/\s*,\s*/g, ',');
+      }
+
+      const parts = trimmed.split(/[\t ]{2,}/).map(part => part.trim()).filter(Boolean);
+      if (parts.length >= 3) return parts.join(',');
+
+      return trimmed.replace(/\s+/g, ',');
+    }
+
+    function tryBuildOrderFromOcr() {
+      if (makeOrder()) {
+        notice.textContent = 'OCR結果から発注書を作成しました。読み取り間違いがないか確認してください。';
+      } else {
+        notice.textContent = 'OCR結果をCSV欄に入れました。列ずれを直してから発注書を作ってください。';
+      }
     }
 
     async function copyTsv() {
@@ -374,7 +565,7 @@
       const text = csvInput.value.trim();
       if (!text) {
         notice.textContent = 'CSVを貼り付けてください。';
-        return;
+        return false;
       }
 
       try {
@@ -384,11 +575,13 @@
         tsvOutput.value = toTsv(result.items);
         updateSummary(result.items.length, result.excluded, result.sourceRows);
         notice.textContent = '発注書を作成しました。';
+        return true;
       } catch (error) {
         renderTable([]);
         tsvOutput.value = '';
         updateSummary(0, 0, 0);
         notice.textContent = error.message;
+        return false;
       }
     }
 
