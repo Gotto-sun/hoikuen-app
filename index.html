@@ -150,6 +150,21 @@
       background: #fff;
     }
 
+    .file-status {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 10px 0;
+      font-size: 13px;
+    }
+
+    .file-status div {
+      border: 1px solid #fed7aa;
+      border-radius: 12px;
+      background: #fffdf8;
+      padding: 8px;
+    }
+
     .status {
       min-height: 1.8em;
       margin: 10px 0 0;
@@ -226,7 +241,8 @@
       }
 
       .buttons,
-      .summary {
+      .summary,
+      .file-status {
         grid-template-columns: 1fr;
       }
 
@@ -265,36 +281,84 @@
         margin-bottom: 3px;
       }
     }
+
+
+    @media print {
+      body {
+        background: #fff;
+        color: #000;
+      }
+
+      header,
+      main section:first-child,
+      .buttons,
+      .summary,
+      .status {
+        display: none !important;
+      }
+
+      main,
+      section {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        box-shadow: none;
+      }
+
+      table {
+        min-width: 0;
+        font-size: 11px;
+      }
+
+      th,
+      td {
+        border: 1px solid #333;
+        padding: 4px;
+      }
+    }
   </style>
 </head>
 
 <body>
   <header>
     <h1>献立表OCR 発注書作成</h1>
-    <p>スマホで撮影 → OCR → 食材抽出 → 合算 → Excel出力</p>
+    <p>献立CSV/OCR・園児数CSV・発注ルールCSV → 発注単位に変換 → Excel出力</p>
   </header>
 
   <main>
     <section>
-      <h2>1. 献立表を撮影 / 画像選択</h2>
-      <p class="note">画像と文字はブラウザ内で処理します。発注前に必ず確認してください。</p>
+      <h2>1. 入力データ</h2>
+      <p class="note">献立CSVまたはOCR結果、園児数CSV、発注ルールCSVを使います。画像・CSV・Excel作成はブラウザ内で処理します。</p>
 
       <div class="buttons">
-        <button class="blue" type="button" id="cameraBtn">📷 カメラで撮る</button>
+        <button class="blue" type="button" id="menuCsvBtn">📄 献立CSVを選ぶ</button>
+        <button class="green" type="button" id="childrenCsvBtn">👶 園児数CSVを選ぶ</button>
+        <button class="gray" type="button" id="ruleCsvBtn">⚙️ 発注ルールCSVを選ぶ</button>
+        <button class="blue" type="button" id="cameraBtn">📷 献立写真を撮る</button>
         <button class="gray" type="button" id="imageBtn">🖼️ 画像を選ぶ</button>
       </div>
 
+      <input id="menuCsvInput" type="file" accept=".csv,text/csv">
+      <input id="childrenCsvInput" type="file" accept=".csv,text/csv">
+      <input id="ruleCsvInput" type="file" accept=".csv,text/csv">
       <input id="cameraInput" type="file" accept="image/*" capture="environment">
       <input id="imageInput" type="file" accept="image/*">
+
+      <div class="file-status">
+        <div><b>献立</b><br><span id="menuCsvStatus">未選択（OCR/手入力でも可）</span></div>
+        <div><b>園児数</b><br><span id="childrenCsvStatus">未選択（1人分として計算）</span></div>
+        <div><b>発注ルール</b><br><span id="ruleCsvStatus">コード内の標準ルールを使用</span></div>
+      </div>
 
       <img id="preview" alt="選択した画像">
       <p id="ocrStatus" class="status"></p>
 
-      <label for="ocrText">OCR結果 / 手入力</label>
-      <textarea id="ocrText" placeholder="OCR結果がここに入ります。手入力やコピー貼り付けでも使えます。"></textarea>
+      <label for="ocrText">献立CSV / OCR結果 / 手入力</label>
+      <textarea id="ocrText" placeholder="献立CSVまたはOCR結果がここに入ります。食品名・3歳未満児量・単位が分かる形にしてください。"></textarea>
 
       <div class="buttons">
-        <button class="primary" type="button" id="extractBtn">食材を抽出して合算</button>
+        <button class="primary" type="button" id="extractBtn">発注数を計算する</button>
         <button class="gray" type="button" id="sampleBtn">サンプルを入れる</button>
         <button class="red" type="button" id="clearBtn">消す</button>
         <button class="gray" type="button" id="retryBtn" disabled>もう一度OCR</button>
@@ -302,11 +366,11 @@
     </section>
 
     <section>
-      <h2>2. 確認画面</h2>
+      <h2>2. 発注書の確認</h2>
 
       <div class="summary">
         <div>
-          <span>食材数</span>
+          <span>発注食材数</span>
           <b id="itemCount">0</b>
         </div>
         <div>
@@ -326,8 +390,8 @@
       </div>
 
       <div class="buttons">
-        <button class="gray" type="button" id="addBtn">＋ 食材を追加</button>
-        <button class="green" type="button" id="excelBtn" disabled>Excel（.xlsx）をダウンロード</button>
+        <button class="gray" type="button" id="addBtn">＋ 発注行を追加</button>
+        <button class="green" type="button" id="excelBtn" disabled>発注書Excel（.xlsx）をダウンロード</button>
       </div>
     </section>
   </main>
@@ -352,45 +416,51 @@
       "たまご": "卵"
     };
 
-    const ingredients = [
-      "鶏もも肉", "鶏むね肉", "鶏ひき肉", "鶏肉", "豚こま肉", "豚ひき肉", "豚肉", "牛肉",
-      "鮭", "さけ", "さば", "たら", "ツナ", "しらす", "ちくわ", "かまぼこ",
-      "じゃがいも", "じゃが芋", "ジャガイモ", "馬鈴薯", "さつまいも", "里芋",
-      "玉ねぎ", "たまねぎ", "玉葱", "にんじん", "人参", "ニンジン", "大根", "きゅうり",
-      "トマト", "ミニトマト", "ほうれん草", "ほうれんそう", "小松菜", "ブロッコリー",
-      "ピーマン", "かぼちゃ", "なす", "キャベツ", "白菜", "レタス", "もやし", "ねぎ", "長ねぎ",
-      "コーン", "しめじ", "えのき", "しいたけ", "椎茸", "まいたけ", "エリンギ",
-      "豆腐", "油揚げ", "厚揚げ", "納豆", "卵", "たまご", "牛乳", "ヨーグルト", "チーズ",
-      "りんご", "リンゴ", "林檎", "オレンジ", "バナナ", "みかん", "いちご",
-      "小麦粉", "片栗粉", "パン粉", "食パン", "ロールパン", "うどん", "スパゲティ", "マカロニ"
-    ].sort((a, b) => b.length - a.length);
-
-    const excludeWords = [
-      "日付", "曜日", "献立", "献立名", "昼食", "おやつ", "午前", "午後", "材料", "食品名", "食材名", "数量", "分量", "単位", "備考",
-      "米", "ごはん", "精白米", "だし汁", "だし", "水", "しょうゆ", "醤油", "塩", "砂糖", "酢", "みそ", "味噌",
-      "油", "サラダ油", "ごま油", "酒", "みりん", "こしょう", "ソース", "ケチャップ", "マヨネーズ"
+    const standardOrderRules = [
+      { names: ["米", "ごはん", "精白米", "白米"], exclude: true, reason: "米は発注対象外" },
+      { names: ["だし汁", "だし", "出汁", "かつおだし", "昆布だし"], exclude: true, reason: "だし汁は発注対象外" },
+      { names: ["しょうゆ", "醤油", "塩", "砂糖", "酢", "みそ", "味噌", "油", "サラダ油", "ごま油", "酒", "みりん", "こしょう", "ソース", "ケチャップ", "マヨネーズ"], exclude: true, reason: "調味料は発注対象外" },
+      { names: ["牛乳"], orderUnit: "本", packageQuantity: 450, packageUnit: "ml", fixedOrderQuantity: 2, note: "450ml×2本" },
+      { names: ["キャベツ"], orderUnit: "個", packageQuantity: 1200, packageUnit: "g", roundStep: 0.25, note: "1/4個単位" },
+      { names: ["白菜"], orderUnit: "個", packageQuantity: 2000, packageUnit: "g", roundStep: 0.125, note: "1/8個単位" },
+      { names: ["ツナ", "コーン缶", "トマト缶", "みかん缶", "缶詰"], orderUnit: "缶", packageQuantity: 1, packageUnit: "缶", roundStep: 1, note: "缶単位" },
+      { names: ["しめじ", "えのき", "しいたけ", "まいたけ", "エリンギ", "なめこ"], orderUnit: "袋", packageQuantity: 100, packageUnit: "g", roundStep: 1, note: "きのこ類は1袋単位" },
+      { names: ["豆腐"], orderUnit: "丁", packageQuantity: 300, packageUnit: "g", roundStep: 1, note: "300g=1丁で換算" },
+      { names: ["卵"], orderUnit: "個", packageQuantity: 1, packageUnit: "個", roundStep: 1, note: "個単位" },
+      { names: ["食パン", "ロールパン"], orderUnit: "袋", packageQuantity: 1, packageUnit: "袋", roundStep: 1, note: "袋単位" },
+      { names: ["にんじん", "玉ねぎ", "じゃがいも", "大根", "きゅうり", "トマト", "ミニトマト", "ほうれん草", "小松菜", "ブロッコリー", "ピーマン", "かぼちゃ", "なす", "レタス", "もやし", "ねぎ", "長ねぎ"], orderUnit: "kg", packageQuantity: 1000, packageUnit: "g", roundStep: 0.1, note: "野菜はkg換算" },
+      { names: ["鶏もも肉", "鶏むね肉", "鶏ひき肉", "豚こま肉", "豚ひき肉", "牛肉", "鮭", "さけ", "さば", "たら", "しらす", "ちくわ", "かまぼこ"], orderUnit: "kg", packageQuantity: 1000, packageUnit: "g", roundStep: 0.1, note: "肉・魚はkg換算" },
+      { names: ["ヨーグルト", "チーズ"], orderUnit: "個", packageQuantity: 1, packageUnit: "個", roundStep: 1, note: "商品単位を確認" },
+      { names: ["りんご", "オレンジ", "バナナ", "みかん", "いちご"], orderUnit: "個", packageQuantity: 1, packageUnit: "個", roundStep: 1, note: "果物は個単位" },
+      { names: ["小麦粉", "片栗粉", "パン粉", "うどん", "スパゲティ", "マカロニ"], orderUnit: "kg", packageQuantity: 1000, packageUnit: "g", roundStep: 0.1, note: "乾物はkg換算" }
     ];
 
+    const ingredients = Array.from(new Set(standardOrderRules.flatMap(rule => rule.names).concat(Object.keys(aliases)))).sort((a, b) => b.length - a.length);
+
+    const headerWords = ["日付", "曜日", "献立", "献立名", "昼食", "おやつ", "午前", "午後", "材料", "食品名", "食材名", "数量", "分量", "単位", "備考"];
+
     const sampleText =
-      "日付,献立名,食品名,数量,単位\n" +
+      "日付,献立名,食品名,3歳未満児量,単位\n" +
       "5/1,昼食,鶏もも肉,40,g\n" +
       "5/1,昼食,にんじん,15,g\n" +
-      "5/1,昼食,人参,10,g\n" +
-      "5/1,昼食,玉ねぎ,30,g\n" +
-      "5/1,昼食,たまねぎ,20,g\n" +
+      "5/1,昼食,キャベツ,80,g\n" +
+      "5/1,昼食,白菜,60,g\n" +
+      "5/1,昼食,しめじ,25,g\n" +
       "5/1,昼食,米,50,g\n" +
       "5/1,おやつ,牛乳,100,ml\n" +
       "5/1,おやつ,りんご,0.5,個";
 
     let lastImage = null;
     let rows = [];
-    let stats = {
-      merged: 0,
-      excluded: 0
-    };
+    let childrenCount = 1;
+    let customOrderRules = [];
+    let stats = { merged: 0, excluded: 0 };
 
     const cameraBtn = document.getElementById("cameraBtn");
     const imageBtn = document.getElementById("imageBtn");
+    const menuCsvBtn = document.getElementById("menuCsvBtn");
+    const childrenCsvBtn = document.getElementById("childrenCsvBtn");
+    const ruleCsvBtn = document.getElementById("ruleCsvBtn");
     const retryBtn = document.getElementById("retryBtn");
     const extractBtn = document.getElementById("extractBtn");
     const sampleBtn = document.getElementById("sampleBtn");
@@ -400,6 +470,12 @@
 
     const cameraInput = document.getElementById("cameraInput");
     const imageInput = document.getElementById("imageInput");
+    const menuCsvInput = document.getElementById("menuCsvInput");
+    const childrenCsvInput = document.getElementById("childrenCsvInput");
+    const ruleCsvInput = document.getElementById("ruleCsvInput");
+    const menuCsvStatus = document.getElementById("menuCsvStatus");
+    const childrenCsvStatus = document.getElementById("childrenCsvStatus");
+    const ruleCsvStatus = document.getElementById("ruleCsvStatus");
     const preview = document.getElementById("preview");
     const ocrText = document.getElementById("ocrText");
     const ocrStatus = document.getElementById("ocrStatus");
@@ -410,30 +486,118 @@
     const mergedCount = document.getElementById("mergedCount");
     const excludedCount = document.getElementById("excludedCount");
 
+    menuCsvBtn.addEventListener("click", () => menuCsvInput.click());
+    childrenCsvBtn.addEventListener("click", () => childrenCsvInput.click());
+    ruleCsvBtn.addEventListener("click", () => ruleCsvInput.click());
     cameraBtn.addEventListener("click", () => cameraInput.click());
     imageBtn.addEventListener("click", () => imageInput.click());
     retryBtn.addEventListener("click", () => lastImage && runOcr(lastImage));
     extractBtn.addEventListener("click", extractAndRender);
     sampleBtn.addEventListener("click", () => {
       ocrText.value = sampleText;
+      menuCsvStatus.textContent = "サンプルを使用中";
       extractAndRender();
     });
     clearBtn.addEventListener("click", clearAll);
     addBtn.addEventListener("click", addRow);
     excelBtn.addEventListener("click", downloadExcel);
 
+    menuCsvInput.addEventListener("change", e => loadMenuCsv(e.target.files[0]));
+    childrenCsvInput.addEventListener("change", e => loadChildrenCsv(e.target.files[0]));
+    ruleCsvInput.addEventListener("change", e => loadRuleCsv(e.target.files[0]));
     cameraInput.addEventListener("change", e => handleImage(e.target.files[0]));
     imageInput.addEventListener("change", e => handleImage(e.target.files[0]));
 
+    async function readTextFile(file) {
+      if (!file) return "";
+      const buffer = await file.arrayBuffer();
+      const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+      if (utf8.includes("�")) {
+        try {
+          return new TextDecoder("shift_jis").decode(buffer);
+        } catch (error) {
+          return utf8;
+        }
+      }
+      return utf8;
+    }
+
+    async function loadMenuCsv(file) {
+      if (!file) return;
+      ocrText.value = await readTextFile(file);
+      menuCsvStatus.textContent = file.name;
+      notice.textContent = "献立CSVを読み込みました。必要なら内容を確認してから計算してください。";
+      extractAndRender();
+    }
+
+    async function loadChildrenCsv(file) {
+      if (!file) return;
+      const text = await readTextFile(file);
+      childrenCount = parseChildrenCount(text);
+      childrenCsvStatus.textContent = file.name + "（3歳未満児 " + childrenCount + "人）";
+      notice.textContent = "園児数CSVを読み込みました。3歳未満児 " + childrenCount + "人で計算します。";
+      if (ocrText.value.trim()) extractAndRender();
+    }
+
+    async function loadRuleCsv(file) {
+      if (!file) return;
+      const text = await readTextFile(file);
+      customOrderRules = parseRuleCsv(text);
+      ruleCsvStatus.textContent = file.name + "（" + customOrderRules.length + "件）";
+      notice.textContent = "発注ルールCSVを読み込みました。標準ルールより優先します。";
+      if (ocrText.value.trim()) extractAndRender();
+    }
+
+    function parseChildrenCount(text) {
+      const csvRows = parseCsv(text);
+      if (csvRows.length === 0) return 1;
+      const header = csvRows[0].map(value => value.trim());
+      const dataRows = csvRows.slice(1).filter(row => row.some(Boolean));
+      const targetIndex = header.findIndex(name => /3歳未満|３歳未満|未満児|0歳|１歳|1歳|２歳|2歳/.test(name));
+
+      if (targetIndex >= 0) {
+        const total = dataRows.reduce((sum, row) => sum + numberValue(row[targetIndex]), 0);
+        return total > 0 ? total : 1;
+      }
+
+      const total = csvRows.flat().reduce((sum, value) => sum + numberValue(value), 0);
+      return total > 0 ? total : 1;
+    }
+
+    function parseRuleCsv(text) {
+      const csvRows = parseCsv(text);
+      if (csvRows.length < 2) return [];
+      const header = csvRows[0].map(normalizeHeader);
+      const find = names => header.findIndex(value => names.includes(value));
+      const nameIndex = find(["材料名", "食材名", "食品名", "name"]);
+      const orderUnitIndex = find(["発注単位", "納品単位", "単位", "orderunit"]);
+      const packageQuantityIndex = find(["入数", "換算量", "基準量", "packagequantity"]);
+      const packageUnitIndex = find(["基準単位", "換算単位", "packageunit"]);
+      const roundStepIndex = find(["丸め単位", "発注刻み", "roundstep"]);
+      const excludeIndex = find(["除外", "対象外", "exclude"]);
+      const noteIndex = find(["摘要", "備考", "note"]);
+
+      return csvRows.slice(1).map(row => {
+        const name = row[nameIndex] || "";
+        return {
+          names: name.split(/[、|｜/]/).map(value => normalizeName(value)).filter(Boolean),
+          orderUnit: row[orderUnitIndex] || "",
+          packageQuantity: numberValue(row[packageQuantityIndex]) || 1,
+          packageUnit: row[packageUnitIndex] || row[orderUnitIndex] || "個",
+          roundStep: numberValue(row[roundStepIndex]) || 1,
+          exclude: /^(1|true|yes|除外|対象外)$/i.test(String(row[excludeIndex] || "").trim()),
+          reason: row[noteIndex] || "発注ルールCSVで除外",
+          note: row[noteIndex] || "発注ルールCSV"
+        };
+      }).filter(rule => rule.names.length > 0);
+    }
+
     function handleImage(file) {
       if (!file) return;
-
       lastImage = file;
       retryBtn.disabled = false;
-
       preview.src = URL.createObjectURL(file);
       preview.style.display = "block";
-
       runOcr(file);
     }
 
@@ -456,6 +620,7 @@
         });
 
         ocrText.value = result.data.text.trim();
+        menuCsvStatus.textContent = "OCR結果を使用中";
         ocrStatus.textContent = "OCRが終わりました。内容を確認してください。";
         extractAndRender();
       } catch (error) {
@@ -468,96 +633,57 @@
     function setWorking(isWorking) {
       cameraBtn.disabled = isWorking;
       imageBtn.disabled = isWorking;
+      menuCsvBtn.disabled = isWorking;
+      childrenCsvBtn.disabled = isWorking;
+      ruleCsvBtn.disabled = isWorking;
       retryBtn.disabled = isWorking || !lastImage;
       extractBtn.disabled = isWorking;
     }
 
     function extractAndRender() {
       const text = ocrText.value.trim();
-
       if (!text) {
-        notice.textContent = "OCR結果または献立の文字を入力してください。";
+        notice.textContent = "献立CSV、OCR結果、または献立の文字を入力してください。";
         return;
       }
 
       const result = extractIngredients(text);
       rows = result.rows;
       stats = result.stats;
-
-      console.log("抽出結果", {
-        rows,
-        stats,
-        sourceText: text
-      });
-
       renderTable();
       updateSummary();
 
       notice.textContent = rows.length
-        ? "食材を抽出しました。内容を確認して、必要なら修正してください。"
-        : "食材を見つけられませんでした。文字を直してから再実行してください。";
+        ? "3歳未満児 " + childrenCount + "人分で発注数を計算しました。内容を確認して、必要なら修正してください。"
+        : "発注対象の食材を見つけられませんでした。米・調味料・だし汁だけの場合は除外されます。";
     }
 
     function extractIngredients(text) {
       const totals = new Map();
       let foundCount = 0;
       let excludedCount = 0;
+      const parsedRows = parseCsv(text);
+      const hasCsvHeader = parsedRows.length > 1 && parsedRows[0].some(cell => /食品名|食材名|材料名/.test(cell));
+      const sourceRows = hasCsvHeader ? rowsFromCsv(parsedRows) : rowsFromText(text);
 
-      const lines = text
-        .replace(/\r/g, "\n")
-        .split("\n")
-        .map(line => line.trim())
-        .filter(Boolean);
-
-      for (const line of lines) {
-        const compact = line.replace(/\s/g, "");
-
-        if (!compact || excludeWords.slice(0, 15).includes(compact)) {
+      for (const source of sourceRows) {
+        const name = normalizeName(source.name);
+        if (!name || headerWords.includes(name)) continue;
+        const rule = findOrderRule(name);
+        if (rule && rule.exclude) {
           excludedCount++;
           continue;
         }
 
-        const foundNames = findNames(line);
-
-        if (foundNames.length === 0) {
-          continue;
-        }
-
-        const amount = findAmount(line);
-
-        for (const rawName of foundNames) {
-          const name = normalizeName(rawName);
-
-          if (shouldExclude(name)) {
-            excludedCount++;
-            continue;
-          }
-
-          foundCount++;
-
-          const key = name + "__" + amount.unit;
-          const current = totals.get(key) || {
-            name,
-            quantity: 0,
-            unit: amount.unit,
-            count: 0
-          };
-
-          current.quantity += amount.quantity;
-          current.count += 1;
-          totals.set(key, current);
-        }
+        foundCount++;
+        const key = name + "__" + source.unit;
+        const current = totals.get(key) || { name, quantity: 0, unit: source.unit, count: 0 };
+        current.quantity += source.quantity * childrenCount;
+        current.count += 1;
+        totals.set(key, current);
       }
 
-      const outputRows = Array.from(totals.values())
-        .map(item => ({
-          name: item.name,
-          quantity: round(item.quantity),
-          unit: item.unit,
-          note: item.count > 1 ? item.count + "件を合算" : ""
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name, "ja"));
-
+      const outputRows = Array.from(totals.values()).map(item => toOrderRow(item)).sort((a, b) => a.name.localeCompare(b.name, "ja"));
       return {
         rows: outputRows,
         stats: {
@@ -567,24 +693,123 @@
       };
     }
 
+    function rowsFromCsv(csvRows) {
+      const header = csvRows[0].map(normalizeHeader);
+      const nameIndex = findHeaderIndex(header, ["食品名", "食材名", "材料名", "name"]);
+      const under3Index = findHeaderIndex(header, ["3歳未満児量", "３歳未満児量", "3歳未満", "３歳未満", "未満児量", "未満児", "under3"]);
+      const quantityIndex = under3Index >= 0 ? under3Index : findHeaderIndex(header, ["数量", "分量", "使用量", "量", "quantity"]);
+      const unitIndex = findHeaderIndex(header, ["単位", "unit"]);
+
+      return csvRows.slice(1).flatMap(row => {
+        const rawName = row[nameIndex] || "";
+        const names = findNames(rawName).length ? findNames(rawName) : [rawName];
+        return names.map(name => ({
+          name: normalizeName(name),
+          quantity: numberValue(row[quantityIndex]) || 1,
+          unit: normalizeUnit(row[unitIndex] || findAmount(row.join(",")).unit)
+        }));
+      }).filter(row => row.name);
+    }
+
+    function rowsFromText(text) {
+      const output = [];
+      const lines = text.replace(/\r/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
+      for (const line of lines) {
+        const compact = line.replace(/\s/g, "");
+        if (!compact || headerWords.includes(compact)) continue;
+        const foundNames = findNames(line);
+        if (foundNames.length === 0) continue;
+        const amount = findAmount(line);
+        for (const rawName of foundNames) {
+          output.push({ name: normalizeName(rawName), quantity: amount.quantity, unit: amount.unit });
+        }
+      }
+      return output;
+    }
+
+    function toOrderRow(item) {
+      const rule = findOrderRule(item.name) || defaultRule(item.unit);
+      const converted = convertToOrderQuantity(item.quantity, item.unit, rule);
+      const noteParts = [];
+      if (item.count > 1) noteParts.push(item.count + "件を合算");
+      if (rule.note) noteParts.push(rule.note);
+      if (converted.warning) noteParts.push(converted.warning);
+
+      return {
+        checked: "□",
+        name: item.name,
+        totalQuantity: round(item.quantity),
+        totalUnit: item.unit,
+        note: noteParts.join(" / "),
+        orderQuantity: converted.quantity,
+        orderUnit: converted.unit,
+        unitPrice: "",
+        amount: "",
+        origin: ""
+      };
+    }
+
+    function convertToOrderQuantity(quantity, unit, rule) {
+      if (rule.fixedOrderQuantity) {
+        return { quantity: rule.fixedOrderQuantity, unit: rule.orderUnit || "本" };
+      }
+
+      const normalizedUnit = normalizeUnit(unit);
+      let baseQuantity = quantity;
+      let warning = "";
+      if (normalizedUnit !== rule.packageUnit) {
+        baseQuantity = convertUnit(quantity, normalizedUnit, rule.packageUnit);
+      }
+      if (baseQuantity === null) {
+        baseQuantity = quantity;
+        warning = "単位換算は要確認";
+      }
+
+      const rawOrderQuantity = baseQuantity / (rule.packageQuantity || 1);
+      return {
+        quantity: roundUp(rawOrderQuantity, rule.roundStep || 1),
+        unit: rule.orderUnit || normalizedUnit,
+        warning
+      };
+    }
+
+    function convertUnit(quantity, fromUnit, toUnit) {
+      if (fromUnit === toUnit) return quantity;
+      if (fromUnit === "kg" && toUnit === "g") return quantity * 1000;
+      if (fromUnit === "g" && toUnit === "kg") return quantity / 1000;
+      if (fromUnit === "L" && toUnit === "ml") return quantity * 1000;
+      if (fromUnit === "ml" && toUnit === "L") return quantity / 1000;
+      return null;
+    }
+
+    function defaultRule(unit) {
+      const normalizedUnit = normalizeUnit(unit);
+      return {
+        orderUnit: normalizedUnit,
+        packageQuantity: 1,
+        packageUnit: normalizedUnit,
+        roundStep: normalizedUnit === "g" || normalizedUnit === "ml" ? 100 : 1,
+        note: "標準ルール（要確認）"
+      };
+    }
+
+    function findOrderRule(name) {
+      const normalizedName = normalizeName(name);
+      const rules = customOrderRules.concat(standardOrderRules);
+      return rules.find(rule => rule.names.some(ruleName => normalizedName === normalizeName(ruleName) || normalizedName.includes(normalizeName(ruleName))));
+    }
+
     function findNames(line) {
       const compact = line.replace(/[\s,，、|｜\t]/g, "");
       const found = [];
-
       for (const word of ingredients) {
         if (compact.includes(word)) {
           const normalized = normalizeName(word);
-          const exists = found.some(name => normalizeName(name) === normalized);
-
-          if (!exists) {
-            found.push(word);
-          }
+          if (!found.some(name => normalizeName(name) === normalized)) found.push(word);
         }
       }
-
       return found.filter(name => {
         const normalized = normalizeName(name);
-
         return !found.some(other => {
           const otherNormalized = normalizeName(other);
           return otherNormalized !== normalized && otherNormalized.includes(normalized);
@@ -595,34 +820,56 @@
     function findAmount(line) {
       const normalizedLine = normalizeAmountText(line);
       const numberPattern = "([0-9]+(?:\\.[0-9]+)?)";
-      const unitPattern = "(kg|g|ml|l|個)";
-
-      // 40g / 100ml / 0.5個 / 100,ml のように「数字＋単位」がある場合は最優先します。
-      const numberWithUnit = new RegExp(numberPattern + "[\\s,，、|｜:：]*" + unitPattern, "i");
-      const explicitMatch = normalizedLine.match(numberWithUnit);
-
+      const unitPattern = "(kg|g|ml|l|L|個|本|袋|缶|丁)";
+      const explicitMatch = normalizedLine.match(new RegExp(numberPattern + "[\\s,，、|｜:：]*" + unitPattern, "i"));
       if (explicitMatch) {
-        return {
-          quantity: Number(explicitMatch[1]),
-          unit: normalizeUnit(explicitMatch[2])
-        };
+        return { quantity: Number(explicitMatch[1]), unit: normalizeUnit(explicitMatch[2]) };
       }
 
-      // 単位が無い場合のみ「個」にします。日付の 5/1 などは除外し、食材名の後ろ側の数字を優先します。
-      const namePositions = findNames(normalizedLine)
-        .map(name => normalizedLine.indexOf(name))
-        .filter(index => index >= 0);
-      const searchStart = namePositions.length
-        ? Math.min(...namePositions)
-        : 0;
-      const amountArea = normalizedLine.slice(searchStart);
-      const numbers = amountArea.match(/(?<![0-9/])([0-9]+(?:\.[0-9]+)?)(?![0-9/])/g);
+      const numbers = normalizedLine.match(/(?<![0-9/])([0-9]+(?:\.[0-9]+)?)(?![0-9/])/g);
       const quantity = numbers && numbers.length ? Number(numbers[numbers.length - 1]) : 1;
+      return { quantity: Number.isFinite(quantity) ? quantity : 1, unit: "個" };
+    }
 
-      return {
-        quantity: Number.isFinite(quantity) ? quantity : 1,
-        unit: "個"
-      };
+    function parseCsv(text) {
+      const rows = [];
+      let row = [];
+      let cell = "";
+      let quoted = false;
+      const normalized = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      for (let i = 0; i < normalized.length; i++) {
+        const char = normalized[i];
+        const next = normalized[i + 1];
+        if (char === '"') {
+          if (quoted && next === '"') {
+            cell += '"';
+            i++;
+          } else {
+            quoted = !quoted;
+          }
+        } else if (char === "," && !quoted) {
+          row.push(cell.trim());
+          cell = "";
+        } else if (char === "\n" && !quoted) {
+          row.push(cell.trim());
+          if (row.some(Boolean)) rows.push(row);
+          row = [];
+          cell = "";
+        } else {
+          cell += char;
+        }
+      }
+      row.push(cell.trim());
+      if (row.some(Boolean)) rows.push(row);
+      return rows;
+    }
+
+    function findHeaderIndex(header, candidates) {
+      return header.findIndex(value => candidates.includes(value) || candidates.some(candidate => value.includes(candidate)));
+    }
+
+    function normalizeHeader(value) {
+      return String(value || "").trim().replace(/\s/g, "").toLowerCase();
     }
 
     function normalizeAmountText(text) {
@@ -636,14 +883,10 @@
     }
 
     function normalizeUnit(unit) {
-      const normalized = String(unit || "").toLowerCase();
-
+      const normalized = String(unit || "").trim().toLowerCase();
       if (normalized === "l") return "L";
-      if (normalized === "kg") return "kg";
-      if (normalized === "g") return "g";
-      if (normalized === "ml") return "ml";
-
-      return "個";
+      if (["kg", "g", "ml", "個", "本", "袋", "缶", "丁"].includes(normalized)) return normalized;
+      return normalized || "個";
     }
 
     function normalizeName(name) {
@@ -651,12 +894,19 @@
       return aliases[trimmed] || trimmed;
     }
 
-    function shouldExclude(name) {
-      return excludeWords.slice(15).some(word => name === word || name.includes(word));
+    function numberValue(value) {
+      const normalized = normalizeAmountText(value).replace(/,/g, "");
+      const match = normalized.match(/-?[0-9]+(?:\.[0-9]+)?/);
+      return match ? Number(match[0]) : 0;
     }
 
     function round(value) {
-      return Math.round(value * 100) / 100;
+      return Math.round(value * 1000) / 1000;
+    }
+
+    function roundUp(value, step) {
+      const safeStep = step || 1;
+      return round(Math.ceil((value - 0.0000001) / safeStep) * safeStep);
     }
 
     function renderTable() {
@@ -670,144 +920,98 @@
       tableArea.className = "table-wrap";
       tableArea.innerHTML =
         "<table>" +
-          "<thead>" +
-            "<tr>" +
-              "<th>食材名</th>" +
-              "<th>数量</th>" +
-              "<th>単位</th>" +
-              "<th>備考</th>" +
-              "<th>操作</th>" +
-            "</tr>" +
-          "</thead>" +
-          "<tbody>" +
-            rows.map((row, index) => rowHtml(row, index)).join("") +
-          "</tbody>" +
+          "<thead><tr>" +
+            "<th>チェック</th><th>材料名</th><th>総使用量</th><th>単位</th><th>摘要</th><th>納品数</th><th>単位</th><th>単価</th><th>金額</th><th>産地</th><th>操作</th>" +
+          "</tr></thead>" +
+          "<tbody>" + rows.map((row, index) => rowHtml(row, index)).join("") + "</tbody>" +
         "</table>";
 
-      tableArea.querySelectorAll("input").forEach(input => {
-        input.addEventListener("input", syncRows);
-      });
-
-      tableArea.querySelectorAll("[data-delete]").forEach(button => {
-        button.addEventListener("click", () => deleteRow(Number(button.dataset.delete)));
-      });
-
+      tableArea.querySelectorAll("input").forEach(input => input.addEventListener("input", syncRows));
+      tableArea.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => deleteRow(Number(button.dataset.delete))));
       excelBtn.disabled = false;
     }
 
     function rowHtml(row, index) {
-      return (
-        "<tr>" +
-          '<td data-label="食材名"><input data-index="' + index + '" data-field="name" value="' + escapeHtml(row.name) + '"></td>' +
-          '<td data-label="数量"><input type="number" step="0.01" data-index="' + index + '" data-field="quantity" value="' + escapeHtml(row.quantity) + '"></td>' +
-          '<td data-label="単位"><input data-index="' + index + '" data-field="unit" value="' + escapeHtml(row.unit) + '"></td>' +
-          '<td data-label="備考"><input data-index="' + index + '" data-field="note" value="' + escapeHtml(row.note || "") + '"></td>' +
-          '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
-        "</tr>"
-      );
+      const cells = [
+        ["チェック", "checked"], ["材料名", "name"], ["総使用量", "totalQuantity", "number"], ["単位", "totalUnit"], ["摘要", "note"],
+        ["納品数", "orderQuantity", "number"], ["単位", "orderUnit"], ["単価", "unitPrice", "number"], ["金額", "amount", "number"], ["産地", "origin"]
+      ];
+      return "<tr>" + cells.map(([label, field, type]) => {
+        const step = field === "totalQuantity" || field === "orderQuantity" ? "0.001" : "1";
+        return '<td data-label="' + label + '"><input ' + (type === "number" ? 'type="number" step="' + step + '" ' : "") + 'data-index="' + index + '" data-field="' + field + '" value="' + escapeHtml(row[field] ?? "") + '"></td>';
+      }).join("") + '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td></tr>';
     }
 
     function syncRows() {
       const next = rows.map(row => ({ ...row }));
-
       tableArea.querySelectorAll("input[data-index]").forEach(input => {
         const index = Number(input.dataset.index);
         const field = input.dataset.field;
-
         if (!next[index]) return;
-
-        next[index][field] = field === "quantity"
-          ? Number(input.value || 0)
-          : input.value;
+        next[index][field] = ["totalQuantity", "orderQuantity", "unitPrice", "amount"].includes(field) ? (input.value === "" ? "" : Number(input.value)) : input.value;
       });
-
       rows = next;
       updateSummary();
     }
 
     function addRow() {
       syncRowsIfNeeded();
-
-      rows.push({
-        name: "",
-        quantity: 1,
-        unit: "個",
-        note: "手入力"
-      });
-
+      rows.push({ checked: "□", name: "", totalQuantity: 1, totalUnit: "個", note: "手入力", orderQuantity: 1, orderUnit: "個", unitPrice: "", amount: "", origin: "" });
       renderTable();
       updateSummary();
-      notice.textContent = "食材行を追加しました。";
+      notice.textContent = "発注行を追加しました。";
     }
 
     function deleteRow(index) {
       syncRowsIfNeeded();
       rows.splice(index, 1);
-
       renderTable();
       updateSummary();
-      notice.textContent = "食材行を削除しました。";
+      notice.textContent = "発注行を削除しました。";
     }
 
     function syncRowsIfNeeded() {
-      if (tableArea.querySelector("table")) {
-        syncRows();
-      }
+      if (tableArea.querySelector("table")) syncRows();
     }
 
     function updateSummary() {
       const validRows = rows.filter(row => String(row.name || "").trim());
-
       itemCount.textContent = validRows.length;
       mergedCount.textContent = stats.merged;
       excludedCount.textContent = stats.excluded;
-
       excelBtn.disabled = validRows.length === 0;
     }
 
     function downloadExcel() {
       syncRowsIfNeeded();
-
-      const excelRows = rows
-        .filter(row => String(row.name || "").trim())
-        .map(row => ({
-          食材名: String(row.name || "").trim(),
-          数量: Number(row.quantity || 0),
-          単位: row.unit || "",
-          備考: row.note || ""
-        }));
+      const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
+      const excelRows = rows.filter(row => String(row.name || "").trim()).map(row => [
+        row.checked || "□", String(row.name || "").trim(), Number(row.totalQuantity || 0), row.totalUnit || "", row.note || "",
+        Number(row.orderQuantity || 0), row.orderUnit || "", row.unitPrice || "", row.amount || "", row.origin || ""
+      ]);
 
       if (excelRows.length === 0) {
         notice.textContent = "Excelにする食材がありません。";
         return;
       }
-
       if (!isXlsxReady()) {
         notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してから、ページを再読み込みしてください。";
-        console.error("XLSXライブラリが利用できません", { xlsxLoadError: window.xlsxLoadError });
         return;
       }
 
       try {
-        const worksheet = XLSX.utils.json_to_sheet(excelRows, {
-          header: ["食材名", "数量", "単位", "備考"]
-        });
-
-        worksheet["!cols"] = [
-          { wch: 24 },
-          { wch: 10 },
-          { wch: 10 },
-          { wch: 24 }
-        ];
+        const worksheet = XLSX.utils.aoa_to_sheet([headers].concat(excelRows));
+        worksheet["!cols"] = [{ wch: 8 }, { wch: 22 }, { wch: 10 }, { wch: 8 }, { wch: 30 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
+        worksheet["!rows"] = [{ hpt: 24 }];
+        worksheet["!autofilter"] = { ref: "A1:J" + (excelRows.length + 1) };
+        worksheet["!margins"] = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+        worksheet["!pageSetup"] = { orientation: "landscape", fitToWidth: 1, fitToHeight: 0 };
 
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
-
         const fileName = "発注書_" + formatDate(new Date()) + ".xlsx";
         XLSX.writeFile(workbook, fileName, { bookType: "xlsx", type: "binary" });
-
-        notice.textContent = "Excelをダウンロードしました。";
-        console.log("Excelダウンロード", { fileName, rows: excelRows });
+        notice.textContent = "発注書Excelをダウンロードしました。印刷は横向き・1ページ幅に設定しています。";
       } catch (error) {
         notice.textContent = "Excelの作成に失敗しました。もう一度お試しください。";
         console.error("Excel作成エラー", error);
@@ -815,33 +1019,29 @@
     }
 
     function isXlsxReady() {
-      return Boolean(
-        window.XLSX &&
-        XLSX.utils &&
-        typeof XLSX.utils.json_to_sheet === "function" &&
-        typeof XLSX.utils.book_new === "function" &&
-        typeof XLSX.utils.book_append_sheet === "function" &&
-        typeof XLSX.writeFile === "function"
-      );
+      return Boolean(window.XLSX && XLSX.utils && typeof XLSX.utils.aoa_to_sheet === "function" && typeof XLSX.utils.book_new === "function" && typeof XLSX.utils.book_append_sheet === "function" && typeof XLSX.writeFile === "function");
     }
 
     function clearAll() {
       lastImage = null;
       rows = [];
-      stats = {
-        merged: 0,
-        excluded: 0
-      };
-
+      childrenCount = 1;
+      customOrderRules = [];
+      stats = { merged: 0, excluded: 0 };
       ocrText.value = "";
       ocrStatus.textContent = "";
       notice.textContent = "入力を消しました。";
+      menuCsvStatus.textContent = "未選択（OCR/手入力でも可）";
+      childrenCsvStatus.textContent = "未選択（1人分として計算）";
+      ruleCsvStatus.textContent = "コード内の標準ルールを使用";
       preview.removeAttribute("src");
       preview.style.display = "none";
       cameraInput.value = "";
       imageInput.value = "";
+      menuCsvInput.value = "";
+      childrenCsvInput.value = "";
+      ruleCsvInput.value = "";
       retryBtn.disabled = true;
-
       renderTable();
       updateSummary();
     }
@@ -850,7 +1050,6 @@
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
-
       return year + month + day;
     }
 
