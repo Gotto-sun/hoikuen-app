@@ -6,10 +6,10 @@
   <title>献立表OCR 発注書作成</title>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"></script>
   <script>
     if (!window.XLSX) {
-      document.write('<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"><\/script>');
+      document.write('<script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"><\/script>');
     }
   </script>
 
@@ -392,6 +392,7 @@
       <div class="buttons">
         <button class="gray" type="button" id="addBtn">＋ 発注行を追加</button>
         <button class="green" type="button" id="excelBtn" disabled>発注書Excel（.xlsx）をダウンロード</button>
+        <button class="blue" type="button" id="csvBtn" disabled>スマホ用CSVをダウンロード</button>
       </div>
     </section>
   </main>
@@ -467,6 +468,7 @@
     const clearBtn = document.getElementById("clearBtn");
     const addBtn = document.getElementById("addBtn");
     const excelBtn = document.getElementById("excelBtn");
+    const csvBtn = document.getElementById("csvBtn");
 
     const cameraInput = document.getElementById("cameraInput");
     const imageInput = document.getElementById("imageInput");
@@ -501,6 +503,7 @@
     clearBtn.addEventListener("click", clearAll);
     addBtn.addEventListener("click", addRow);
     excelBtn.addEventListener("click", downloadExcel);
+    csvBtn.addEventListener("click", downloadCsv);
 
     menuCsvInput.addEventListener("change", e => loadMenuCsv(e.target.files[0]));
     childrenCsvInput.addEventListener("change", e => loadChildrenCsv(e.target.files[0]));
@@ -914,6 +917,7 @@
         tableArea.className = "empty";
         tableArea.textContent = "まだ食材がありません。";
         excelBtn.disabled = true;
+        csvBtn.disabled = true;
         return;
       }
 
@@ -929,6 +933,7 @@
       tableArea.querySelectorAll("input").forEach(input => input.addEventListener("input", syncRows));
       tableArea.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => deleteRow(Number(button.dataset.delete))));
       excelBtn.disabled = false;
+      csvBtn.disabled = false;
     }
 
     function rowHtml(row, index) {
@@ -980,42 +985,191 @@
       mergedCount.textContent = stats.merged;
       excludedCount.textContent = stats.excluded;
       excelBtn.disabled = validRows.length === 0;
+      csvBtn.disabled = validRows.length === 0;
     }
 
     function downloadExcel() {
       syncRowsIfNeeded();
-      const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
-      const excelRows = rows.filter(row => String(row.name || "").trim()).map(row => [
-        row.checked || "□", String(row.name || "").trim(), Number(row.totalQuantity || 0), row.totalUnit || "", row.note || "",
-        Number(row.orderQuantity || 0), row.orderUnit || "", row.unitPrice || "", row.amount || "", row.origin || ""
-      ]);
+      const orderRows = getPrintableRows();
 
-      if (excelRows.length === 0) {
+      if (orderRows.length === 0) {
         notice.textContent = "Excelにする食材がありません。";
         return;
       }
       if (!isXlsxReady()) {
-        notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してから、ページを再読み込みしてください。";
+        notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してから、ページを再読み込みしてください。スマホの場合はCSV出力も使えます。";
         return;
       }
 
       try {
-        const worksheet = XLSX.utils.aoa_to_sheet([headers].concat(excelRows));
-        worksheet["!cols"] = [{ wch: 8 }, { wch: 22 }, { wch: 10 }, { wch: 8 }, { wch: 30 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
-        worksheet["!rows"] = [{ hpt: 24 }];
-        worksheet["!autofilter"] = { ref: "A1:J" + (excelRows.length + 1) };
-        worksheet["!margins"] = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
-        worksheet["!pageSetup"] = { orientation: "landscape", fitToWidth: 1, fitToHeight: 0 };
+        const sheetRows = buildOrderSheetRows(orderRows, true);
+        const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+        applyPrintableOrderLayout(worksheet, orderRows.length, sheetRows.length);
 
         const workbook = XLSX.utils.book_new();
+        workbook.Props = {
+          Title: "発注書",
+          Subject: "保育園給食 発注書",
+          Author: "献立表OCR 発注書作成"
+        };
         XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
         const fileName = "発注書_" + formatDate(new Date()) + ".xlsx";
         XLSX.writeFile(workbook, fileName, { bookType: "xlsx", type: "binary" });
-        notice.textContent = "発注書Excelをダウンロードしました。印刷は横向き・1ページ幅に設定しています。";
+        notice.textContent = "発注書Excelをダウンロードしました。A4横・1ページ幅で印刷しやすいレイアウトです。";
       } catch (error) {
-        notice.textContent = "Excelの作成に失敗しました。もう一度お試しください。";
+        notice.textContent = "Excelの作成に失敗しました。スマホの場合はCSV出力もお試しください。";
         console.error("Excel作成エラー", error);
       }
+    }
+
+    function downloadCsv() {
+      syncRowsIfNeeded();
+      const orderRows = getPrintableRows();
+      if (orderRows.length === 0) {
+        notice.textContent = "CSVにする食材がありません。";
+        return;
+      }
+
+      const sheetRows = buildOrderSheetRows(orderRows, false);
+      const csvText = sheetRows.map(row => row.map(csvEscape).join(",")).join("\r\n");
+      downloadBlob("\uFEFF" + csvText, "発注書_" + formatDate(new Date()) + ".csv", "text/csv;charset=utf-8");
+      notice.textContent = "スマホ用CSVをダウンロードしました。Googleスプレッドシートで開けます。";
+    }
+
+    function getPrintableRows() {
+      return rows.filter(row => String(row.name || "").trim()).map((row, index) => ({
+        no: index + 1,
+        checked: row.checked || "□",
+        name: String(row.name || "").trim(),
+        totalQuantity: displayValue(row.totalQuantity),
+        totalUnit: row.totalUnit || "",
+        note: row.note || "",
+        orderQuantity: displayValue(row.orderQuantity),
+        orderUnit: row.orderUnit || "",
+        unitPrice: displayValue(row.unitPrice),
+        amount: displayValue(row.amount),
+        origin: row.origin || ""
+      }));
+    }
+
+    function buildOrderSheetRows(orderRows, includePrintBlanks) {
+      const today = formatJapaneseDate(new Date());
+      const minimumRows = includePrintBlanks ? 24 : orderRows.length;
+      const tableRows = orderRows.slice();
+      while (tableRows.length < minimumRows) {
+        tableRows.push({ no: tableRows.length + 1, checked: "□", name: "", totalQuantity: "", totalUnit: "", note: "", orderQuantity: "", orderUnit: "", unitPrice: "", amount: "", origin: "" });
+      }
+
+      return [
+        ["発 注 書", "", "", "", "", "", "", "", "", "", ""],
+        ["発注日", today, "", "納品希望日", "", "", "", "発注元", "", "", ""],
+        ["発注先", "", "", "", "", "", "", "担当", "", "", ""],
+        ["件名", "保育園給食材料", "", "", "", "", "", "園児数", childrenCount + "人", "", ""],
+        ["備考", "チェック欄に確認済みを入れ、納品数・単価・産地を必要に応じて修正してください。", "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", "", "", "", ""],
+        ["No", "チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"],
+        ...tableRows.map(row => [row.no, row.checked, row.name, row.totalQuantity, row.totalUnit, row.note, row.orderQuantity, row.orderUnit, row.unitPrice, row.amount, row.origin]),
+        ["", "", "", "", "", "", "", "", "合計", buildAmountTotal(orderRows), ""],
+        ["", "", "", "", "", "", "", "", "", "", ""],
+        ["納品時確認", "□ 数量", "□ 品質", "□ 産地", "□ 価格", "", "受領者", "", "検印", "", ""]
+      ];
+    }
+
+    function applyPrintableOrderLayout(worksheet, orderRowCount, totalRowCount) {
+      const tableStartRow = 7;
+      const lastTableRow = tableStartRow + Math.max(orderRowCount, 24);
+      const totalRow = lastTableRow + 1;
+      const footerRow = totalRow + 2;
+      worksheet["!cols"] = [
+        { wch: 5 }, { wch: 8 }, { wch: 22 }, { wch: 10 }, { wch: 7 }, { wch: 30 }, { wch: 10 }, { wch: 7 }, { wch: 10 }, { wch: 12 }, { wch: 12 }
+      ];
+      worksheet["!rows"] = Array.from({ length: totalRowCount }, (_, index) => {
+        if (index === 0) return { hpt: 32 };
+        if (index === 4) return { hpt: 34 };
+        if (index >= tableStartRow - 1 && index <= lastTableRow - 1) return { hpt: 22 };
+        return { hpt: 20 };
+      });
+      worksheet["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 10 } },
+        { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } },
+        { s: { r: 1, c: 4 }, e: { r: 1, c: 6 } },
+        { s: { r: 1, c: 8 }, e: { r: 1, c: 10 } },
+        { s: { r: 2, c: 1 }, e: { r: 2, c: 6 } },
+        { s: { r: 2, c: 8 }, e: { r: 2, c: 10 } },
+        { s: { r: 3, c: 1 }, e: { r: 3, c: 6 } },
+        { s: { r: 3, c: 8 }, e: { r: 3, c: 10 } },
+        { s: { r: 4, c: 1 }, e: { r: 4, c: 10 } },
+        { s: { r: totalRow - 1, c: 0 }, e: { r: totalRow - 1, c: 7 } },
+        { s: { r: footerRow - 1, c: 6 }, e: { r: footerRow - 1, c: 7 } },
+        { s: { r: footerRow - 1, c: 8 }, e: { r: footerRow - 1, c: 10 } }
+      ];
+      worksheet["!autofilter"] = { ref: "A7:K" + lastTableRow };
+      worksheet["!margins"] = { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 };
+      worksheet["!pageSetup"] = { orientation: "landscape", paperSize: 9, fitToWidth: 1, fitToHeight: 0 };
+      worksheet["!printOptions"] = { gridLines: false };
+
+      const range = XLSX.utils.decode_range(worksheet["!ref"]);
+      for (let row = range.s.r; row <= range.e.r; row++) {
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const address = XLSX.utils.encode_cell({ r: row, c: col });
+          if (!worksheet[address]) worksheet[address] = { t: "s", v: "" };
+          worksheet[address].s = cellStyle(row, col, tableStartRow - 1, lastTableRow - 1, totalRow - 1, footerRow - 1);
+        }
+      }
+    }
+
+    function cellStyle(row, col, headerRow, lastTableRow, totalRow, footerRow) {
+      const thin = { style: "thin", color: { rgb: "333333" } };
+      const base = {
+        font: { name: "Yu Gothic", sz: 10, color: { rgb: "111111" } },
+        alignment: { vertical: "center", wrapText: true },
+        border: { top: thin, right: thin, bottom: thin, left: thin }
+      };
+      if (row === 0) {
+        return { ...base, font: { name: "Yu Gothic", sz: 18, bold: true }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "FCE4D6" } } };
+      }
+      if (row >= 1 && row <= 4) {
+        const isLabel = [0, 3, 7].includes(col);
+        return { ...base, font: { name: "Yu Gothic", sz: 10, bold: isLabel }, fill: isLabel ? { fgColor: { rgb: "FBE5D6" } } : undefined };
+      }
+      if (row === headerRow) {
+        return { ...base, font: { name: "Yu Gothic", sz: 10, bold: true, color: { rgb: "7C2D12" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "F8CBAD" } } };
+      }
+      if (row > headerRow && row <= lastTableRow) {
+        const centerColumns = [0, 1, 4, 7].includes(col);
+        const rightColumns = [3, 6, 8, 9].includes(col);
+        return { ...base, alignment: { horizontal: centerColumns ? "center" : rightColumns ? "right" : "left", vertical: "center", wrapText: true } };
+      }
+      if (row === totalRow || row === footerRow) {
+        return { ...base, font: { name: "Yu Gothic", sz: 10, bold: true }, fill: { fgColor: { rgb: "FFF2CC" } } };
+      }
+      return { ...base, border: {} };
+    }
+
+    function buildAmountTotal(orderRows) {
+      const total = orderRows.reduce((sum, row) => sum + (Number(row.amount) || 0), 0);
+      return total ? total : "";
+    }
+
+    function displayValue(value) {
+      return value === null || value === undefined ? "" : value;
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? "");
+      return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    }
+
+    function downloadBlob(content, fileName, mimeType) {
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
     function isXlsxReady() {
@@ -1051,6 +1205,14 @@
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const day = String(date.getDate()).padStart(2, "0");
       return year + month + day;
+    }
+
+
+    function formatJapaneseDate(date) {
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1;
+      const day = date.getDate();
+      return year + "年" + month + "月" + day + "日";
     }
 
     function escapeHtml(value) {
