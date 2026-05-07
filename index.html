@@ -6,8 +6,14 @@
   <title>献立表OCR 発注書作成</title>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"></script>
   <script>
+    if (!window.XLSX) {
+      document.write('<script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"><\/script>');
+    }
+    if (!window.XLSX) {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"><\/script>');
+    }
     if (!window.XLSX) {
       document.write('<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"><\/script>');
     }
@@ -1059,17 +1065,17 @@
       csvShowBtn.disabled = validRows.length === 0;
     }
 
-    const orderSheetHeaders = ["No.", "チェック", "品名", "総使用量", "使用単位", "摘要", "発注数", "発注単位", "単価", "金額", "産地"];
+    const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
+    const orderSheetDetailRows = 30;
 
     function getExportRows() {
-      return rows.filter(row => String(row.name || "").trim()).map((row, index) => {
+      return rows.filter(row => String(row.name || "").trim()).map(row => {
         const orderQuantity = numberValue(row.orderQuantity);
         const unitPrice = numberValue(row.unitPrice);
         const enteredAmount = numberValue(row.amount);
         const calculatedAmount = !enteredAmount && orderQuantity && unitPrice ? round(orderQuantity * unitPrice) : enteredAmount;
 
         return [
-          index + 1,
           row.checked || "□",
           String(row.name || "").trim(),
           numberValue(row.totalQuantity) || "",
@@ -1085,31 +1091,46 @@
     }
 
     function calculateExportTotals(exportRows) {
-      const total = exportRows.reduce((sum, row) => sum + numberValue(row[9]), 0);
+      const total = exportRows.reduce((sum, row) => sum + numberValue(row[8]), 0);
       const tax = Math.floor(total * 0.1);
       return { total: round(total), tax, billed: round(total + tax) };
     }
 
     function buildExportDocument(exportRows) {
       const totals = calculateExportTotals(exportRows);
+      const detailRows = paddedOrderRows(exportRows, getOrderSheetDetailRowCount(exportRows.length));
       const blank = Array(orderSheetHeaders.length).fill("");
+      const use = parseDateParts(useDate.value);
+
       return [
-        ["", "", "発 注 書", "", "", "", "", "", "", "", ""],
-        ["", "", "", "", "", "", "発注日", formatDisplayDate(formatDateInput(new Date())), "", "", ""],
-        ["発注先", "", "", "", "", "", "納品日", formatDisplayDate(deliveryDate.value), "", "", ""],
-        ["発注元", "スクルドエンジェル たかばり園", "", "", "", "", "使用日", formatDisplayDate(useDate.value), "", "", ""],
-        ["件名", "給食材料 発注書", "", "", "", "", "検品者", checkerName.value || "", "", "", ""],
         blank,
-        orderSheetHeaders
-      ].concat(exportRows, [
         blank,
-        ["", "", "", "", "", "", "", "小計", "", totals.total || "", ""],
-        ["", "", "", "", "", "", "", "消費税(10%)", "", totals.tax || "", ""],
-        ["", "", "", "", "", "", "", "合計", "", totals.billed || "", ""],
         blank,
-        ["備考", "", "", "", "", "", "", "", "", "", ""],
-        ["", "受領印", "", "検品印", "", "", "", "", "", "", ""]
-      ]);
+        blank,
+        ["", "", "発　注　書　兼　納　品　書", "", "", "", "", "", "", ""],
+        ["", "", "スクルドエンジェル", "", "", "", "", "", "", ""],
+        ["", "", "たかばり　園", "", "", "", "", "", "", ""],
+        blank,
+        ["納品日", formatJapaneseDate(deliveryDate.value), "", "", "", "", use.month || "", "月", use.day || "", "日"],
+        blank,
+        orderSheetHeaders,
+        ...detailRows,
+        blank,
+        blank,
+        ["", "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "合計金額", "", totals.total || "", ""],
+        ["", "", "", "", "", "", "消費税 課税合計", "", totals.tax || "", ""],
+        ["", "", "検品者", "", "", "", "請求金額", "", totals.billed || "", ""],
+        ["", "", checkerName.value || "", "", "", "", "", "", "", ""]
+      ];
+    }
+
+    function paddedOrderRows(exportRows, detailRowCount) {
+      const padded = exportRows.slice();
+      while (padded.length < detailRowCount) {
+        padded.push(Array(orderSheetHeaders.length).fill(""));
+      }
+      return padded;
     }
 
     function downloadExcel() {
@@ -1133,7 +1154,7 @@
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
         XLSX.writeFile(workbook, makeExportFileName("xlsx"), { bookType: "xlsx", type: "binary" });
-        notice.textContent = "PDF見本に合わせた発注書Excelを出力しました。";
+        notice.textContent = "スクルド発注書の見本に近いレイアウトでExcelを出力しました。";
       } catch (error) {
         notice.textContent = "Excelの作成に失敗しました。CSV全文を表示したのでコピーしてください。";
         showCsv();
@@ -1141,52 +1162,120 @@
       }
     }
 
+    function getOrderSheetDetailRowCount(dataLength) {
+      return Math.max(orderSheetDetailRows, dataLength);
+    }
+
+    function getOrderSheetLayout(dataLength) {
+      const detailRowCount = getOrderSheetDetailRowCount(dataLength);
+      return {
+        detailRowCount,
+        totalRows: detailRowCount + 18,
+        detailStart: 11,
+        detailEnd: detailRowCount + 10,
+        totalStart: detailRowCount + 14,
+        totalEnd: detailRowCount + 16,
+        checkerStart: detailRowCount + 16,
+        checkerEnd: detailRowCount + 17
+      };
+    }
+
     function setupExcelWorksheet(worksheet, dataLength) {
-      const totalRows = dataLength + 14;
+      const layout = getOrderSheetLayout(dataLength);
       worksheet["!cols"] = [
-        { wch: 5 }, { wch: 8 }, { wch: 22 }, { wch: 10 }, { wch: 9 }, { wch: 30 },
-        { wch: 10 }, { wch: 9 }, { wch: 10 }, { wch: 10 }, { wch: 14 }
+        { wch: 7 }, { wch: 16 }, { wch: 9 }, { wch: 7 }, { wch: 20 },
+        { wch: 7 }, { wch: 5 }, { wch: 7 }, { wch: 10 }, { wch: 10 }
       ];
-      worksheet["!rows"] = [
-        { hpt: 32 }, { hpt: 22 }, { hpt: 22 }, { hpt: 22 }, { hpt: 22 }, { hpt: 8 }, { hpt: 24 }
-      ];
+      worksheet["!rows"] = Array.from({ length: layout.totalRows }, (_, row) => ({ hpt: orderSheetRowHeight(row, layout) }));
       worksheet["!merges"] = [
-        { s: { r: 0, c: 2 }, e: { r: 0, c: 5 } },
-        { s: { r: 2, c: 1 }, e: { r: 2, c: 5 } },
-        { s: { r: 3, c: 1 }, e: { r: 3, c: 5 } },
-        { s: { r: 4, c: 1 }, e: { r: 4, c: 5 } },
-        { s: { r: dataLength + 13, c: 1 }, e: { r: dataLength + 13, c: 2 } },
-        { s: { r: dataLength + 13, c: 3 }, e: { r: dataLength + 13, c: 4 } }
+        { s: { r: 4, c: 2 }, e: { r: 4, c: 7 } },
+        { s: { r: 5, c: 2 }, e: { r: 5, c: 7 } },
+        { s: { r: 6, c: 2 }, e: { r: 6, c: 7 } },
+        { s: { r: 8, c: 1 }, e: { r: 8, c: 4 } },
+        { s: { r: layout.totalStart, c: 6 }, e: { r: layout.totalStart, c: 7 } },
+        { s: { r: layout.totalStart + 1, c: 6 }, e: { r: layout.totalStart + 1, c: 7 } },
+        { s: { r: layout.totalStart + 2, c: 6 }, e: { r: layout.totalStart + 2, c: 7 } },
+        { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
+        { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.25, right: 0.25, top: 0.45, bottom: 0.45, header: 0.2, footer: 0.2 };
-      worksheet["!pageSetup"] = { orientation: "portrait", fitToWidth: 1, fitToHeight: 0 };
-      worksheet["!ref"] = "A1:K" + totalRows;
+      worksheet["!margins"] = { left: 0.2, right: 0.2, top: 0.45, bottom: 0.35, header: 0.15, footer: 0.15 };
+      worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
+      worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
+      worksheet["!ref"] = "A1:J" + layout.totalRows;
 
       const range = XLSX.utils.decode_range(worksheet["!ref"]);
       for (let row = range.s.r; row <= range.e.r; row++) {
         for (let col = range.s.c; col <= range.e.c; col++) {
           const address = XLSX.utils.encode_cell({ r: row, c: col });
           if (!worksheet[address]) worksheet[address] = { t: "s", v: "" };
-          worksheet[address].s = excelCellStyle(row, col, dataLength);
+          worksheet[address].s = excelCellStyle(row, col, layout);
         }
       }
     }
 
-    function excelCellStyle(row, col, dataLength) {
-      const border = { style: "thin", color: { rgb: "000000" } };
-      const isTitle = row === 0;
-      const isInfo = row >= 2 && row <= 4;
-      const isHeader = row === 6;
-      const isData = row >= 7 && row < dataLength + 7;
-      const isTotal = row >= dataLength + 8 && row <= dataLength + 10;
-      const isRemark = row === dataLength + 12;
-      const isStamp = row === dataLength + 13;
+    function orderSheetRowHeight(row, layout) {
+      if (row < 4) return 18;
+      if (row === 4) return 24;
+      if (row === 5 || row === 6) return 18;
+      if (row === 8) return 23;
+      if (row === 10) return 22;
+      if (row >= layout.detailStart && row <= layout.detailEnd) return 19;
+      if (row >= layout.totalStart) return 22;
+      return 14;
+    }
+
+    function excelCellStyle(row, col, layout) {
+      const thinBorder = { style: "thin", color: { rgb: "000000" } };
+      const mediumBorder = { style: "medium", color: { rgb: "000000" } };
+      const isTitle = row === 4;
+      const isSubTitle = row === 5 || row === 6;
+      const isDateInput = row === 8 && col >= 1 && col <= 4;
+      const isDateLabel = row === 8 && (col === 0 || col === 5 || col === 7 || col === 9);
+      const isHeader = row === 10;
+      const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
+
       return {
-        font: { name: "Yu Gothic", sz: isTitle ? 20 : 10, bold: isTitle || isHeader || isTotal || isInfo || isRemark || isStamp },
-        alignment: { horizontal: isTitle ? "center" : (col === 2 || col === 5 ? "left" : "center"), vertical: "center", wrapText: true },
-        border: isInfo || isHeader || isData || isTotal || isRemark || isStamp ? { top: border, bottom: border, left: border, right: border } : undefined,
-        fill: isHeader ? { fgColor: { rgb: "E2F0D9" } } : undefined
+        font: {
+          name: "Yu Gothic",
+          sz: isTitle ? 16 : (isSubTitle ? 10 : 9),
+          bold: isTitle || isSubTitle || isHeader || isDateLabel || isCheckerBox || (isTotalBox && col <= 7)
+        },
+        alignment: {
+          horizontal: isTitle || isSubTitle || isDateLabel || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center"),
+          vertical: "center",
+          wrapText: true
+        },
+        border: borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder),
+        fill: isDateInput ? { patternType: "solid", fgColor: { rgb: "F4CCCC" } } : undefined
       };
+    }
+
+    function borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder) {
+      const isTable = row >= 10 && row <= layout.detailEnd;
+      const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
+      const hasBorder = isTable || isCheckerBox || isTotalBox;
+      if (!hasBorder) return undefined;
+
+      const border = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+      if (isTable) {
+        if (row === 10) border.top = mediumBorder;
+        if (row === layout.detailEnd) border.bottom = mediumBorder;
+        if (col === 0) border.left = mediumBorder;
+        if (col === 9) border.right = mediumBorder;
+      }
+      if (isCheckerBox || isTotalBox) {
+        const firstRow = isCheckerBox ? layout.checkerStart : layout.totalStart;
+        const lastRow = isCheckerBox ? layout.checkerEnd : layout.totalEnd;
+        const firstCol = isCheckerBox ? 2 : 6;
+        const lastCol = isCheckerBox ? 3 : 9;
+        if (row === firstRow) border.top = mediumBorder;
+        if (row === lastRow) border.bottom = mediumBorder;
+        if (col === firstCol) border.left = mediumBorder;
+        if (col === lastCol) border.right = mediumBorder;
+      }
+      return border;
     }
 
     function copyCsv() {
@@ -1284,6 +1373,29 @@
       retryBtn.disabled = true;
       renderTable();
       updateSummary();
+    }
+
+    function parseDateParts(value) {
+      if (!value) return { year: "", month: "", day: "", weekday: "" };
+      const parts = value.split("-").map(Number);
+      if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) {
+        return { year: "", month: "", day: "", weekday: "" };
+      }
+      const date = new Date(parts[0], parts[1] - 1, parts[2]);
+      const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
+      return {
+        year: parts[0],
+        month: parts[1],
+        day: parts[2],
+        weekday: weekdays[date.getDay()]
+      };
+    }
+
+    function formatJapaneseDate(value) {
+      const parts = parseDateParts(value);
+      if (!parts.year) return "令和　年　月　日（　）使用日";
+      const reiwaYear = parts.year - 2018;
+      return "令和" + reiwaYear + "年" + parts.month + "月" + parts.day + "日（" + parts.weekday + "）使用日";
     }
 
     function formatDateInput(date) {
