@@ -6,7 +6,12 @@
   <title>献立表OCR 発注書作成</title>
 
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"></script>
+  <script>
+    if (!window.XLSX) {
+      document.write('<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"><\/script>');
+    }
+  </script>
 
   <style>
     * {
@@ -479,6 +484,12 @@
       rows = result.rows;
       stats = result.stats;
 
+      console.log("抽出結果", {
+        rows,
+        stats,
+        sourceText: text
+      });
+
       renderTable();
       updateSummary();
 
@@ -582,30 +593,57 @@
     }
 
     function findAmount(line) {
-      const normalizedLine = line
-        .replace(/[０-９．]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
-        .replace(/ｇ/g, "g")
-        .replace(/ｍｌ/g, "ml");
+      const normalizedLine = normalizeAmountText(line);
+      const numberPattern = "([0-9]+(?:\\.[0-9]+)?)";
+      const unitPattern = "(kg|g|ml|l|個)";
 
-      const match = normalizedLine.match(/(\d+(?:\.\d+)?)\s*(kg|g|ml|l|個|本|枚|袋|束|缶|パック|玉|房)?/i);
+      // 40g / 100ml / 0.5個 / 100,ml のように「数字＋単位」がある場合は最優先します。
+      const numberWithUnit = new RegExp(numberPattern + "[\\s,，、|｜:：]*" + unitPattern, "i");
+      const explicitMatch = normalizedLine.match(numberWithUnit);
 
-      let quantity = match ? Number(match[1]) : 1;
-      let unit = match && match[2] ? match[2].toLowerCase() : "個";
-
-      if (unit === "kg") {
-        quantity *= 1000;
-        unit = "g";
+      if (explicitMatch) {
+        return {
+          quantity: Number(explicitMatch[1]),
+          unit: normalizeUnit(explicitMatch[2])
+        };
       }
 
-      if (unit === "l") {
-        quantity *= 1000;
-        unit = "ml";
-      }
+      // 単位が無い場合のみ「個」にします。日付の 5/1 などは除外し、食材名の後ろ側の数字を優先します。
+      const namePositions = findNames(normalizedLine)
+        .map(name => normalizedLine.indexOf(name))
+        .filter(index => index >= 0);
+      const searchStart = namePositions.length
+        ? Math.min(...namePositions)
+        : 0;
+      const amountArea = normalizedLine.slice(searchStart);
+      const numbers = amountArea.match(/(?<![0-9/])([0-9]+(?:\.[0-9]+)?)(?![0-9/])/g);
+      const quantity = numbers && numbers.length ? Number(numbers[numbers.length - 1]) : 1;
 
       return {
-        quantity,
-        unit
+        quantity: Number.isFinite(quantity) ? quantity : 1,
+        unit: "個"
       };
+    }
+
+    function normalizeAmountText(text) {
+      return String(text || "")
+        .replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/．/g, ".")
+        .replace(/[Ｋｋ]/g, "k")
+        .replace(/[Ｇｇ]/g, "g")
+        .replace(/[Ｍｍ]/g, "m")
+        .replace(/[Ｌｌ]/g, "l");
+    }
+
+    function normalizeUnit(unit) {
+      const normalized = String(unit || "").toLowerCase();
+
+      if (normalized === "l") return "L";
+      if (normalized === "kg") return "kg";
+      if (normalized === "g") return "g";
+      if (normalized === "ml") return "ml";
+
+      return "個";
     }
 
     function normalizeName(name) {
@@ -744,28 +782,47 @@
         return;
       }
 
-      if (!window.XLSX) {
-        notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してください。";
+      if (!isXlsxReady()) {
+        notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してから、ページを再読み込みしてください。";
+        console.error("XLSXライブラリが利用できません", { xlsxLoadError: window.xlsxLoadError });
         return;
       }
 
-      const worksheet = XLSX.utils.json_to_sheet(excelRows, {
-        header: ["食材名", "数量", "単位", "備考"]
-      });
+      try {
+        const worksheet = XLSX.utils.json_to_sheet(excelRows, {
+          header: ["食材名", "数量", "単位", "備考"]
+        });
 
-      worksheet["!cols"] = [
-        { wch: 24 },
-        { wch: 10 },
-        { wch: 10 },
-        { wch: 24 }
-      ];
+        worksheet["!cols"] = [
+          { wch: 24 },
+          { wch: 10 },
+          { wch: 10 },
+          { wch: 24 }
+        ];
 
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
 
-      XLSX.writeFile(workbook, "発注書_" + formatDate(new Date()) + ".xlsx");
+        const fileName = "発注書_" + formatDate(new Date()) + ".xlsx";
+        XLSX.writeFile(workbook, fileName, { bookType: "xlsx", type: "binary" });
 
-      notice.textContent = "Excelをダウンロードしました。";
+        notice.textContent = "Excelをダウンロードしました。";
+        console.log("Excelダウンロード", { fileName, rows: excelRows });
+      } catch (error) {
+        notice.textContent = "Excelの作成に失敗しました。もう一度お試しください。";
+        console.error("Excel作成エラー", error);
+      }
+    }
+
+    function isXlsxReady() {
+      return Boolean(
+        window.XLSX &&
+        XLSX.utils &&
+        typeof XLSX.utils.json_to_sheet === "function" &&
+        typeof XLSX.utils.book_new === "function" &&
+        typeof XLSX.utils.book_append_sheet === "function" &&
+        typeof XLSX.writeFile === "function"
+      );
     }
 
     function clearAll() {
