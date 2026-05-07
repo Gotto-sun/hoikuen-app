@@ -112,6 +112,23 @@
       background: #dc2626;
     }
 
+    .csv-output {
+      display: none;
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      background: #eff6ff;
+    }
+
+    .csv-output textarea {
+      min-height: 240px;
+      white-space: pre;
+      overflow: auto;
+      background: #fff;
+      border-color: #93c5fd;
+    }
+
     input[type="file"] {
       display: none;
     }
@@ -421,8 +438,17 @@
 
       <div class="buttons">
         <button class="gray" type="button" id="addBtn">＋ 発注行を追加</button>
-        <button class="green" type="button" id="excelBtn" disabled>発注書Excel（.xlsx）をダウンロード</button>
-        <button class="blue" type="button" id="csvBtn" disabled>CSVをダウンロード（スマホ・Googleスプレッドシート用）</button>
+        <button class="green" type="button" id="excelBtn" disabled>Excel出力（.xlsx）</button>
+        <button class="blue" type="button" id="csvBtn" disabled>CSV出力（ダウンロード）</button>
+        <button class="gray" type="button" id="showCsvBtn" disabled>CSVを画面表示してコピー</button>
+      </div>
+
+      <div id="csvOutputArea" class="csv-output" aria-live="polite">
+        <p class="note">下の内容をコピーしてGoogleスプレッドシートのA1セルに貼り付けてください。列が分かれるよう、コピー用はタブ区切りにしています。</p>
+        <textarea id="csvOutput" readonly aria-label="Googleスプレッドシート貼り付け用CSV"></textarea>
+        <div class="buttons">
+          <button class="blue" type="button" id="copyCsvBtn">コピーする</button>
+        </div>
       </div>
     </section>
   </main>
@@ -499,6 +525,10 @@
     const addBtn = document.getElementById("addBtn");
     const excelBtn = document.getElementById("excelBtn");
     const csvBtn = document.getElementById("csvBtn");
+    const showCsvBtn = document.getElementById("showCsvBtn");
+    const copyCsvBtn = document.getElementById("copyCsvBtn");
+    const csvOutputArea = document.getElementById("csvOutputArea");
+    const csvOutput = document.getElementById("csvOutput");
     const deliveryDate = document.getElementById("deliveryDate");
     const useDate = document.getElementById("useDate");
     const checkerName = document.getElementById("checkerName");
@@ -537,6 +567,8 @@
     addBtn.addEventListener("click", addRow);
     excelBtn.addEventListener("click", downloadExcel);
     csvBtn.addEventListener("click", downloadCsv);
+    showCsvBtn.addEventListener("click", showCsvForCopy);
+    copyCsvBtn.addEventListener("click", copyCsvForSheets);
 
     menuCsvInput.addEventListener("change", e => loadMenuCsv(e.target.files[0]));
     childrenCsvInput.addEventListener("change", e => loadChildrenCsv(e.target.files[0]));
@@ -951,6 +983,8 @@
         tableArea.textContent = "まだ食材がありません。";
         excelBtn.disabled = true;
         csvBtn.disabled = true;
+        showCsvBtn.disabled = true;
+        csvOutputArea.style.display = "none";
         return;
       }
 
@@ -967,6 +1001,7 @@
       tableArea.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => deleteRow(Number(button.dataset.delete))));
       excelBtn.disabled = false;
       csvBtn.disabled = false;
+      showCsvBtn.disabled = false;
     }
 
     function rowHtml(row, index) {
@@ -1019,9 +1054,12 @@
       excludedCount.textContent = stats.excluded;
       excelBtn.disabled = validRows.length === 0;
       csvBtn.disabled = validRows.length === 0;
+      showCsvBtn.disabled = validRows.length === 0;
+      if (validRows.length === 0) csvOutputArea.style.display = "none";
     }
 
     const exportHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
+    const documentColumnCount = exportHeaders.length;
 
     function getExportRows() {
       return rows.filter(row => String(row.name || "").trim()).map(row => {
@@ -1053,18 +1091,21 @@
 
     function buildExportDocument(exportRows) {
       const totals = calculateExportTotals(exportRows);
+      const empty = () => Array(documentColumnCount).fill("");
+      const row = (...values) => empty().map((_, index) => values[index] ?? "");
+
       return [
-        ["発注書兼納品書", "", "", "", "", "", "", "", "", ""],
-        ["スクルドエンジェル", "", "", "", "", "納品日", formatDisplayDate(deliveryDate.value), "", "", ""],
-        ["たかばり園", "", "", "", "", "使用日", formatDisplayDate(useDate.value), "", "", ""],
-        ["", "", "", "", "", "", "", "", "", ""],
+        row("発注書兼納品書"),
+        row("スクルドエンジェル", "", "", "", "", "納品日", formatDisplayDate(deliveryDate.value)),
+        row("たかばり園", "", "", "", "", "使用日", formatDisplayDate(useDate.value)),
+        empty(),
         exportHeaders
       ].concat(exportRows, [
-        ["", "", "", "", "", "", "", "", "", ""],
-        ["検品者", checkerName.value || "", "", "", "", "", "", "", "", ""],
-        ["合計金額", "", "", "", "", "", "", "", totals.total || "", ""],
-        ["消費税(端数切捨)", "", "", "", "", "", "", "", totals.tax || "", ""],
-        ["請求金額", "", "", "", "", "", "", "", totals.billed || "", ""]
+        empty(),
+        row("検品者", checkerName.value || ""),
+        row("合計金額", "", "", "", "", "", "", "", totals.total || ""),
+        row("消費税(端数切捨)", "", "", "", "", "", "", "", totals.tax || ""),
+        row("請求金額", "", "", "", "", "", "", "", totals.billed || "")
       ]);
     }
 
@@ -1097,16 +1138,20 @@
 
     function setupExcelWorksheet(worksheet, dataLength) {
       const lastRow = dataLength + 10;
-      worksheet["!cols"] = [{ wch: 8 }, { wch: 22 }, { wch: 10 }, { wch: 8 }, { wch: 30 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
-      worksheet["!rows"] = [{ hpt: 30 }, { hpt: 22 }, { hpt: 22 }, { hpt: 8 }, { hpt: 22 }];
+      worksheet["!cols"] = [
+        { wch: 8 }, { wch: 24 }, { wch: 10 }, { wch: 8 }, { wch: 32 },
+        { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 12 }, { wch: 14 }
+      ];
+      worksheet["!rows"] = [
+        { hpt: 34 }, { hpt: 22 }, { hpt: 22 }, { hpt: 8 }, { hpt: 24 }
+      ].concat(Array(dataLength).fill({ hpt: 24 }), [{ hpt: 8 }, { hpt: 24 }, { hpt: 24 }, { hpt: 24 }, { hpt: 24 }]);
       worksheet["!merges"] = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
         { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
         { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } },
         { s: { r: dataLength + 6, c: 1 }, e: { r: dataLength + 6, c: 4 } }
       ];
-      worksheet["!autofilter"] = { ref: "A5:J" + (dataLength + 5) };
-      worksheet["!margins"] = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+      worksheet["!margins"] = { left: 0.25, right: 0.25, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 };
       worksheet["!pageSetup"] = { orientation: "landscape", fitToWidth: 1, fitToHeight: 0 };
       worksheet["!ref"] = "A1:J" + lastRow;
 
@@ -1149,13 +1194,49 @@
       notice.textContent = "CSVをダウンロードしました。Googleスプレッドシートで開きやすいUTF-8形式です。";
     }
 
+    function showCsvForCopy() {
+      syncRowsIfNeeded();
+      const exportRows = getExportRows();
+
+      if (exportRows.length === 0) {
+        notice.textContent = "表示するCSVがありません。";
+        return;
+      }
+
+      csvOutput.value = toSheetPasteText(buildExportDocument(exportRows));
+      csvOutputArea.style.display = "block";
+      csvOutput.focus();
+      csvOutput.select();
+      notice.textContent = "CSVを画面表示しました。コピーしてGoogleスプレッドシートのA1セルに貼り付けてください。";
+    }
+
+    async function copyCsvForSheets() {
+      if (!csvOutput.value) showCsvForCopy();
+      try {
+        await navigator.clipboard.writeText(csvOutput.value);
+        notice.textContent = "コピーしました。GoogleスプレッドシートのA1セルに貼り付けてください。";
+      } catch (error) {
+        csvOutput.focus();
+        csvOutput.select();
+        notice.textContent = "自動コピーできませんでした。選択済みの文字を手動でコピーしてください。";
+      }
+    }
+
     function toCsv(csvRows) {
       return csvRows.map(row => row.map(csvCell).join(",")).join("\r\n");
+    }
+
+    function toSheetPasteText(csvRows) {
+      return csvRows.map(row => row.map(sheetCell).join("\t")).join("\n");
     }
 
     function csvCell(value) {
       const text = String(value ?? "");
       return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    }
+
+    function sheetCell(value) {
+      return String(value ?? "").replace(/[\t\r\n]+/g, " ");
     }
 
     function downloadBlob(blob, fileName) {
@@ -1196,6 +1277,8 @@
       menuCsvInput.value = "";
       childrenCsvInput.value = "";
       ruleCsvInput.value = "";
+      csvOutput.value = "";
+      csvOutputArea.style.display = "none";
       deliveryDate.value = "";
       useDate.value = "";
       checkerName.value = "";
