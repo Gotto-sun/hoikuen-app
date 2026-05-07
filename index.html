@@ -417,6 +417,8 @@
         まだ食材がありません。
       </div>
 
+      <p class="note">ExcelとCSVは、画面で修正した内容をそのまま発注書兼納品書として出力します。スマホでExcel保存がうまくいかない場合はCSVを使ってください。</p>
+
       <div class="buttons">
         <button class="gray" type="button" id="addBtn">＋ 発注行を追加</button>
         <button class="green" type="button" id="excelBtn" disabled>発注書Excel（.xlsx）をダウンロード</button>
@@ -1019,54 +1021,58 @@
       csvBtn.disabled = validRows.length === 0;
     }
 
-    function getPrintableRows() {
-      return rows.filter(row => String(row.name || "").trim()).map(row => [
-        row.checked || "□",
-        String(row.name || "").trim(),
-        Number(row.totalQuantity || 0),
-        row.totalUnit || "",
-        row.note || "",
-        Number(row.orderQuantity || 0),
-        row.orderUnit || "",
-        row.unitPrice || "",
-        row.amount || "",
-        row.origin || ""
-      ]);
+    const exportHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
+
+    function getExportRows() {
+      return rows.filter(row => String(row.name || "").trim()).map(row => {
+        const orderQuantity = numberValue(row.orderQuantity);
+        const unitPrice = numberValue(row.unitPrice);
+        const enteredAmount = numberValue(row.amount);
+        const calculatedAmount = !enteredAmount && orderQuantity && unitPrice ? round(orderQuantity * unitPrice) : enteredAmount;
+
+        return [
+          row.checked || "□",
+          String(row.name || "").trim(),
+          numberValue(row.totalQuantity) || "",
+          row.totalUnit || "",
+          row.note || "",
+          orderQuantity || "",
+          row.orderUnit || "",
+          row.unitPrice || "",
+          calculatedAmount || "",
+          row.origin || ""
+        ];
+      });
     }
 
-    function calculateTotals(printableRows) {
-      const total = printableRows.reduce((sum, row) => {
-        const amount = numberValue(row[8]);
-        if (amount) return sum + amount;
-        return sum + (numberValue(row[5]) * numberValue(row[7]));
-      }, 0);
+    function calculateExportTotals(exportRows) {
+      const total = exportRows.reduce((sum, row) => sum + numberValue(row[8]), 0);
       const tax = Math.floor(total * 0.1);
-      return { total, tax, billed: total + tax };
+      return { total: round(total), tax, billed: round(total + tax) };
     }
 
-    function buildDocumentRows(printableRows) {
-      const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
-      const totals = calculateTotals(printableRows);
+    function buildExportDocument(exportRows) {
+      const totals = calculateExportTotals(exportRows);
       return [
         ["発注書兼納品書", "", "", "", "", "", "", "", "", ""],
         ["スクルドエンジェル", "", "", "", "", "納品日", formatDisplayDate(deliveryDate.value), "", "", ""],
         ["たかばり園", "", "", "", "", "使用日", formatDisplayDate(useDate.value), "", "", ""],
         ["", "", "", "", "", "", "", "", "", ""],
-        headers
-      ].concat(printableRows, [
+        exportHeaders
+      ].concat(exportRows, [
         ["", "", "", "", "", "", "", "", "", ""],
         ["検品者", checkerName.value || "", "", "", "", "", "", "", "", ""],
-        ["合計金額", "", "", "", "", "", "", "", totals.total, ""],
-        ["消費税(端数切捨)", "", "", "", "", "", "", "", totals.tax, ""],
-        ["請求金額", "", "", "", "", "", "", "", totals.billed, ""]
+        ["合計金額", "", "", "", "", "", "", "", totals.total || "", ""],
+        ["消費税(端数切捨)", "", "", "", "", "", "", "", totals.tax || "", ""],
+        ["請求金額", "", "", "", "", "", "", "", totals.billed || "", ""]
       ]);
     }
 
     function downloadExcel() {
       syncRowsIfNeeded();
-      const excelRows = getPrintableRows();
+      const exportRows = getExportRows();
 
-      if (excelRows.length === 0) {
+      if (exportRows.length === 0) {
         notice.textContent = "Excelにする食材がありません。";
         return;
       }
@@ -1076,22 +1082,21 @@
       }
 
       try {
-        const worksheet = XLSX.utils.aoa_to_sheet(buildDocumentRows(excelRows));
-        styleWorksheet(worksheet, excelRows.length);
+        const worksheet = XLSX.utils.aoa_to_sheet(buildExportDocument(exportRows));
+        setupExcelWorksheet(worksheet, exportRows.length);
 
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
-        const fileName = "発注書兼納品書_" + formatDate(new Date()) + ".xlsx";
-        XLSX.writeFile(workbook, fileName, { bookType: "xlsx", type: "binary" });
-        notice.textContent = "発注書兼納品書Excelをダウンロードしました。印刷は横向き・1ページ幅に設定しています。";
+        XLSX.writeFile(workbook, makeExportFileName("xlsx"), { bookType: "xlsx", type: "binary" });
+        notice.textContent = "発注書兼納品書Excelをダウンロードしました。画面で修正した内容を反映しています。";
       } catch (error) {
-        notice.textContent = "Excelの作成に失敗しました。もう一度お試しください。";
+        notice.textContent = "Excelの作成に失敗しました。CSV出力もお試しください。";
         console.error("Excel作成エラー", error);
       }
     }
 
-    function styleWorksheet(worksheet, dataLength) {
-      const endRow = dataLength + 10;
+    function setupExcelWorksheet(worksheet, dataLength) {
+      const lastRow = dataLength + 10;
       worksheet["!cols"] = [{ wch: 8 }, { wch: 22 }, { wch: 10 }, { wch: 8 }, { wch: 30 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 14 }];
       worksheet["!rows"] = [{ hpt: 30 }, { hpt: 22 }, { hpt: 22 }, { hpt: 8 }, { hpt: 22 }];
       worksheet["!merges"] = [
@@ -1103,19 +1108,19 @@
       worksheet["!autofilter"] = { ref: "A5:J" + (dataLength + 5) };
       worksheet["!margins"] = { left: 0.3, right: 0.3, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
       worksheet["!pageSetup"] = { orientation: "landscape", fitToWidth: 1, fitToHeight: 0 };
-      worksheet["!ref"] = "A1:J" + endRow;
+      worksheet["!ref"] = "A1:J" + lastRow;
 
       const range = XLSX.utils.decode_range(worksheet["!ref"]);
       for (let row = range.s.r; row <= range.e.r; row++) {
         for (let col = range.s.c; col <= range.e.c; col++) {
           const address = XLSX.utils.encode_cell({ r: row, c: col });
           if (!worksheet[address]) worksheet[address] = { t: "s", v: "" };
-          worksheet[address].s = cellStyle(row, col, dataLength);
+          worksheet[address].s = excelCellStyle(row, col, dataLength);
         }
       }
     }
 
-    function cellStyle(row, col, dataLength) {
+    function excelCellStyle(row, col, dataLength) {
       const border = { style: "thin", color: { rgb: "000000" } };
       const isTitle = row === 0;
       const isHeader = row === 4;
@@ -1131,16 +1136,16 @@
 
     function downloadCsv() {
       syncRowsIfNeeded();
-      const csvRows = getPrintableRows();
+      const exportRows = getExportRows();
 
-      if (csvRows.length === 0) {
+      if (exportRows.length === 0) {
         notice.textContent = "CSVにする食材がありません。";
         return;
       }
 
-      const csvText = toCsv(buildDocumentRows(csvRows));
+      const csvText = toCsv(buildExportDocument(exportRows));
       const blob = new Blob(["\uFEFF" + csvText], { type: "text/csv;charset=utf-8" });
-      downloadBlob(blob, "発注書兼納品書_" + formatDate(new Date()) + ".csv");
+      downloadBlob(blob, makeExportFileName("csv"));
       notice.textContent = "CSVをダウンロードしました。Googleスプレッドシートで開きやすいUTF-8形式です。";
     }
 
@@ -1162,6 +1167,10 @@
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function makeExportFileName(extension) {
+      return "発注書兼納品書_" + formatDate(new Date()) + "." + extension;
     }
 
     function isXlsxReady() {
