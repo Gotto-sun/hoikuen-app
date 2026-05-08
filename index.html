@@ -276,8 +276,9 @@
       padding-right: 6px;
     }
 
-    .preview-sheet .checker-input-row td {
-      height: 72px;
+    .preview-sheet .summary-row td {
+      height: 24px;
+      vertical-align: middle;
     }
 
     .preview-sheet .no-border {
@@ -532,10 +533,10 @@
           '<tr class="blank"><td colspan="10"></td></tr>' +
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
-          '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="6"></td></tr>' +
-          '<tr class="checker-input-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="2"></td><td class="total-label" colspan="2">合計金額</td><td class="total-amount">' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td class="total-amount">' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr><td colspan="6"></td><td class="total-label" colspan="2">請求金額</td><td class="total-amount">' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="summary-row"><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="6"></td></tr>' +
+          '<tr class="summary-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="2"></td><td class="total-label" colspan="2">合計金額</td><td class="total-amount">' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="summary-row"><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td class="total-amount">' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="summary-row"><td colspan="6"></td><td class="total-label" colspan="2">請求金額</td><td class="total-amount">' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
         '</tbody>' +
       '</table>';
@@ -656,8 +657,8 @@
       if (row === 4) return 18;
       if (row === 6) return 20;
       if (row >= layout.detailStart && row <= layout.detailEnd) return 20;
-      if (row === layout.checkerEnd) return 51;
-      if (row >= layout.totalStart) return 17;
+      if (row >= layout.checkerStart && row <= layout.totalEnd) return 18;
+      if (row > layout.totalEnd) return 7;
       return 7;
     }
 
