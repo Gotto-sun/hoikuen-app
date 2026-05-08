@@ -8,6 +8,9 @@
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" onerror="window.pdfLoadError = true"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"></script>
   <script>
+    if (!window.pdfjsLib) {
+      document.write('<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js" onerror="window.pdfLoadError = true"><\/script>');
+    }
     if (!window.XLSX) {
       document.write('<script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"><\/script>');
     }
@@ -519,6 +522,10 @@
         pdfStatus.textContent = "PDFが選ばれていません。";
         return;
       }
+      if (!isPdfFile(file)) {
+        pdfStatus.textContent = "PDFファイルを選んでください。手入力とExcel出力はそのまま使えます。";
+        return;
+      }
       if (!isPdfReady()) {
         pdfStatus.textContent = "PDF読み込みライブラリを読み込めませんでした。手入力とExcel出力はそのまま使えます。";
         return;
@@ -536,7 +543,7 @@
           pages.push("【" + pageNumber + "ページ】\n" + (text || "（抽出できるテキストがありません）"));
         }
         pdfText.value = pages.join("\n\n");
-        pdfStatus.textContent = "PDFのテキストを表示しました。Excelには自動反映していません。";
+        pdfStatus.textContent = "PDFのテキストを表示しました（" + pdf.numPages + "ページ）。Excelには自動反映していません。";
       } catch (error) {
         pdfText.value = "";
         pdfStatus.textContent = "PDFの読み込みに失敗しました。手入力とExcel出力はそのまま使えます。";
@@ -837,6 +844,11 @@
         pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
       }
       return true;
+    }
+
+    function isPdfFile(file) {
+      const fileName = String(file && file.name ? file.name : "").toLowerCase();
+      return file.type === "application/pdf" || fileName.endsWith(".pdf");
     }
 
     function makeExportFileName(extension) {
