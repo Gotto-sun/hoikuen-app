@@ -414,21 +414,21 @@
 <body>
   <header>
     <h1>発注書Excel作成</h1>
-    <p>手入力した材料名・数量・単位を、発注書レイアウトに反映してExcel出力します。</p>
+    <p>取り込んだファイルや手入力の材料名・数量・単位を、発注書レイアウトに反映してExcel出力します。</p>
   </header>
 
   <main>
     <section>
-      <h2>1. PDF読み込み（任意）</h2>
+      <h2>1. ファイル読み込み（任意）</h2>
       <div class="pdf-box">
-        <p class="note">PDFを選ぶと、すぐに読み込みを開始し、抽出結果を下の確認テーブルへ表示します。</p>
-        <input id="pdfFile" type="file" accept="application/pdf,.pdf" aria-label="PDFファイル">
-        <textarea id="pdfText" class="pdf-textarea" readonly placeholder="PDFから抽出したテキストがここに表示されます。"></textarea>
+        <p class="note">ファイルを選ぶと、すぐに読み込みを開始し、抽出結果を下の確認テーブルと発注書へ自動反映します。</p>
+        <input id="pdfFile" type="file" accept="application/pdf,.pdf,.xlsx,.xls,.csv,.txt,text/plain,text/csv" aria-label="読み込みファイル">
+        <textarea id="pdfText" class="pdf-textarea" placeholder="ファイルから読み込んだテキストがここに表示されます。抽出0件の場合は、ここに内容を貼り付けても確認テーブルへ反映できます。"></textarea>
         <p id="pdfStatus" class="status"></p>
       </div>
 
       <h2>2. 確認・手入力テーブル</h2>
-      <p class="note">材料名・数量・単位を確認してください。PDF読み込みに失敗しても、手入力とExcel出力は常に使えます。</p>
+      <p class="note">材料名・数量・単位を確認してください。ファイル読み込みに失敗しても、手入力とExcel出力は常に使えます。</p>
 
       <div class="document-fields" aria-label="発注書情報">
         <label for="deliveryDate">納品日</label>
@@ -496,9 +496,13 @@
 
     excelBtn.addEventListener("click", downloadExcel);
     pdfFile.addEventListener("change", async event => {
-      console.log("file selected");
       const file = event.target.files && event.target.files[0];
       await handleFileSelect(file);
+    });
+
+    pdfText.addEventListener("input", () => {
+      const parsedRows = parseIngredients(pdfText.value);
+      applyParsedRows(parsedRows, { append: false, statusPrefix: "貼り付け欄" });
     });
 
     clearBtn.addEventListener("click", () => {
@@ -520,92 +524,75 @@
 
 
     async function handleFileSelect(file) {
-      console.log("handleFileSelect start");
       pdfText.value = "";
       notice.textContent = "";
       pdfStatus.textContent = "処理を開始しました。";
       pdfFile.disabled = true;
 
-      const content = await readFile(file);
-      const text = await extractText(content);
-      const parsedRows = await parseIngredients(text);
-      await renderConfirmTable(parsedRows);
-
-      pdfFile.disabled = false;
-      console.log("handleFileSelect complete");
+      try {
+        const text = await readFileText(file);
+        pdfText.value = text;
+        const parsedRows = parseIngredients(text);
+        applyParsedRows(parsedRows, { append: true, statusPrefix: "読み込み完了" });
+      } catch (error) {
+        console.error("file import error", error);
+        pdfStatus.textContent = "読み込みに失敗しました。貼り付け欄へ内容を貼り付けるか、手入力してください。";
+        notice.textContent = "手入力とExcel出力はそのまま使えます。";
+        ensureEditableRows();
+        renderManualTable();
+        renderOrderPreview();
+      } finally {
+        pdfFile.disabled = false;
+        pdfFile.value = "";
+      }
     }
 
-    async function readFile(file) {
-      console.log("readFile start");
-      let content = null;
+    async function readFileText(file) {
       if (!file) {
-        pdfStatus.textContent = "PDFが選ばれていません。";
-      } else if (!isPdfFile(file)) {
-        pdfStatus.textContent = "PDFファイルを選んでください。手入力とExcel出力はそのまま使えます。";
-      } else {
-        pdfStatus.textContent = "ファイルを読み込み中です。";
-        try {
-          content = await file.arrayBuffer();
-        } catch (error) {
-          content = null;
-          pdfStatus.textContent = "ファイルの読み込みに失敗しました。手入力とExcel出力はそのまま使えます。";
-          console.error("readFile error", error);
-        }
+        pdfStatus.textContent = "ファイルが選ばれていません。";
+        return "";
       }
-      console.log("readFile complete");
-      return content;
+
+      pdfStatus.textContent = "ファイルを読み込み中です。";
+      if (isPdfFile(file)) return extractTextFromPdf(await file.arrayBuffer());
+      if (isExcelFile(file)) return extractTextFromWorkbook(await file.arrayBuffer());
+      return file.text();
     }
 
-    async function extractText(content) {
-      console.log("extractText start");
-      let text = "";
-      if (!content) {
-        text = "";
-      } else if (!isPdfReady()) {
-        pdfStatus.textContent = "PDF読み込みライブラリを読み込めませんでした。手入力とExcel出力はそのまま使えます。";
-      } else {
-        pdfStatus.textContent = "PDFからテキストを抽出中です。しばらくお待ちください。";
-        try {
-          const pdf = await pdfjsLib.getDocument({ data: content }).promise;
-          const pages = [];
-          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-            const page = await pdf.getPage(pageNumber);
-            const pageContent = await page.getTextContent();
-            const pageText = getPageTextLines(pageContent.items);
-            pages.push("【" + pageNumber + "ページ】\n" + (pageText || "（抽出できるテキストがありません）"));
-          }
-          text = pages.join("\n\n");
-          pdfText.value = text;
-        } catch (error) {
-          text = "";
-          pdfText.value = "";
-          pdfStatus.textContent = "PDFの読み込みに失敗しました。手入力とExcel出力はそのまま使えます。";
-          console.error("extractText error", error);
-        }
+    async function extractTextFromPdf(content) {
+      if (!isPdfReady()) {
+        pdfStatus.textContent = "PDF読み込みライブラリを読み込めませんでした。貼り付け欄か手入力を使ってください。";
+        return "";
       }
-      console.log("extractText complete");
-      return text;
+
+      pdfStatus.textContent = "PDFからテキストを抽出中です。しばらくお待ちください。";
+      const pdf = await pdfjsLib.getDocument({ data: content }).promise;
+      const pages = [];
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        const page = await pdf.getPage(pageNumber);
+        const pageContent = await page.getTextContent();
+        const pageText = getPageTextLines(pageContent.items);
+        pages.push("【" + pageNumber + "ページ】\n" + (pageText || "（抽出できるテキストがありません）"));
+      }
+      return pages.join("\n\n");
     }
 
-    async function parseIngredients(text) {
-      console.log("parseIngredients start");
-      const parsedRows = extractRowsFromPdfText(text);
-      console.log("parseIngredients complete");
-      return parsedRows;
-    }
+    function extractTextFromWorkbook(content) {
+      if (!isXlsxReady() || typeof XLSX.read !== "function" || !XLSX.utils.sheet_to_json) {
+        pdfStatus.textContent = "Excel読み込みライブラリを読み込めませんでした。貼り付け欄か手入力を使ってください。";
+        return "";
+      }
 
-    async function renderConfirmTable(parsedRows) {
-      console.log("renderConfirmTable start");
-      rows = parsedRows.length ? parsedRows : [];
-      notice.textContent = parsedRows.length
-        ? "抽出結果を確認して、必要なら修正してください。"
-        : "抽出できませんでした。必要なら手入力してください。";
-      pdfStatus.textContent = parsedRows.length
-        ? "読み込み完了。抽出結果を確認テーブルへ表示しました（" + parsedRows.length + "件）。"
-        : "読み込み完了。抽出できませんでした。";
-      renderManualTable();
-      renderOrderPreview();
-      console.log("renderConfirmTable complete");
+      pdfStatus.textContent = "Excelから内容を読み込み中です。";
+      const workbook = XLSX.read(content, { type: "array" });
+      return workbook.SheetNames.map(sheetName => {
+        const sheet = workbook.Sheets[sheetName];
+        const rowsInSheet = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+        const lines = rowsInSheet
+          .map(row => row.map(cell => String(cell || "").trim()).filter(Boolean).join("\t"))
+          .filter(Boolean);
+        return "【" + sheetName + "】\n" + lines.join("\n");
+      }).join("\n\n");
     }
 
     function getPageTextLines(items) {
@@ -629,31 +616,102 @@
       return { name: "", quantity: "", unit: "" };
     }
 
+    function parseIngredients(text) {
+      return extractRowsFromPdfText(text);
+    }
+
+    function applyParsedRows(parsedRows, options = {}) {
+      const append = options.append !== false;
+      const statusPrefix = options.statusPrefix || "読み込み完了";
+      const importedRows = Array.isArray(parsedRows) ? parsedRows : [];
+      syncRows();
+      const currentRows = rows.filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim());
+      rows = append ? currentRows.concat(importedRows) : importedRows;
+      ensureEditableRows();
+
+      notice.textContent = importedRows.length
+        ? "抽出できた行を発注書データに追加しました。必要なら修正してください。"
+        : "抽出できませんでした。貼り付け欄か手入力を使ってください。";
+      pdfStatus.textContent = importedRows.length
+        ? statusPrefix + "。抽出結果を確認テーブルへ表示しました（" + importedRows.length + "件）。"
+        : statusPrefix + "。抽出0件です。貼り付け欄を表示しています。";
+      renderManualTable();
+      renderOrderPreview();
+    }
+
+    function ensureEditableRows() {
+      if (rows.length === 0) rows = [createBlankRow()];
+    }
+
     function extractRowsFromPdfText(text) {
-      const unitPattern = "kg|ｋｇ|KG|g|ｇ|G|グラム|㎏|ｍｌ|ml|ML|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前";
       const lines = String(text || "")
-        .replace(/【\d+ページ】/g, "\n")
+        .replace(/【[^】]+】/g, "\n")
         .split(/\r?\n/)
-        .map(line => line.replace(/\s+/g, " ").trim())
+        .map(line => line.replace(/　/g, " ").replace(/\s+/g, " ").trim())
         .filter(Boolean);
       const extracted = [];
       const seen = new Set();
 
       lines.forEach(line => {
         if (isIgnoredPdfLine(line)) return;
-        const match = line.match(new RegExp("^(.+?)\\s+([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")(?:\\s|$)", "i"));
-        if (!match) return;
-        const name = cleanIngredientName(match[1]);
-        const quantity = normalizeQuantity(match[2]);
-        const unit = normalizeUnit(match[3]);
-        if (!name || !quantity || !unit) return;
-        const key = [name, quantity, unit].join("|");
-        if (seen.has(key)) return;
-        seen.add(key);
-        extracted.push({ name, quantity, unit });
+        extractRowsFromLine(line).forEach(row => {
+          const key = [row.name, row.quantity, row.unit].join("|");
+          if (seen.has(key)) return;
+          seen.add(key);
+          extracted.push(row);
+        });
       });
 
       return extracted;
+    }
+
+    function extractRowsFromLine(line) {
+      const escapedUnits = unitNames().map(unit => unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+      const results = [];
+      const normalizedLine = String(line || "").replace(/,/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
+      const nameFirstPattern = new RegExp("^(.+?)\\s+([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
+      const quantityFirstPattern = new RegExp("^([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")\\s+(.+)$", "i");
+      const nameFirstMatch = normalizedLine.match(nameFirstPattern);
+      const quantityFirstMatch = normalizedLine.match(quantityFirstPattern);
+
+      if (nameFirstMatch) {
+        addExtractedRow(results, nameFirstMatch[1], nameFirstMatch[2], nameFirstMatch[3]);
+      } else if (quantityFirstMatch) {
+        addExtractedRow(results, quantityFirstMatch[3], quantityFirstMatch[1], quantityFirstMatch[2]);
+      }
+
+      const cells = String(line || "").split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
+      if (cells.length >= 3) {
+        for (let index = 0; index < cells.length - 2; index++) {
+          const name = cells[index];
+          const quantity = cells[index + 1];
+          const unit = cells[index + 2];
+          if (isQuantity(quantity) && isKnownUnit(unit)) addExtractedRow(results, name, quantity, unit);
+        }
+      }
+
+      return results;
+    }
+
+    function addExtractedRow(target, nameValue, quantityValue, unitValue) {
+      const name = cleanIngredientName(nameValue);
+      const quantity = normalizeQuantity(quantityValue);
+      const unit = normalizeUnit(unitValue);
+      if (!name || !quantity || !unit || isIgnoredPdfLine(name)) return;
+      target.push({ name, quantity, unit });
+    }
+
+    function unitNames() {
+      return ["kg", "ｋｇ", "KG", "g", "ｇ", "G", "グラム", "㎏", "ｍｌ", "ml", "ML", "cc", "L", "l", "リットル", "個", "本", "袋", "パック", "玉", "束", "枚", "缶", "箱", "尾", "切", "片", "丁", "株", "房", "杯", "膳", "食", "人前"];
+    }
+
+    function isQuantity(value) {
+      return /^[0-9０-９]+(?:[.,．][0-9０-９]+)?$/.test(String(value || "").trim());
+    }
+
+    function isKnownUnit(value) {
+      const normalized = normalizeUnit(value).toLowerCase();
+      return unitNames().map(unit => normalizeUnit(unit).toLowerCase()).includes(normalized);
     }
 
     function isIgnoredPdfLine(line) {
@@ -982,6 +1040,11 @@
     function isPdfFile(file) {
       const fileName = String(file && file.name ? file.name : "").toLowerCase();
       return file.type === "application/pdf" || fileName.endsWith(".pdf");
+    }
+
+    function isExcelFile(file) {
+      const fileName = String(file && file.name ? file.name : "").toLowerCase();
+      return fileName.endsWith(".xlsx") || fileName.endsWith(".xls") || /spreadsheet|excel/.test(String(file.type || ""));
     }
 
     function makeExportFileName(extension) {
