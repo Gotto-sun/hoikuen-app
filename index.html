@@ -495,7 +495,11 @@
     });
 
     excelBtn.addEventListener("click", downloadExcel);
-    pdfFile.addEventListener("change", readPdfText);
+    pdfFile.addEventListener("change", async event => {
+      console.log("file selected");
+      const file = event.target.files && event.target.files[0];
+      await handleFileSelect(file);
+    });
 
     clearBtn.addEventListener("click", () => {
       rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
@@ -515,48 +519,93 @@
     renderOrderPreview();
 
 
-    async function readPdfText() {
-      const file = pdfFile.files && pdfFile.files[0];
+    async function handleFileSelect(file) {
+      console.log("handleFileSelect start");
       pdfText.value = "";
       notice.textContent = "";
+      pdfStatus.textContent = "処理を開始しました。";
+      pdfFile.disabled = true;
+
+      const content = await readFile(file);
+      const text = await extractText(content);
+      const parsedRows = await parseIngredients(text);
+      await renderConfirmTable(parsedRows);
+
+      pdfFile.disabled = false;
+      console.log("handleFileSelect complete");
+    }
+
+    async function readFile(file) {
+      console.log("readFile start");
+      let content = null;
       if (!file) {
         pdfStatus.textContent = "PDFが選ばれていません。";
-        return;
-      }
-      if (!isPdfFile(file)) {
+      } else if (!isPdfFile(file)) {
         pdfStatus.textContent = "PDFファイルを選んでください。手入力とExcel出力はそのまま使えます。";
-        return;
-      }
-      if (!isPdfReady()) {
-        pdfStatus.textContent = "PDF読み込みライブラリを読み込めませんでした。手入力とExcel出力はそのまま使えます。";
-        return;
-      }
-
-      pdfStatus.textContent = "読み込み中です。しばらくお待ちください。";
-      pdfFile.disabled = true;
-      try {
-        const buffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
-        const pages = [];
-        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-          const page = await pdf.getPage(pageNumber);
-          const content = await page.getTextContent();
-          const text = getPageTextLines(content.items);
-          pages.push("【" + pageNumber + "ページ】\n" + (text || "（抽出できるテキストがありません）"));
+      } else {
+        pdfStatus.textContent = "ファイルを読み込み中です。";
+        try {
+          content = await file.arrayBuffer();
+        } catch (error) {
+          content = null;
+          pdfStatus.textContent = "ファイルの読み込みに失敗しました。手入力とExcel出力はそのまま使えます。";
+          console.error("readFile error", error);
         }
-        pdfText.value = pages.join("\n\n");
-        const extractedRows = extractRowsFromPdfText(pdfText.value);
-        applyExtractedRows(extractedRows);
-        pdfStatus.textContent = extractedRows.length
-          ? "読み込み完了。抽出結果を確認テーブルへ表示しました（" + extractedRows.length + "件）。"
-          : "読み込み完了。材料名・数量・単位の行を抽出できませんでした。手入力してください。";
-      } catch (error) {
-        pdfText.value = "";
-        pdfStatus.textContent = "PDFの読み込みに失敗しました。手入力とExcel出力はそのまま使えます。";
-        console.error("PDF読み込みエラー", error);
-      } finally {
-        pdfFile.disabled = false;
       }
+      console.log("readFile complete");
+      return content;
+    }
+
+    async function extractText(content) {
+      console.log("extractText start");
+      let text = "";
+      if (!content) {
+        text = "";
+      } else if (!isPdfReady()) {
+        pdfStatus.textContent = "PDF読み込みライブラリを読み込めませんでした。手入力とExcel出力はそのまま使えます。";
+      } else {
+        pdfStatus.textContent = "PDFからテキストを抽出中です。しばらくお待ちください。";
+        try {
+          const pdf = await pdfjsLib.getDocument({ data: content }).promise;
+          const pages = [];
+          for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+            const page = await pdf.getPage(pageNumber);
+            const pageContent = await page.getTextContent();
+            const pageText = getPageTextLines(pageContent.items);
+            pages.push("【" + pageNumber + "ページ】\n" + (pageText || "（抽出できるテキストがありません）"));
+          }
+          text = pages.join("\n\n");
+          pdfText.value = text;
+        } catch (error) {
+          text = "";
+          pdfText.value = "";
+          pdfStatus.textContent = "PDFの読み込みに失敗しました。手入力とExcel出力はそのまま使えます。";
+          console.error("extractText error", error);
+        }
+      }
+      console.log("extractText complete");
+      return text;
+    }
+
+    async function parseIngredients(text) {
+      console.log("parseIngredients start");
+      const parsedRows = extractRowsFromPdfText(text);
+      console.log("parseIngredients complete");
+      return parsedRows;
+    }
+
+    async function renderConfirmTable(parsedRows) {
+      console.log("renderConfirmTable start");
+      rows = parsedRows.length ? parsedRows : [];
+      notice.textContent = parsedRows.length
+        ? "抽出結果を確認して、必要なら修正してください。"
+        : "抽出できませんでした。必要なら手入力してください。";
+      pdfStatus.textContent = parsedRows.length
+        ? "読み込み完了。抽出結果を確認テーブルへ表示しました（" + parsedRows.length + "件）。"
+        : "読み込み完了。抽出できませんでした。";
+      renderManualTable();
+      renderOrderPreview();
+      console.log("renderConfirmTable complete");
     }
 
     function getPageTextLines(items) {
@@ -607,18 +656,6 @@
       return extracted;
     }
 
-    function applyExtractedRows(extractedRows) {
-      if (extractedRows.length) {
-        rows = extractedRows;
-        notice.textContent = "抽出結果を確認して、必要なら修正してください。";
-      } else {
-        rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
-        notice.textContent = "抽出できなかったため、手入力してください。";
-      }
-      renderManualTable();
-      renderOrderPreview();
-    }
-
     function isIgnoredPdfLine(line) {
       return /発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|スクルドエンジェル|たかばり/.test(line);
     }
@@ -648,14 +685,18 @@
     }
 
     function renderManualTable() {
-      manualRows.innerHTML = rows.map((row, index) => {
-        return "<tr>" +
-          '<td data-label="材料名"><input data-index="' + index + '" data-field="name" type="text" value="' + escapeHtml(row.name) + '" placeholder="例：にんじん"></td>' +
-          '<td data-label="数量"><input data-index="' + index + '" data-field="quantity" type="number" step="0.001" min="0" value="' + escapeHtml(row.quantity) + '" placeholder="例：2"></td>' +
-          '<td data-label="単位"><input data-index="' + index + '" data-field="unit" type="text" value="' + escapeHtml(row.unit) + '" placeholder="例：kg"></td>' +
-          '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
-        "</tr>";
-      }).join("");
+      if (rows.length === 0) {
+        manualRows.innerHTML = '<tr><td colspan="4">抽出できませんでした</td></tr>';
+      } else {
+        manualRows.innerHTML = rows.map((row, index) => {
+          return "<tr>" +
+            '<td data-label="材料名"><input data-index="' + index + '" data-field="name" type="text" value="' + escapeHtml(row.name) + '" placeholder="例：にんじん"></td>' +
+            '<td data-label="数量"><input data-index="' + index + '" data-field="quantity" type="number" step="0.001" min="0" value="' + escapeHtml(row.quantity) + '" placeholder="例：2"></td>' +
+            '<td data-label="単位"><input data-index="' + index + '" data-field="unit" type="text" value="' + escapeHtml(row.unit) + '" placeholder="例：kg"></td>' +
+            '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
+          "</tr>";
+        }).join("");
+      }
 
       manualRows.querySelectorAll("input").forEach(input => input.addEventListener("input", () => {
         syncRows();
