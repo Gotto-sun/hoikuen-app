@@ -116,6 +116,41 @@
       font-size: 14px;
     }
 
+    .import-progress {
+      display: none;
+      gap: 8px;
+      align-items: center;
+      margin: 10px 0 0;
+    }
+
+    .import-progress.is-active {
+      display: flex;
+    }
+
+    .progress-track {
+      flex: 1;
+      height: 14px;
+      overflow: hidden;
+      border: 1px solid #fdba74;
+      border-radius: 999px;
+      background: #ffedd5;
+    }
+
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #fb923c, #16a34a);
+      transition: width 0.2s ease;
+    }
+
+    .progress-percent {
+      min-width: 48px;
+      color: #7c2d12;
+      font-weight: 700;
+      text-align: right;
+    }
+
     .document-fields {
       display: grid;
       grid-template-columns: 90px 1fr 90px 1fr 90px 1fr;
@@ -423,6 +458,10 @@
       <div class="pdf-box">
         <p class="note">ファイルを選ぶと、すぐに読み込みを開始し、抽出結果を下の確認テーブルと発注書へ自動反映します。</p>
         <input id="pdfFile" type="file" accept="application/pdf,.pdf,.xlsx,.xls,.csv,.txt,text/plain,text/csv" aria-label="読み込みファイル">
+        <div id="importProgress" class="import-progress" aria-label="読み込み率" aria-live="polite">
+          <div class="progress-track"><div id="importProgressBar" class="progress-bar"></div></div>
+          <span id="importProgressPercent" class="progress-percent">0%</span>
+        </div>
         <textarea id="pdfText" class="pdf-textarea" placeholder="ファイルから読み込んだテキストがここに表示されます。抽出0件の場合は、ここに内容を貼り付けても確認テーブルへ反映できます。"></textarea>
         <p id="pdfStatus" class="status"></p>
       </div>
@@ -477,6 +516,9 @@
     const pdfFile = document.getElementById("pdfFile");
     const pdfText = document.getElementById("pdfText");
     const pdfStatus = document.getElementById("pdfStatus");
+    const importProgress = document.getElementById("importProgress");
+    const importProgressBar = document.getElementById("importProgressBar");
+    const importProgressPercent = document.getElementById("importProgressPercent");
     const deliveryDate = document.getElementById("deliveryDate");
     const useDate = document.getElementById("useDate");
     const checkerName = document.getElementById("checkerName");
@@ -526,21 +568,27 @@
     async function handleFileSelect(file) {
       pdfText.value = "";
       notice.textContent = "";
-      pdfStatus.textContent = "処理を開始しました。";
+      updateImportProgress(0, "処理を開始しました。");
       pdfFile.disabled = true;
 
       try {
+        updateImportProgress(25, "ファイルを読み込み中です。");
         const text = await readFileText(file);
+        updateImportProgress(50, "文字化けを確認中です。");
+
+        if (isGarbledText(text)) {
+          markFileImportFailed("文字化けのため読み込めませんでした。内容を貼り付けてください");
+          return;
+        }
+
         pdfText.value = text;
+        updateImportProgress(75, "材料を抽出中です。");
         const parsedRows = parseIngredients(text);
+        updateImportProgress(100, "読み込み完了");
         applyParsedRows(parsedRows, { append: true, statusPrefix: "読み込み完了" });
       } catch (error) {
         console.error("file import error", error);
-        pdfStatus.textContent = "読み込みに失敗しました。貼り付け欄へ内容を貼り付けるか、手入力してください。";
-        notice.textContent = "手入力とExcel出力はそのまま使えます。";
-        ensureEditableRows();
-        renderManualTable();
-        renderOrderPreview();
+        markFileImportFailed("文字化けのため読み込めませんでした。内容を貼り付けてください");
       } finally {
         pdfFile.disabled = false;
         pdfFile.value = "";
@@ -610,6 +658,27 @@
         .map(([, lineItems]) => lineItems.sort((a, b) => a.x - b.x).map(item => item.text).join(" ").replace(/\s+/g, " ").trim())
         .filter(Boolean)
         .join("\n");
+    }
+
+    function updateImportProgress(percent, message) {
+      const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+      importProgress.classList.add("is-active");
+      importProgressBar.style.width = safePercent + "%";
+      importProgressPercent.textContent = safePercent + "%";
+      if (message) pdfStatus.textContent = message;
+    }
+
+    function markFileImportFailed(message) {
+      updateImportProgress(100, "読み込み失敗");
+      pdfText.value = "";
+      pdfText.placeholder = "内容をここに貼り付けてください。";
+      pdfText.focus();
+      notice.textContent = message;
+      pdfStatus.textContent = message;
+      syncRows();
+      ensureEditableRows();
+      renderManualTable();
+      renderOrderPreview();
     }
 
     function createBlankRow() {
@@ -697,7 +766,7 @@
       const name = cleanIngredientName(nameValue);
       const quantity = normalizeQuantity(quantityValue);
       const unit = normalizeUnit(unitValue);
-      if (!name || !quantity || !unit || isIgnoredPdfLine(name)) return;
+      if (!name || !quantity || !unit || isIgnoredPdfLine(name) || isSuspiciousIngredientName(name)) return;
       target.push({ name, quantity, unit });
     }
 
@@ -716,6 +785,39 @@
 
     function isIgnoredPdfLine(line) {
       return /発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|スクルドエンジェル|たかばり/.test(line);
+    }
+
+    function isGarbledText(value) {
+      const text = String(value || "");
+      const compact = text.replace(/\s/g, "");
+      const length = compact.length;
+      if (!length) return true;
+      const replacementCount = countMatches(compact, /�/g);
+      const boxCount = countMatches(compact, /□/g);
+      const japaneseCount = countMatches(compact, /[ぁ-んァ-ヶ一-龠々]/g);
+      const symbolCount = countMatches(compact, /[^ぁ-んァ-ヶ一-龠々a-zA-Z0-9０-９ーｰ－.,，.．・/／()（）\[\]【】%％kgＫＧｋｇmlＭＬｍｌccＣＣ]/g);
+      const japaneseRatio = japaneseCount / length;
+      const boxRatio = boxCount / length;
+      const symbolRatio = symbolCount / length;
+
+      return replacementCount > 0 || boxCount >= 15 || (boxCount >= 5 && boxRatio > 0.08) ||
+        (length >= 20 && japaneseRatio < 0.03) || (length >= 20 && symbolRatio > 0.25);
+    }
+
+    function isSuspiciousIngredientName(value) {
+      const name = String(value || "").trim();
+      const compact = name.replace(/\s/g, "");
+      if (!compact) return true;
+      const length = compact.length;
+      const japaneseCount = countMatches(compact, /[ぁ-んァ-ヶ一-龠々]/g);
+      const symbolCount = countMatches(compact, /[^ぁ-んァ-ヶ一-龠々a-zA-Z0-9０-９ーｰ－・/／()（）]/g);
+      return /�/.test(compact) || countMatches(compact, /□/g) >= 3 ||
+        (length >= 4 && japaneseCount === 0) || (length >= 3 && symbolCount / length > 0.35);
+    }
+
+    function countMatches(value, pattern) {
+      const matches = String(value || "").match(pattern);
+      return matches ? matches.length : 0;
     }
 
     function cleanIngredientName(value) {
