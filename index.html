@@ -3,9 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>献立表OCR 発注書作成</title>
+  <title>発注書Excel作成</title>
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"></script>
   <script>
     if (!window.XLSX) {
@@ -33,7 +32,7 @@
     }
 
     header {
-      padding: 20px 16px 10px;
+      padding: 20px 16px 12px;
       background: linear-gradient(135deg, #fb923c, #f97316);
       color: #fff;
     }
@@ -50,7 +49,7 @@
     }
 
     main {
-      max-width: 980px;
+      max-width: 1080px;
       margin: 0 auto;
       padding: 16px;
     }
@@ -76,34 +75,21 @@
     }
 
     .buttons {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      display: flex;
+      flex-wrap: wrap;
       gap: 10px;
-      margin: 12px 0;
+      margin-top: 12px;
     }
 
     button {
-      min-height: 46px;
+      min-height: 44px;
       border: 0;
       border-radius: 999px;
-      padding: 10px 14px;
+      padding: 10px 16px;
       font: inherit;
       font-weight: 700;
       color: #fff;
       cursor: pointer;
-    }
-
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .primary {
-      background: #f97316;
-    }
-
-    .blue {
-      background: #2563eb;
     }
 
     .green {
@@ -118,111 +104,12 @@
       background: #dc2626;
     }
 
-    .orange {
-      background: #ea580c;
-    }
-
-    input[type="file"] {
-      display: none;
-    }
-
-    textarea,
-    input {
-      width: 100%;
-      border: 1px solid #fdba74;
-      border-radius: 12px;
-      padding: 10px;
-      font: inherit;
-      background: #fffdf8;
-    }
-
-    textarea {
-      min-height: 180px;
-      resize: vertical;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 14px;
-    }
-
-    .csv-panel {
-      display: none;
-      margin-top: 12px;
-      padding: 12px;
-      border: 1px solid #fdba74;
-      border-radius: 12px;
-      background: #fffdf8;
-    }
-
-    .csv-panel.is-open {
-      display: block;
-    }
-
-    #csvOutput {
-      min-height: 260px;
-      white-space: pre;
-    }
-
-    label {
-      display: block;
-      margin: 12px 0 6px;
-      font-weight: 700;
-    }
-
-    #preview {
-      display: none;
-      width: 100%;
-      max-height: 260px;
-      object-fit: contain;
-      margin-top: 12px;
-      border: 1px solid #fed7aa;
-      border-radius: 12px;
-      background: #fff;
-    }
-
-    .file-status {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin: 10px 0;
-      font-size: 13px;
-    }
-
-    .file-status div {
-      border: 1px solid #fed7aa;
-      border-radius: 12px;
-      background: #fffdf8;
-      padding: 8px;
-    }
-
     .status {
       min-height: 1.8em;
       margin: 10px 0 0;
       color: #475569;
       font-weight: 700;
       font-size: 14px;
-    }
-
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-      margin-bottom: 12px;
-    }
-
-    .summary div {
-      background: #fff7ed;
-      border: 1px solid #fed7aa;
-      border-radius: 12px;
-      padding: 10px;
-    }
-
-    .summary span {
-      display: block;
-      color: #667085;
-      font-size: 12px;
-    }
-
-    .summary b {
-      font-size: 22px;
     }
 
     .document-fields {
@@ -237,9 +124,18 @@
       background: #fffdf8;
     }
 
-    .document-fields label {
-      margin: 0;
-      white-space: nowrap;
+    label {
+      display: block;
+      font-weight: 700;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid #fdba74;
+      border-radius: 12px;
+      padding: 10px;
+      font: inherit;
+      background: #fffdf8;
     }
 
     .table-wrap {
@@ -267,58 +163,88 @@
       white-space: nowrap;
     }
 
-    td input {
-      min-width: 100px;
+    .manual-table input {
+      min-width: 110px;
     }
 
-    .empty {
-      padding: 20px;
+    .preview-sheet {
+      min-width: 860px;
+      border: 2px solid #111827;
+      font-size: 13px;
+    }
+
+    .preview-sheet th,
+    .preview-sheet td {
+      border: 1px solid #111827;
       text-align: center;
-      color: #667085;
-      border: 1px dashed #fdba74;
-      border-radius: 12px;
-      background: #fff7ed;
+      height: 30px;
     }
 
-    @media (max-width: 720px) {
+    .preview-sheet .title-row td,
+    .preview-sheet .sub-title-row td {
+      border: 0;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .preview-sheet .title-row td {
+      font-size: 20px;
+      height: 40px;
+    }
+
+    .preview-sheet .left {
+      text-align: left;
+    }
+
+    .preview-sheet .date-input {
+      background: #fce5cd;
+    }
+
+    .preview-sheet .blank td {
+      border: 0;
+      height: 14px;
+    }
+
+    .preview-sheet .total-label {
+      font-weight: 700;
+    }
+
+    @media (max-width: 760px) {
       main {
         padding: 12px;
       }
 
-      .buttons,
-      .summary,
-      .file-status,
       .document-fields {
         grid-template-columns: 1fr;
       }
 
-      table,
-      thead,
-      tbody,
-      tr,
-      td {
+      .manual-table,
+      .manual-table thead,
+      .manual-table tbody,
+      .manual-table tr,
+      .manual-table td {
         display: block;
         width: 100%;
         min-width: 0;
       }
 
-      thead {
+      .manual-table thead {
         display: none;
       }
 
-      tr {
+      .manual-table tr {
         border: 1px solid #ffedd5;
         border-radius: 12px;
         margin-bottom: 10px;
         padding: 10px;
       }
 
-      td {
+      .manual-table td {
         border: 0;
         padding: 6px 0;
       }
 
-      td::before {
+      .manual-table td::before {
         content: attr(data-label);
         display: block;
         font-size: 12px;
@@ -328,7 +254,6 @@
       }
     }
 
-
     @media print {
       body {
         background: #fff;
@@ -336,11 +261,10 @@
       }
 
       header,
-      main section:first-child,
+      section:first-child,
       .buttons,
-      .summary,
-      .document-fields,
-      .status {
+      .status,
+      .note {
         display: none !important;
       }
 
@@ -352,85 +276,20 @@
         border: 0;
         box-shadow: none;
       }
-
-      table {
-        min-width: 0;
-        font-size: 11px;
-      }
-
-      th,
-      td {
-        border: 1px solid #333;
-        padding: 4px;
-      }
     }
   </style>
 </head>
 
 <body>
   <header>
-    <h1>献立表OCR 発注書作成</h1>
-    <p>献立CSV/OCR・園児数CSV・発注ルールCSV → 発注単位に変換 → Excel出力</p>
+    <h1>発注書Excel作成</h1>
+    <p>手入力した材料名・数量・単位を、発注書レイアウトに反映してExcel出力します。</p>
   </header>
 
   <main>
     <section>
-      <h2>1. 入力データ</h2>
-      <p class="note">献立CSVまたはOCR結果、園児数CSV、発注ルールCSVを使います。画像・CSV・Excel作成はブラウザ内で処理します。</p>
-
-      <div class="buttons">
-        <button class="blue" type="button" id="menuCsvBtn">📄 献立CSVを選ぶ</button>
-        <button class="green" type="button" id="childrenCsvBtn">👶 園児数CSVを選ぶ</button>
-        <button class="gray" type="button" id="ruleCsvBtn">⚙️ 発注ルールCSVを選ぶ</button>
-        <button class="blue" type="button" id="cameraBtn">📷 献立写真を撮る</button>
-        <button class="gray" type="button" id="imageBtn">🖼️ 画像を選ぶ</button>
-      </div>
-
-      <input id="menuCsvInput" type="file" accept=".csv,text/csv">
-      <input id="childrenCsvInput" type="file" accept=".csv,text/csv">
-      <input id="ruleCsvInput" type="file" accept=".csv,text/csv">
-      <input id="cameraInput" type="file" accept="image/*" capture="environment">
-      <input id="imageInput" type="file" accept="image/*">
-
-      <div class="file-status">
-        <div><b>献立</b><br><span id="menuCsvStatus">未選択（OCR/手入力でも可）</span></div>
-        <div><b>園児数</b><br><span id="childrenCsvStatus">未選択（1人分として計算）</span></div>
-        <div><b>発注ルール</b><br><span id="ruleCsvStatus">コード内の標準ルールを使用</span></div>
-      </div>
-
-      <img id="preview" alt="選択した画像">
-      <p id="ocrStatus" class="status"></p>
-
-      <label for="ocrText">献立CSV / OCR結果 / 手入力</label>
-      <textarea id="ocrText" placeholder="献立CSVまたはOCR結果がここに入ります。食品名・3歳未満児量・単位が分かる形にしてください。"></textarea>
-
-      <div class="buttons">
-        <button class="primary" type="button" id="extractBtn">発注数を計算する</button>
-        <button class="gray" type="button" id="sampleBtn">サンプルを入れる</button>
-        <button class="red" type="button" id="clearBtn">消す</button>
-        <button class="gray" type="button" id="retryBtn" disabled>もう一度OCR</button>
-      </div>
-    </section>
-
-    <section>
-      <h2>2. 発注書の確認</h2>
-
-      <div class="summary">
-        <div>
-          <span>発注食材数</span>
-          <b id="itemCount">0</b>
-        </div>
-        <div>
-          <span>合算件数</span>
-          <b id="mergedCount">0</b>
-        </div>
-        <div>
-          <span>除外件数</span>
-          <b id="excludedCount">0</b>
-        </div>
-      </div>
-
-      <p id="notice" class="status"></p>
+      <h2>1. 手入力テーブル</h2>
+      <p class="note">材料名・数量・単位を入力してください。Excelボタンは常に押せます。</p>
 
       <div class="document-fields" aria-label="発注書情報">
         <label for="deliveryDate">納品日</label>
@@ -441,748 +300,186 @@
         <input id="checkerName" type="text" placeholder="検品者名">
       </div>
 
-      <div id="tableArea" class="empty">
-        まだ食材がありません。
+      <div class="table-wrap">
+        <table class="manual-table" aria-label="手入力テーブル">
+          <thead>
+            <tr>
+              <th>材料名</th>
+              <th>数量</th>
+              <th>単位</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="manualRows"></tbody>
+        </table>
       </div>
-
-      <p class="note">出力はPDF見本に合わせた発注書レイアウトです。スマホでダウンロードやコピーができない場合は、CSV全文を表示してコピーしてください。</p>
 
       <div class="buttons">
-        <button class="gray" type="button" id="addBtn">＋ 発注行を追加</button>
+        <button class="gray" type="button" id="addBtn">＋ 行を追加</button>
         <button class="green" type="button" id="excelBtn">Excel出力</button>
-        <button class="blue" type="button" id="csvCopyBtn">CSVコピー</button>
-        <button class="orange" type="button" id="csvShowBtn">CSV表示</button>
+        <button class="red" type="button" id="clearBtn">入力を消す</button>
       </div>
+      <p id="notice" class="status"></p>
+    </section>
 
-      <div id="csvPanel" class="csv-panel" aria-live="polite">
-        <label for="csvOutput">CSV全文（Googleスプレッドシートに貼り付けできます）</label>
-        <textarea id="csvOutput" readonly></textarea>
-        <p class="note">上の全文を選択してコピーし、Googleスプレッドシートの左上セルに貼り付けてください。</p>
-      </div>
-
-      <label for="debugOutput">デバッグ表示（抽出した行）</label>
-      <textarea id="debugOutput" readonly placeholder="抽出した行をJSONで表示します。"></textarea>
+    <section>
+      <h2>2. 発注書レイアウト</h2>
+      <p class="note">入力内容は下の発注書レイアウトに自動反映されます。</p>
+      <div class="table-wrap" id="orderPreview"></div>
     </section>
   </main>
 
   <script>
-    const aliases = {
-      "人参": "にんじん",
-      "ニンジン": "にんじん",
-      "玉葱": "玉ねぎ",
-      "たまねぎ": "玉ねぎ",
-      "じゃが芋": "じゃがいも",
-      "ジャガイモ": "じゃがいも",
-      "馬鈴薯": "じゃがいも",
-      "鶏肉": "鶏もも肉",
-      "とり肉": "鶏もも肉",
-      "豚肉": "豚こま肉",
-      "ほうれんそう": "ほうれん草",
-      "ホウレン草": "ほうれん草",
-      "椎茸": "しいたけ",
-      "リンゴ": "りんご",
-      "林檎": "りんご",
-      "たまご": "卵"
-    };
-
-    const standardOrderRules = [
-      { names: ["米", "ごはん", "精白米", "白米"], exclude: true, reason: "米は発注対象外" },
-      { names: ["だし汁", "だし", "出汁", "かつおだし", "昆布だし"], exclude: true, reason: "だし汁は発注対象外" },
-      { names: ["しょうゆ", "醤油", "塩", "砂糖", "酢", "みそ", "味噌", "油", "サラダ油", "ごま油", "酒", "みりん", "こしょう", "ソース", "ケチャップ", "マヨネーズ"], exclude: true, reason: "調味料は発注対象外" },
-      { names: ["牛乳"], orderUnit: "本", packageQuantity: 450, packageUnit: "ml", fixedOrderQuantity: 2, note: "450ml×2本" },
-      { names: ["キャベツ"], orderUnit: "個", packageQuantity: 1200, packageUnit: "g", roundStep: 0.25, note: "1/4個単位" },
-      { names: ["白菜"], orderUnit: "個", packageQuantity: 2000, packageUnit: "g", roundStep: 0.125, note: "1/8個単位" },
-      { names: ["ツナ", "コーン缶", "トマト缶", "みかん缶", "缶詰"], orderUnit: "缶", packageQuantity: 1, packageUnit: "缶", roundStep: 1, note: "缶単位" },
-      { names: ["しめじ", "えのき", "しいたけ", "まいたけ", "エリンギ", "なめこ"], orderUnit: "袋", packageQuantity: 100, packageUnit: "g", roundStep: 1, note: "きのこ類は1袋単位" },
-      { names: ["豆腐"], orderUnit: "丁", packageQuantity: 300, packageUnit: "g", roundStep: 1, note: "300g=1丁で換算" },
-      { names: ["卵"], orderUnit: "個", packageQuantity: 1, packageUnit: "個", roundStep: 1, note: "個単位" },
-      { names: ["食パン", "ロールパン"], orderUnit: "袋", packageQuantity: 1, packageUnit: "袋", roundStep: 1, note: "袋単位" },
-      { names: ["にんじん", "玉ねぎ", "じゃがいも", "大根", "きゅうり", "トマト", "ミニトマト", "ほうれん草", "小松菜", "ブロッコリー", "ピーマン", "かぼちゃ", "なす", "レタス", "もやし", "ねぎ", "長ねぎ"], orderUnit: "kg", packageQuantity: 1000, packageUnit: "g", roundStep: 0.1, note: "野菜はkg換算" },
-      { names: ["鶏もも肉", "鶏むね肉", "鶏ひき肉", "豚こま肉", "豚ひき肉", "牛肉", "鮭", "さけ", "さば", "たら", "しらす", "ちくわ", "かまぼこ"], orderUnit: "kg", packageQuantity: 1000, packageUnit: "g", roundStep: 0.1, note: "肉・魚はkg換算" },
-      { names: ["ヨーグルト", "チーズ"], orderUnit: "個", packageQuantity: 1, packageUnit: "個", roundStep: 1, note: "商品単位を確認" },
-      { names: ["りんご", "オレンジ", "バナナ", "みかん", "いちご"], orderUnit: "個", packageQuantity: 1, packageUnit: "個", roundStep: 1, note: "果物は個単位" },
-      { names: ["小麦粉", "片栗粉", "パン粉", "うどん", "スパゲティ", "マカロニ"], orderUnit: "kg", packageQuantity: 1000, packageUnit: "g", roundStep: 0.1, note: "乾物はkg換算" }
-    ];
-
-    const ingredients = Array.from(new Set(standardOrderRules.flatMap(rule => rule.names).concat(Object.keys(aliases)))).sort((a, b) => b.length - a.length);
-
-    const headerWords = ["日付", "曜日", "献立", "献立名", "昼食", "おやつ", "午前", "午後", "材料", "食品名", "食材名", "数量", "分量", "単位", "備考"];
-
-    const sampleText =
-      "日付,献立名,食品名,3歳未満児量,単位\n" +
-      "5/1,昼食,鶏もも肉,40,g\n" +
-      "5/1,昼食,にんじん,15,g\n" +
-      "5/1,昼食,キャベツ,80,g\n" +
-      "5/1,昼食,白菜,60,g\n" +
-      "5/1,昼食,しめじ,25,g\n" +
-      "5/1,昼食,米,50,g\n" +
-      "5/1,おやつ,牛乳,100,ml\n" +
-      "5/1,おやつ,りんご,0.5,個";
-
-    let lastImage = null;
-    let rows = [];
-    let childrenCount = 1;
-    let customOrderRules = [];
-    let stats = { merged: 0, excluded: 0 };
-
-    const cameraBtn = document.getElementById("cameraBtn");
-    const imageBtn = document.getElementById("imageBtn");
-    const menuCsvBtn = document.getElementById("menuCsvBtn");
-    const childrenCsvBtn = document.getElementById("childrenCsvBtn");
-    const ruleCsvBtn = document.getElementById("ruleCsvBtn");
-    const retryBtn = document.getElementById("retryBtn");
-    const extractBtn = document.getElementById("extractBtn");
-    const sampleBtn = document.getElementById("sampleBtn");
-    const clearBtn = document.getElementById("clearBtn");
+    const manualRows = document.getElementById("manualRows");
+    const orderPreview = document.getElementById("orderPreview");
     const addBtn = document.getElementById("addBtn");
     const excelBtn = document.getElementById("excelBtn");
-    const csvCopyBtn = document.getElementById("csvCopyBtn");
-    const csvShowBtn = document.getElementById("csvShowBtn");
+    const clearBtn = document.getElementById("clearBtn");
     const deliveryDate = document.getElementById("deliveryDate");
     const useDate = document.getElementById("useDate");
     const checkerName = document.getElementById("checkerName");
-
-    const cameraInput = document.getElementById("cameraInput");
-    const imageInput = document.getElementById("imageInput");
-    const menuCsvInput = document.getElementById("menuCsvInput");
-    const childrenCsvInput = document.getElementById("childrenCsvInput");
-    const ruleCsvInput = document.getElementById("ruleCsvInput");
-    const menuCsvStatus = document.getElementById("menuCsvStatus");
-    const childrenCsvStatus = document.getElementById("childrenCsvStatus");
-    const ruleCsvStatus = document.getElementById("ruleCsvStatus");
-    const preview = document.getElementById("preview");
-    const ocrText = document.getElementById("ocrText");
-    const ocrStatus = document.getElementById("ocrStatus");
     const notice = document.getElementById("notice");
-    const tableArea = document.getElementById("tableArea");
-    const csvPanel = document.getElementById("csvPanel");
-    const csvOutput = document.getElementById("csvOutput");
-    const debugOutput = document.getElementById("debugOutput");
-
-    const itemCount = document.getElementById("itemCount");
-    const mergedCount = document.getElementById("mergedCount");
-    const excludedCount = document.getElementById("excludedCount");
-
-    menuCsvBtn.addEventListener("click", () => menuCsvInput.click());
-    childrenCsvBtn.addEventListener("click", () => childrenCsvInput.click());
-    ruleCsvBtn.addEventListener("click", () => ruleCsvInput.click());
-    cameraBtn.addEventListener("click", () => cameraInput.click());
-    imageBtn.addEventListener("click", () => imageInput.click());
-    retryBtn.addEventListener("click", () => lastImage && runOcr(lastImage));
-    extractBtn.addEventListener("click", extractAndRender);
-    sampleBtn.addEventListener("click", () => {
-      ocrText.value = sampleText;
-      menuCsvStatus.textContent = "サンプルを使用中";
-      extractAndRender();
-    });
-    clearBtn.addEventListener("click", clearAll);
-    addBtn.addEventListener("click", addRow);
-    excelBtn.addEventListener("click", downloadExcel);
-    csvCopyBtn.addEventListener("click", copyCsv);
-    csvShowBtn.addEventListener("click", showCsv);
-
-    menuCsvInput.addEventListener("change", e => loadMenuCsv(e.target.files[0]));
-    childrenCsvInput.addEventListener("change", e => loadChildrenCsv(e.target.files[0]));
-    ruleCsvInput.addEventListener("change", e => loadRuleCsv(e.target.files[0]));
-    cameraInput.addEventListener("change", e => handleImage(e.target.files[0]));
-    imageInput.addEventListener("change", e => handleImage(e.target.files[0]));
-
-    async function readTextFile(file) {
-      if (!file) return "";
-      const buffer = await file.arrayBuffer();
-      const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
-      if (utf8.includes("�")) {
-        try {
-          return new TextDecoder("shift_jis").decode(buffer);
-        } catch (error) {
-          return utf8;
-        }
-      }
-      return utf8;
-    }
-
-    async function loadMenuCsv(file) {
-      if (!file) return;
-      ocrText.value = await readTextFile(file);
-      menuCsvStatus.textContent = file.name;
-      notice.textContent = "献立CSVを読み込みました。必要なら内容を確認してから計算してください。";
-      extractAndRender();
-    }
-
-    async function loadChildrenCsv(file) {
-      if (!file) return;
-      const text = await readTextFile(file);
-      childrenCount = parseChildrenCount(text);
-      childrenCsvStatus.textContent = file.name + "（3歳未満児 " + childrenCount + "人）";
-      notice.textContent = "園児数CSVを読み込みました。3歳未満児 " + childrenCount + "人で計算します。";
-      if (ocrText.value.trim()) extractAndRender();
-    }
-
-    async function loadRuleCsv(file) {
-      if (!file) return;
-      const text = await readTextFile(file);
-      customOrderRules = parseRuleCsv(text);
-      ruleCsvStatus.textContent = file.name + "（" + customOrderRules.length + "件）";
-      notice.textContent = "発注ルールCSVを読み込みました。標準ルールより優先します。";
-      if (ocrText.value.trim()) extractAndRender();
-    }
-
-    function parseChildrenCount(text) {
-      const csvRows = parseCsv(text);
-      if (csvRows.length === 0) return 1;
-      const header = csvRows[0].map(value => value.trim());
-      const dataRows = csvRows.slice(1).filter(row => row.some(Boolean));
-      const targetIndex = header.findIndex(name => /3歳未満|３歳未満|未満児|0歳|１歳|1歳|２歳|2歳/.test(name));
-
-      if (targetIndex >= 0) {
-        const total = dataRows.reduce((sum, row) => sum + numberValue(row[targetIndex]), 0);
-        return total > 0 ? total : 1;
-      }
-
-      const total = csvRows.flat().reduce((sum, value) => sum + numberValue(value), 0);
-      return total > 0 ? total : 1;
-    }
-
-    function parseRuleCsv(text) {
-      const csvRows = parseCsv(text);
-      if (csvRows.length < 2) return [];
-      const header = csvRows[0].map(normalizeHeader);
-      const find = names => header.findIndex(value => names.includes(value));
-      const nameIndex = find(["材料名", "食材名", "食品名", "name"]);
-      const orderUnitIndex = find(["発注単位", "納品単位", "単位", "orderunit"]);
-      const packageQuantityIndex = find(["入数", "換算量", "基準量", "packagequantity"]);
-      const packageUnitIndex = find(["基準単位", "換算単位", "packageunit"]);
-      const roundStepIndex = find(["丸め単位", "発注刻み", "roundstep"]);
-      const excludeIndex = find(["除外", "対象外", "exclude"]);
-      const noteIndex = find(["摘要", "備考", "note"]);
-
-      return csvRows.slice(1).map(row => {
-        const name = row[nameIndex] || "";
-        return {
-          names: name.split(/[、|｜/]/).map(value => normalizeName(value)).filter(Boolean),
-          orderUnit: row[orderUnitIndex] || "",
-          packageQuantity: numberValue(row[packageQuantityIndex]) || 1,
-          packageUnit: row[packageUnitIndex] || row[orderUnitIndex] || "個",
-          roundStep: numberValue(row[roundStepIndex]) || 1,
-          exclude: /^(1|true|yes|除外|対象外)$/i.test(String(row[excludeIndex] || "").trim()),
-          reason: row[noteIndex] || "発注ルールCSVで除外",
-          note: row[noteIndex] || "発注ルールCSV"
-        };
-      }).filter(rule => rule.names.length > 0);
-    }
-
-    function handleImage(file) {
-      if (!file) return;
-      lastImage = file;
-      retryBtn.disabled = false;
-      preview.src = URL.createObjectURL(file);
-      preview.style.display = "block";
-      runOcr(file);
-    }
-
-    async function runOcr(file) {
-      if (!window.Tesseract) {
-        ocrStatus.textContent = "OCRライブラリを読み込めませんでした。ネット接続を確認してください。";
-        return;
-      }
-
-      setWorking(true);
-      ocrStatus.textContent = "OCRを開始します。初回は時間がかかることがあります。";
-
-      try {
-        const best = await recognizeBestOrientation(file);
-
-        ocrText.value = best.text;
-        menuCsvStatus.textContent = "OCR結果を使用中";
-        ocrStatus.textContent = "OCRが終わりました。採用した向き：" + best.rotation + "度。内容を確認してください。";
-        extractAndRender();
-      } catch (error) {
-        ocrStatus.textContent = "OCRに失敗しました。画像を撮り直すか、文字を手入力してください。";
-      } finally {
-        setWorking(false);
-      }
-    }
-
-    async function recognizeBestOrientation(file) {
-      const candidates = [];
-      for (const rotation of [0, 90, 180, 270]) {
-        const image = rotation === 0 ? file : await rotateImageFile(file, rotation);
-        const result = await Tesseract.recognize(image, "jpn+eng", {
-          logger: message => {
-            if (message.status === "recognizing text") {
-              ocrStatus.textContent = "OCR中です（" + rotation + "度）：" + Math.round(message.progress * 100) + "%";
-            }
-          }
-        });
-        const rawText = result.data.text || "";
-        const text = cleanOcrText(rawText);
-        candidates.push({
-          rotation,
-          rawText,
-          text,
-          score: text.length || countJapaneseChars(rawText)
-        });
-      }
-
-      return candidates.reduce((best, current) => current.score > best.score ? current : best, candidates[0]);
-    }
-
-    function rotateImageFile(file, degrees) {
-      return new Promise((resolve, reject) => {
-        const image = new Image();
-        const url = URL.createObjectURL(file);
-        image.onload = () => {
-          const canvas = document.createElement("canvas");
-          const context = canvas.getContext("2d");
-          const quarterTurn = Math.abs(degrees % 180) === 90;
-          canvas.width = quarterTurn ? image.naturalHeight : image.naturalWidth;
-          canvas.height = quarterTurn ? image.naturalWidth : image.naturalHeight;
-          context.translate(canvas.width / 2, canvas.height / 2);
-          context.rotate(degrees * Math.PI / 180);
-          context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
-          canvas.toBlob(blob => {
-            URL.revokeObjectURL(url);
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error("画像の回転に失敗しました。"));
-            }
-          }, file.type || "image/png");
-        };
-        image.onerror = () => {
-          URL.revokeObjectURL(url);
-          reject(new Error("画像を読み込めませんでした。"));
-        };
-        image.src = url;
-      });
-    }
-
-    function cleanOcrText(text) {
-      return String(text || "")
-        .replace(/\r\n/g, "\n")
-        .replace(/\r/g, "\n")
-        .split("\n")
-        .map(line => line.trim())
-        .filter(line => countJapaneseChars(line) >= 2)
-        .filter(line => !/^[A-Za-z0-9\s\p{P}\p{S}]+$/u.test(line))
-        .join("\n");
-    }
-
-    function countJapaneseChars(text) {
-      const matches = String(text || "").match(/[ぁ-んァ-ヶ一-龠々〆〤]/g);
-      return matches ? matches.length : 0;
-    }
-
-    function setWorking(isWorking) {
-      cameraBtn.disabled = isWorking;
-      imageBtn.disabled = isWorking;
-      menuCsvBtn.disabled = isWorking;
-      childrenCsvBtn.disabled = isWorking;
-      ruleCsvBtn.disabled = isWorking;
-      retryBtn.disabled = isWorking || !lastImage;
-      extractBtn.disabled = isWorking;
-    }
-
-    function extractAndRender() {
-      const text = ocrText.value.trim();
-      if (!text) {
-        notice.textContent = "献立CSV、OCR結果、または献立の文字を入力してください。";
-        return;
-      }
-
-      const result = extractIngredients(text);
-      rows = result.rows;
-      stats = result.stats;
-      renderTable();
-      updateSummary();
-      updateDebugOutput(result.debugRows || rows);
-
-      notice.textContent = rows.length
-        ? "3歳未満児 " + childrenCount + "人分で発注数を計算しました。内容を確認して、必要なら修正してください。"
-        : "発注対象の食材を見つけられませんでした。米・調味料・だし汁だけの場合は除外されます。";
-    }
-
-    function extractIngredients(text) {
-      const totals = new Map();
-      let foundCount = 0;
-      let excludedCount = 0;
-      const parsedRows = parseCsv(text);
-      const hasCsvHeader = parsedRows.length > 1 && parsedRows[0].some(cell => /食品名|食材名|材料名/.test(cell));
-      const sourceRows = hasCsvHeader ? rowsFromCsv(parsedRows) : rowsFromText(text);
-
-      for (const source of sourceRows) {
-        const name = normalizeName(source.name);
-        if (!name || headerWords.includes(name)) continue;
-        const rule = findOrderRule(name);
-        if (rule && rule.exclude) {
-          excludedCount++;
-          continue;
-        }
-
-        foundCount++;
-        const key = name + "__" + source.unit;
-        const current = totals.get(key) || { name, quantity: 0, unit: source.unit, count: 0 };
-        current.quantity += source.quantity * childrenCount;
-        current.count += 1;
-        totals.set(key, current);
-      }
-
-      let outputRows = Array.from(totals.values()).map(item => toOrderRow(item)).sort((a, b) => a.name.localeCompare(b.name, "ja"));
-      const provisional = outputRows.length === 0 ? createProvisionalRow(text) : null;
-      if (provisional) outputRows = [provisional];
-      return {
-        rows: outputRows,
-        debugRows: outputRows,
-        stats: {
-          merged: Math.max(0, foundCount - outputRows.length),
-          excluded: excludedCount
-        }
-      };
-    }
-
-    function createProvisionalRow(text) {
-      const line = cleanOcrText(text).split("\n").find(Boolean) || String(text || "").split(/\r?\n/).map(value => value.trim()).find(Boolean) || "仮データ";
-      return {
-        checked: "□",
-        name: line.slice(0, 40),
-        totalQuantity: 1,
-        totalUnit: "個",
-        note: "OCR仮データ（要確認）",
-        orderQuantity: 1,
-        orderUnit: "個",
-        unitPrice: "",
-        amount: "",
-        origin: ""
-      };
-    }
-
-    function rowsFromCsv(csvRows) {
-      const header = csvRows[0].map(normalizeHeader);
-      const nameIndex = findHeaderIndex(header, ["食品名", "食材名", "材料名", "name"]);
-      const under3Index = findHeaderIndex(header, ["3歳未満児量", "３歳未満児量", "3歳未満", "３歳未満", "未満児量", "未満児", "under3"]);
-      const quantityIndex = under3Index >= 0 ? under3Index : findHeaderIndex(header, ["数量", "分量", "使用量", "量", "quantity"]);
-      const unitIndex = findHeaderIndex(header, ["単位", "unit"]);
-
-      return csvRows.slice(1).flatMap(row => {
-        const rawName = row[nameIndex] || "";
-        const names = findNames(rawName).length ? findNames(rawName) : [rawName];
-        return names.map(name => ({
-          name: normalizeName(name),
-          quantity: numberValue(row[quantityIndex]) || 1,
-          unit: normalizeUnit(row[unitIndex] || findAmount(row.join(",")).unit)
-        }));
-      }).filter(row => row.name);
-    }
-
-    function rowsFromText(text) {
-      const output = [];
-      const lines = text.replace(/\r/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
-      for (const line of lines) {
-        const compact = line.replace(/\s/g, "");
-        if (!compact || headerWords.includes(compact)) continue;
-        const foundNames = findNames(line);
-        if (foundNames.length === 0) continue;
-        const amount = findAmount(line);
-        for (const rawName of foundNames) {
-          output.push({ name: normalizeName(rawName), quantity: amount.quantity, unit: amount.unit });
-        }
-      }
-      return output;
-    }
-
-    function toOrderRow(item) {
-      const rule = findOrderRule(item.name) || defaultRule(item.unit);
-      const converted = convertToOrderQuantity(item.quantity, item.unit, rule);
-      const noteParts = [];
-      if (item.count > 1) noteParts.push(item.count + "件を合算");
-      if (rule.note) noteParts.push(rule.note);
-      if (converted.warning) noteParts.push(converted.warning);
-
-      return {
-        checked: "□",
-        name: item.name,
-        totalQuantity: round(item.quantity),
-        totalUnit: item.unit,
-        note: noteParts.join(" / "),
-        orderQuantity: converted.quantity,
-        orderUnit: converted.unit,
-        unitPrice: "",
-        amount: "",
-        origin: ""
-      };
-    }
-
-    function convertToOrderQuantity(quantity, unit, rule) {
-      if (rule.fixedOrderQuantity) {
-        return { quantity: rule.fixedOrderQuantity, unit: rule.orderUnit || "本" };
-      }
-
-      const normalizedUnit = normalizeUnit(unit);
-      let baseQuantity = quantity;
-      let warning = "";
-      if (normalizedUnit !== rule.packageUnit) {
-        baseQuantity = convertUnit(quantity, normalizedUnit, rule.packageUnit);
-      }
-      if (baseQuantity === null) {
-        baseQuantity = quantity;
-        warning = "単位換算は要確認";
-      }
-
-      const rawOrderQuantity = baseQuantity / (rule.packageQuantity || 1);
-      return {
-        quantity: roundUp(rawOrderQuantity, rule.roundStep || 1),
-        unit: rule.orderUnit || normalizedUnit,
-        warning
-      };
-    }
-
-    function convertUnit(quantity, fromUnit, toUnit) {
-      if (fromUnit === toUnit) return quantity;
-      if (fromUnit === "kg" && toUnit === "g") return quantity * 1000;
-      if (fromUnit === "g" && toUnit === "kg") return quantity / 1000;
-      if (fromUnit === "L" && toUnit === "ml") return quantity * 1000;
-      if (fromUnit === "ml" && toUnit === "L") return quantity / 1000;
-      return null;
-    }
-
-    function defaultRule(unit) {
-      const normalizedUnit = normalizeUnit(unit);
-      return {
-        orderUnit: normalizedUnit,
-        packageQuantity: 1,
-        packageUnit: normalizedUnit,
-        roundStep: normalizedUnit === "g" || normalizedUnit === "ml" ? 100 : 1,
-        note: "標準ルール（要確認）"
-      };
-    }
-
-    function findOrderRule(name) {
-      const normalizedName = normalizeName(name);
-      const rules = customOrderRules.concat(standardOrderRules);
-      return rules.find(rule => rule.names.some(ruleName => normalizedName === normalizeName(ruleName) || normalizedName.includes(normalizeName(ruleName))));
-    }
-
-    function findNames(line) {
-      const compact = line.replace(/[\s,，、|｜\t]/g, "");
-      const found = [];
-      for (const word of ingredients) {
-        if (compact.includes(word)) {
-          const normalized = normalizeName(word);
-          if (!found.some(name => normalizeName(name) === normalized)) found.push(word);
-        }
-      }
-      return found.filter(name => {
-        const normalized = normalizeName(name);
-        return !found.some(other => {
-          const otherNormalized = normalizeName(other);
-          return otherNormalized !== normalized && otherNormalized.includes(normalized);
-        });
-      });
-    }
-
-    function findAmount(line) {
-      const normalizedLine = normalizeAmountText(line);
-      const numberPattern = "([0-9]+(?:\\.[0-9]+)?)";
-      const unitPattern = "(kg|g|ml|l|L|個|本|袋|缶|丁)";
-      const explicitMatch = normalizedLine.match(new RegExp(numberPattern + "[\\s,，、|｜:：]*" + unitPattern, "i"));
-      if (explicitMatch) {
-        return { quantity: Number(explicitMatch[1]), unit: normalizeUnit(explicitMatch[2]) };
-      }
-
-      const numbers = normalizedLine.match(/(?<![0-9/])([0-9]+(?:\.[0-9]+)?)(?![0-9/])/g);
-      const quantity = numbers && numbers.length ? Number(numbers[numbers.length - 1]) : 1;
-      return { quantity: Number.isFinite(quantity) ? quantity : 1, unit: "個" };
-    }
-
-    function parseCsv(text) {
-      const rows = [];
-      let row = [];
-      let cell = "";
-      let quoted = false;
-      const normalized = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      for (let i = 0; i < normalized.length; i++) {
-        const char = normalized[i];
-        const next = normalized[i + 1];
-        if (char === '"') {
-          if (quoted && next === '"') {
-            cell += '"';
-            i++;
-          } else {
-            quoted = !quoted;
-          }
-        } else if (char === "," && !quoted) {
-          row.push(cell.trim());
-          cell = "";
-        } else if (char === "\n" && !quoted) {
-          row.push(cell.trim());
-          if (row.some(Boolean)) rows.push(row);
-          row = [];
-          cell = "";
-        } else {
-          cell += char;
-        }
-      }
-      row.push(cell.trim());
-      if (row.some(Boolean)) rows.push(row);
-      return rows;
-    }
-
-    function findHeaderIndex(header, candidates) {
-      return header.findIndex(value => candidates.includes(value) || candidates.some(candidate => value.includes(candidate)));
-    }
-
-    function normalizeHeader(value) {
-      return String(value || "").trim().replace(/\s/g, "").toLowerCase();
-    }
-
-    function normalizeAmountText(text) {
-      return String(text || "")
-        .replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
-        .replace(/．/g, ".")
-        .replace(/[Ｋｋ]/g, "k")
-        .replace(/[Ｇｇ]/g, "g")
-        .replace(/[Ｍｍ]/g, "m")
-        .replace(/[Ｌｌ]/g, "l");
-    }
-
-    function normalizeUnit(unit) {
-      const normalized = String(unit || "").trim().toLowerCase();
-      if (normalized === "l") return "L";
-      if (["kg", "g", "ml", "個", "本", "袋", "缶", "丁"].includes(normalized)) return normalized;
-      return normalized || "個";
-    }
-
-    function normalizeName(name) {
-      const trimmed = String(name || "").trim();
-      return aliases[trimmed] || trimmed;
-    }
-
-    function numberValue(value) {
-      const normalized = normalizeAmountText(value).replace(/,/g, "");
-      const match = normalized.match(/-?[0-9]+(?:\.[0-9]+)?/);
-      return match ? Number(match[0]) : 0;
-    }
-
-    function round(value) {
-      return Math.round(value * 1000) / 1000;
-    }
-
-    function roundUp(value, step) {
-      const safeStep = step || 1;
-      return round(Math.ceil((value - 0.0000001) / safeStep) * safeStep);
-    }
-
-    function renderTable() {
-      if (rows.length === 0) {
-        tableArea.className = "empty";
-        tableArea.textContent = "まだ食材がありません。";
-        excelBtn.disabled = false;
-        csvCopyBtn.disabled = false;
-        csvShowBtn.disabled = false;
-        csvPanel.classList.remove("is-open");
-        csvOutput.value = "";
-        return;
-      }
-
-      tableArea.className = "table-wrap";
-      tableArea.innerHTML =
-        "<table>" +
-          "<thead><tr>" +
-            "<th>チェック</th><th>材料名</th><th>総使用量</th><th>単位</th><th>摘要</th><th>納品数</th><th>単位</th><th>単価</th><th>金額</th><th>産地</th><th>操作</th>" +
-          "</tr></thead>" +
-          "<tbody>" + rows.map((row, index) => rowHtml(row, index)).join("") + "</tbody>" +
-        "</table>";
-
-      tableArea.querySelectorAll("input").forEach(input => input.addEventListener("input", syncRows));
-      tableArea.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => deleteRow(Number(button.dataset.delete))));
-      excelBtn.disabled = false;
-      csvCopyBtn.disabled = false;
-      csvShowBtn.disabled = false;
-    }
-
-    function rowHtml(row, index) {
-      const cells = [
-        ["チェック", "checked"], ["材料名", "name"], ["総使用量", "totalQuantity", "number"], ["単位", "totalUnit"], ["摘要", "note"],
-        ["納品数", "orderQuantity", "number"], ["単位", "orderUnit"], ["単価", "unitPrice", "number"], ["金額", "amount", "number"], ["産地", "origin"]
-      ];
-      return "<tr>" + cells.map(([label, field, type]) => {
-        const step = field === "totalQuantity" || field === "orderQuantity" ? "0.001" : "1";
-        return '<td data-label="' + label + '"><input ' + (type === "number" ? 'type="number" step="' + step + '" ' : "") + 'data-index="' + index + '" data-field="' + field + '" value="' + escapeHtml(row[field] ?? "") + '"></td>';
-      }).join("") + '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td></tr>';
-    }
-
-    function syncRows() {
-      const next = rows.map(row => ({ ...row }));
-      tableArea.querySelectorAll("input[data-index]").forEach(input => {
-        const index = Number(input.dataset.index);
-        const field = input.dataset.field;
-        if (!next[index]) return;
-        next[index][field] = ["totalQuantity", "orderQuantity", "unitPrice", "amount"].includes(field) ? (input.value === "" ? "" : Number(input.value)) : input.value;
-      });
-      rows = next;
-      updateSummary();
-    }
-
-    function addRow() {
-      syncRowsIfNeeded();
-      rows.push({ checked: "□", name: "", totalQuantity: 1, totalUnit: "個", note: "手入力", orderQuantity: 1, orderUnit: "個", unitPrice: "", amount: "", origin: "" });
-      renderTable();
-      updateSummary();
-      notice.textContent = "発注行を追加しました。";
-    }
-
-    function deleteRow(index) {
-      syncRowsIfNeeded();
-      rows.splice(index, 1);
-      renderTable();
-      updateSummary();
-      notice.textContent = "発注行を削除しました。";
-    }
-
-    function syncRowsIfNeeded() {
-      if (tableArea.querySelector("table")) syncRows();
-    }
-
-    function updateSummary() {
-      const validRows = rows.filter(row => String(row.name || "").trim());
-      itemCount.textContent = validRows.length;
-      mergedCount.textContent = stats.merged;
-      excludedCount.textContent = stats.excluded;
-      excelBtn.disabled = false;
-      csvCopyBtn.disabled = false;
-      csvShowBtn.disabled = false;
-    }
 
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetDetailRows = 30;
+    let rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
 
-    function getExportRows() {
-      const source = rows.filter(row => String(row.name || "").trim());
-      return source.map(row => {
-        const orderQuantity = numberValue(row.orderQuantity);
-        const unitPrice = numberValue(row.unitPrice);
-        const enteredAmount = numberValue(row.amount);
-        const calculatedAmount = !enteredAmount && orderQuantity && unitPrice ? round(orderQuantity * unitPrice) : enteredAmount;
+    addBtn.addEventListener("click", () => {
+      syncRows();
+      rows.push(createBlankRow());
+      renderManualTable();
+      renderOrderPreview();
+      focusLastNameInput();
+    });
 
-        return [
-          row.checked || "□",
-          String(row.name || "").trim(),
-          numberValue(row.totalQuantity) || "",
-          row.totalUnit || "",
-          row.note || "",
-          orderQuantity || "",
-          row.orderUnit || "",
-          row.unitPrice || "",
-          calculatedAmount || "",
-          row.origin || ""
-        ];
-      });
+    excelBtn.addEventListener("click", downloadExcel);
+
+    clearBtn.addEventListener("click", () => {
+      rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
+      deliveryDate.value = "";
+      useDate.value = "";
+      checkerName.value = "";
+      notice.textContent = "入力を消しました。";
+      renderManualTable();
+      renderOrderPreview();
+    });
+
+    [deliveryDate, useDate, checkerName].forEach(input => {
+      input.addEventListener("input", renderOrderPreview);
+    });
+
+    renderManualTable();
+    renderOrderPreview();
+
+    function createBlankRow() {
+      return { name: "", quantity: "", unit: "" };
     }
 
-    function calculateExportTotals(exportRows) {
-      const total = exportRows.reduce((sum, row) => sum + numberValue(row[8]), 0);
-      const tax = Math.floor(total * 0.1);
-      return { total: round(total), tax, billed: round(total + tax) };
+    function renderManualTable() {
+      manualRows.innerHTML = rows.map((row, index) => {
+        return "<tr>" +
+          '<td data-label="材料名"><input data-index="' + index + '" data-field="name" type="text" value="' + escapeHtml(row.name) + '" placeholder="例：にんじん"></td>' +
+          '<td data-label="数量"><input data-index="' + index + '" data-field="quantity" type="number" step="0.001" min="0" value="' + escapeHtml(row.quantity) + '" placeholder="例：2"></td>' +
+          '<td data-label="単位"><input data-index="' + index + '" data-field="unit" type="text" value="' + escapeHtml(row.unit) + '" placeholder="例：kg"></td>' +
+          '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
+        "</tr>";
+      }).join("");
+
+      manualRows.querySelectorAll("input").forEach(input => input.addEventListener("input", () => {
+        syncRows();
+        renderOrderPreview();
+      }));
+      manualRows.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => deleteRow(Number(button.dataset.delete))));
+    }
+
+    function focusLastNameInput() {
+      const inputs = manualRows.querySelectorAll('input[data-field="name"]');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }
+
+    function deleteRow(index) {
+      syncRows();
+      rows.splice(index, 1);
+      if (rows.length === 0) rows.push(createBlankRow());
+      renderManualTable();
+      renderOrderPreview();
+    }
+
+    function syncRows() {
+      const nextRows = rows.map(row => ({ ...row }));
+      manualRows.querySelectorAll("input[data-index]").forEach(input => {
+        const index = Number(input.dataset.index);
+        const field = input.dataset.field;
+        if (nextRows[index]) nextRows[index][field] = input.value;
+      });
+      rows = nextRows;
+    }
+
+    function getExportRows() {
+      syncRows();
+      return rows
+        .filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim())
+        .map(row => {
+          const quantity = numberValue(row.quantity);
+          return [
+            "□",
+            String(row.name || "").trim(),
+            quantity || "",
+            String(row.unit || "").trim(),
+            "手入力",
+            quantity || "",
+            String(row.unit || "").trim(),
+            "",
+            "",
+            ""
+          ];
+        });
+    }
+
+    function renderOrderPreview() {
+      const exportRows = getExportRows();
+      const detailRows = paddedOrderRows(exportRows, 10);
+      const use = parseDateParts(useDate.value);
+      const totals = calculateExportTotals(exportRows);
+
+      orderPreview.innerHTML = '<table class="preview-sheet">' +
+        '<tbody>' +
+          '<tr class="title-row"><td colspan="10">発　注　書　兼　納　品　書</td></tr>' +
+          '<tr class="sub-title-row"><td colspan="10">スクルドエンジェル</td></tr>' +
+          '<tr class="sub-title-row"><td colspan="10">たかばり　園</td></tr>' +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
+          '<tr><td>納品日</td><td class="date-input" colspan="4">' + escapeHtml(formatJapaneseDate(deliveryDate.value)) + '</td><td>使用日</td><td>' + escapeHtml(use.month || "") + '</td><td>月</td><td>' + escapeHtml(use.day || "") + '</td><td>日</td></tr>' +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
+          '<tr>' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
+          detailRows.map(row => '<tr>' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td>' + escapeHtml(totals.tax || "") + '</td><td></td></tr>' +
+          '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="2"></td><td class="total-label" colspan="2">請求金額</td><td>' + escapeHtml(totals.billed || "") + '</td><td></td></tr>' +
+          '<tr><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="6"></td></tr>' +
+        '</tbody>' +
+      '</table>';
+    }
+
+    function downloadExcel() {
+      const exportRows = getExportRows();
+      if (!isXlsxReady()) {
+        notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してから、もう一度押してください。";
+        return;
+      }
+
+      try {
+        const worksheet = XLSX.utils.aoa_to_sheet(buildExportDocument(exportRows));
+        setupExcelWorksheet(worksheet, exportRows.length);
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
+        XLSX.writeFile(workbook, makeExportFileName("xlsx"), { bookType: "xlsx", type: "binary" });
+        notice.textContent = exportRows.length ? "Excelを出力しました。" : "空の発注書Excelを出力しました。";
+      } catch (error) {
+        notice.textContent = "Excelの作成に失敗しました。もう一度押してください。";
+        console.error("Excel作成エラー", error);
+      }
     }
 
     function buildExportDocument(exportRows) {
@@ -1200,7 +497,7 @@
         ["", "", "スクルドエンジェル", "", "", "", "", "", "", ""],
         ["", "", "たかばり　園", "", "", "", "", "", "", ""],
         blank,
-        ["納品日", formatJapaneseDate(deliveryDate.value), "", "", "", "", use.month || "", "月", use.day || "", "日"],
+        ["納品日", formatJapaneseDate(deliveryDate.value), "", "", "", "使用日", use.month || "", "月", use.day || "", "日"],
         blank,
         orderSheetHeaders,
         ...detailRows,
@@ -1216,38 +513,14 @@
 
     function paddedOrderRows(exportRows, detailRowCount) {
       const padded = exportRows.slice();
-      while (padded.length < detailRowCount) {
-        padded.push(Array(orderSheetHeaders.length).fill(""));
-      }
+      while (padded.length < detailRowCount) padded.push(Array(orderSheetHeaders.length).fill(""));
       return padded;
     }
 
-    function downloadExcel() {
-      syncRowsIfNeeded();
-      const exportRows = getExportRows();
-
-      if (exportRows.length === 0) {
-        notice.textContent = "食材行なしの発注書をExcel出力します。";
-      }
-      if (!isXlsxReady()) {
-        notice.textContent = "Excel作成ライブラリを読み込めませんでした。CSV表示またはCSVコピーを使ってください。";
-        showCsv();
-        return;
-      }
-
-      try {
-        const worksheet = XLSX.utils.aoa_to_sheet(buildExportDocument(exportRows));
-        setupExcelWorksheet(worksheet, exportRows.length);
-
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
-        XLSX.writeFile(workbook, makeExportFileName("xlsx"), { bookType: "xlsx", type: "binary" });
-        notice.textContent = "スクルド発注書の見本に近いレイアウトでExcelを出力しました。";
-      } catch (error) {
-        notice.textContent = "Excelの作成に失敗しました。CSV全文を表示したのでコピーしてください。";
-        showCsv();
-        console.error("Excel作成エラー", error);
-      }
+    function calculateExportTotals(exportRows) {
+      const total = exportRows.reduce((sum, row) => sum + numberValue(row[8]), 0);
+      const tax = Math.floor(total * 0.1);
+      return { total: round(total), tax, billed: round(total + tax) };
     }
 
     function getOrderSheetDetailRowCount(dataLength) {
@@ -1366,141 +639,12 @@
       return border;
     }
 
-    function copyCsv() {
-      const csvText = buildCsvText();
-      if (!csvText) return;
-
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(csvText).then(() => {
-          csvOutput.value = csvText;
-          csvPanel.classList.add("is-open");
-          notice.textContent = "CSVをコピーしました。Googleスプレッドシートの左上セルに貼り付けてください。";
-        }).catch(() => {
-          showCsv("コピーできなかったため、CSV全文を表示しました。全文を選択してコピーしてください。");
-        });
-        return;
-      }
-
-      showCsv("この端末では自動コピーできないため、CSV全文を表示しました。全文を選択してコピーしてください。");
-    }
-
-    function showCsv(message) {
-      const csvText = buildCsvText();
-      if (!csvText) return;
-      csvOutput.value = csvText;
-      csvPanel.classList.add("is-open");
-      csvOutput.focus();
-      csvOutput.select();
-      notice.textContent = message || "CSV全文を表示しました。Googleスプレッドシートに貼り付けできます。";
-    }
-
-    function buildCsvText() {
-      syncRowsIfNeeded();
-      const exportRows = getExportRows();
-
-      if (exportRows.length === 0) {
-        notice.textContent = "食材行なしのCSVを表示します。";
-      }
-
-      return toCsv(buildExportDocument(exportRows));
-    }
-
-    function toCsv(csvRows) {
-      return csvRows.map(row => row.map(csvCell).join(",")).join("\r\n");
-    }
-
-    function csvCell(value) {
-      const text = String(value ?? "");
-      return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
-    }
-
-    function downloadBlob(blob, fileName) {
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    }
-
-    function makeExportFileName(extension) {
-      return "発注書兼納品書_" + formatDate(new Date()) + "." + extension;
-    }
-
     function isXlsxReady() {
       return Boolean(window.XLSX && XLSX.utils && typeof XLSX.utils.aoa_to_sheet === "function" && typeof XLSX.utils.book_new === "function" && typeof XLSX.utils.book_append_sheet === "function" && typeof XLSX.writeFile === "function");
     }
 
-    function clearAll() {
-      lastImage = null;
-      rows = [];
-      childrenCount = 1;
-      customOrderRules = [];
-      stats = { merged: 0, excluded: 0 };
-      ocrText.value = "";
-      ocrStatus.textContent = "";
-      notice.textContent = "入力を消しました。";
-      menuCsvStatus.textContent = "未選択（OCR/手入力でも可）";
-      childrenCsvStatus.textContent = "未選択（1人分として計算）";
-      ruleCsvStatus.textContent = "コード内の標準ルールを使用";
-      preview.removeAttribute("src");
-      preview.style.display = "none";
-      cameraInput.value = "";
-      imageInput.value = "";
-      menuCsvInput.value = "";
-      childrenCsvInput.value = "";
-      ruleCsvInput.value = "";
-      csvOutput.value = "";
-      debugOutput.value = "";
-      csvPanel.classList.remove("is-open");
-      deliveryDate.value = "";
-      useDate.value = "";
-      checkerName.value = "";
-      retryBtn.disabled = true;
-      renderTable();
-      updateSummary();
-    }
-
-    function updateDebugOutput(debugRows) {
-      debugOutput.value = JSON.stringify(debugRows || [], null, 2);
-    }
-
-    function parseDateParts(value) {
-      if (!value) return { year: "", month: "", day: "", weekday: "" };
-      const parts = value.split("-").map(Number);
-      if (parts.length !== 3 || parts.some(part => !Number.isFinite(part))) {
-        return { year: "", month: "", day: "", weekday: "" };
-      }
-      const date = new Date(parts[0], parts[1] - 1, parts[2]);
-      const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
-      return {
-        year: parts[0],
-        month: parts[1],
-        day: parts[2],
-        weekday: weekdays[date.getDay()]
-      };
-    }
-
-    function formatJapaneseDate(value) {
-      const parts = parseDateParts(value);
-      if (!parts.year) return "令和　年　月　日（　）使用日";
-      const reiwaYear = parts.year - 2018;
-      return "令和" + reiwaYear + "年" + parts.month + "月" + parts.day + "日（" + parts.weekday + "）使用日";
-    }
-
-    function formatDateInput(date) {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, "0");
-      const day = String(date.getDate()).padStart(2, "0");
-      return year + "-" + month + "-" + day;
-    }
-
-    function formatDisplayDate(value) {
-      if (!value) return "";
-      const parts = value.split("-");
-      return parts.length === 3 ? parts[0] + "/" + parts[1] + "/" + parts[2] : value;
+    function makeExportFileName(extension) {
+      return "発注書兼納品書_" + formatDate(new Date()) + "." + extension;
     }
 
     function formatDate(date) {
@@ -1510,14 +654,35 @@
       return year + month + day;
     }
 
+    function formatJapaneseDate(value) {
+      if (!value) return "";
+      const date = new Date(value + "T00:00:00");
+      if (Number.isNaN(date.getTime())) return value;
+      return date.getFullYear() + "年" + (date.getMonth() + 1) + "月" + date.getDate() + "日";
+    }
+
+    function parseDateParts(value) {
+      if (!value) return { month: "", day: "" };
+      const date = new Date(value + "T00:00:00");
+      if (Number.isNaN(date.getTime())) return { month: "", day: "" };
+      return { month: date.getMonth() + 1, day: date.getDate() };
+    }
+
+    function numberValue(value) {
+      const normalized = String(value ?? "")
+        .replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/．/g, ".")
+        .replace(/,/g, "");
+      const match = normalized.match(/-?[0-9]+(?:\.[0-9]+)?/);
+      return match ? Number(match[0]) : 0;
+    }
+
+    function round(value) {
+      return Math.round(value * 1000) / 1000;
+    }
+
     function escapeHtml(value) {
-      return String(value).replace(/[&<>'"]/g, char => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        "'": "&#39;",
-        '"': "&quot;"
-      }[char]));
+      return String(value ?? "").replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char]));
     }
   </script>
 </body>
