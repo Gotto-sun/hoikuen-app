@@ -214,7 +214,7 @@
 
     .preview-sheet th:nth-child(5),
     .preview-sheet td:nth-child(5) {
-      width: 132px;
+      width: 102px;
     }
 
     .preview-sheet th:nth-child(6),
@@ -338,7 +338,7 @@
 
       @page {
         size: A4 landscape;
-        margin: 0 0 0 0.8cm;
+        margin: 0 0 0 1cm;
       }
 
       main,
@@ -613,7 +613,7 @@
     function setupExcelWorksheet(worksheet, dataLength) {
       const layout = getOrderSheetLayout(dataLength);
       worksheet["!cols"] = [
-        { wch: 5.8 }, { wch: 17.5 }, { wch: 8 }, { wch: 5.5 }, { wch: 15.5 },
+        { wch: 5.8 }, { wch: 17.5 }, { wch: 8 }, { wch: 5.5 }, { wch: 12 },
         { wch: 7 }, { wch: 5 }, { wch: 7 }, { wch: 8.5 }, { wch: 8.5 }
       ];
       worksheet["!rows"] = Array.from({ length: layout.totalRows }, (_, row) => ({ hpt: orderSheetRowHeight(row, layout) }));
@@ -628,7 +628,7 @@
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
         { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.315, right: 0.12, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
+      worksheet["!margins"] = { left: 0.39, right: 0.12, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
       worksheet["!pageSetup"] = { orientation: "landscape", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: false };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
