@@ -34,6 +34,7 @@
     h2 { margin: 0 0 12px; font-size: 18px; }
     label { display: block; margin: 12px 0 6px; font-weight: 700; }
     .note { margin: 0 0 12px; color: #64748b; font-size: 14px; }
+    .camera-note { margin-top: 8px; color: #7c2d12; font-weight: 700; }
     .buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
     button {
       min-height: 46px;
@@ -101,8 +102,9 @@
       border-radius: 12px;
       background: #fff7ed;
     }
+    .print-title { display: none; }
     .table-wrap { overflow-x: auto; }
-    table { width: 100%; min-width: 900px; border-collapse: collapse; background: #fff; }
+    table { width: 100%; min-width: 980px; border-collapse: collapse; background: #fff; }
     th, td { border: 1px solid #fed7aa; padding: 6px; text-align: left; vertical-align: top; }
     th { background: #ffedd5; color: #7c2d12; white-space: nowrap; }
     td input { min-width: 80px; padding: 8px; }
@@ -110,6 +112,7 @@
     .csv-panel { display: none; margin-top: 12px; padding: 12px; border: 1px solid #fdba74; border-radius: 12px; background: #fffdf8; }
     .csv-panel.is-open { display: block; }
     #csvOutput { min-height: 260px; }
+
     @media (max-width: 760px) {
       main { padding: 12px; }
       .buttons, .file-status, .summary, .document-fields { grid-template-columns: 1fr; }
@@ -119,28 +122,33 @@
       td { border: 0; padding: 6px 0; }
       td::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 3px; }
     }
-    @page { size: A4 portrait; margin: 12mm; }
+
+    @page { size: A4 portrait; margin: 10mm; }
     @media print {
-      html, body { width: 210mm; margin: 0; padding: 0; background: #fff; color: #000; }
-      body { font-size: 10.5pt; line-height: 1.25; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      header, main section:first-child, .buttons, .summary, .document-fields, .status, .note, .csv-panel { display: none !important; }
-      main { width: 186mm; max-width: 186mm; margin: 0 auto; padding: 0; }
-      main, section, .table-wrap { overflow: visible !important; border: 0; box-shadow: none; background: #fff; }
-      section { width: 100%; margin: 0; padding: 0; break-inside: avoid; }
-      h2 { margin: 0 0 4mm; font-size: 12pt; color: #000; }
+      html, body { width: 210mm; height: 297mm; margin: 0; padding: 0; background: #fff; color: #000; }
+      body { font-size: 10.5pt; line-height: 1.2; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      header, main section:first-child, .buttons, .summary, .status, .note, .camera-note, .csv-panel, .empty { display: none !important; }
+      main { width: 190mm; max-width: 190mm; margin: 0 auto; padding: 0; }
+      section { width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; break-inside: avoid; }
+      h2 { display: none; }
+      .print-title { display: block; margin: 0 0 4mm; text-align: center; font-size: 16pt; font-weight: 700; letter-spacing: .2em; }
+      .document-fields { display: grid !important; grid-template-columns: 17mm 45mm 17mm 45mm 17mm 45mm; gap: 0; margin: 0 0 4mm; border: 1.2pt solid #000; border-right: 0; border-bottom: 0; padding: 0; background: #fff; }
+      .document-fields label, .document-fields input { border: 0; border-right: 1.2pt solid #000; border-bottom: 1.2pt solid #000; border-radius: 0; padding: 1.5mm; height: 8mm; color: #000; background: #fff; font-size: 10pt; }
+      .document-fields label { text-align: center; font-weight: 700; }
+      .table-wrap { overflow: visible !important; }
       table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; font-size: 10pt; page-break-inside: avoid; }
-      th, td { border: 1.2pt solid #000; padding: 2mm 1.4mm; color: #000; background: #fff; vertical-align: middle; }
+      th, td { border: 1.2pt solid #000; padding: 1.4mm 1mm; color: #000; background: #fff; vertical-align: middle; }
       th { font-size: 10pt; font-weight: 700; text-align: center; }
       td input { width: 100%; min-width: 0; border: 0; padding: 0; background: transparent; color: #000; font-size: 10pt; }
-      th:nth-child(1), td:nth-child(1) { width: 8mm; }
-      th:nth-child(2), td:nth-child(2) { width: 28mm; }
+      th:nth-child(1), td:nth-child(1) { width: 7mm; text-align: center; }
+      th:nth-child(2), td:nth-child(2) { width: 30mm; }
       th:nth-child(3), td:nth-child(3), th:nth-child(6), td:nth-child(6) { width: 17mm; }
-      th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) { width: 11mm; }
-      th:nth-child(5), td:nth-child(5) { width: 34mm; }
+      th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) { width: 10mm; }
+      th:nth-child(5), td:nth-child(5) { width: 36mm; }
       th:nth-child(8), td:nth-child(8), th:nth-child(9), td:nth-child(9) { width: 15mm; }
-      th:nth-child(10), td:nth-child(10) { width: 18mm; }
+      th:nth-child(10), td:nth-child(10) { width: 16mm; }
       th:nth-child(11), td:nth-child(11) { display: none; }
-      tr { page-break-inside: avoid; }
+      tr { page-break-inside: avoid; height: 7.2mm; }
     }
   </style>
 </head>
@@ -154,13 +162,14 @@
     <section>
       <h2>1. 入力</h2>
       <p class="note">CSVは「食品名,数量,単位」を最優先で読み取ります。OCRできなくても手入力で出力できます。</p>
+      <p class="camera-note">カメラボタンはAndroidで背面カメラ起動を優先します。ブラウザ仕様によりアルバム選択になる場合があります。</p>
       <div class="buttons">
         <button class="blue" type="button" onclick="menuCsvInput.value=''; menuCsvInput.click();">📄 CSVを選ぶ</button>
         <button class="green" type="button" onclick="childrenCsvInput.value=''; childrenCsvInput.click();">👶 園児数CSV</button>
         <button class="gray" type="button" onclick="ruleCsvInput.value=''; ruleCsvInput.click();">⚙️ ルールCSV</button>
         <button class="blue" type="button" onclick="cameraInput.click();">📷 カメラで撮る</button>
         <button class="gray" type="button" onclick="imageInput.value=''; imageInput.click();">🖼️ 画像を選ぶ</button>
-        <button class="gray" type="button" onclick="if(lastImage){ runOcr(lastImage); } else { notice.textContent='先に画像を選んでください。'; }">🔁 もう一度OCR</button>
+        <button class="gray" type="button" onclick="if(lastImage){ runOcr(lastImage); } else { notice.textContent='先に画像を選んでください。手入力でも出力できます。'; }">🔁 もう一度OCR</button>
       </div>
 
       <input id="menuCsvInput" type="file" accept=".csv,text/csv">
@@ -190,6 +199,7 @@
 
     <section>
       <h2>2. 発注書</h2>
+      <div class="print-title">発注書</div>
       <div class="summary">
         <div><span>発注食材数</span><b id="itemCount">0</b></div>
         <div><span>合算件数</span><b id="mergedCount">0</b></div>
@@ -223,8 +233,7 @@
   <script>
     const sampleText = "食品名,数量,単位\nにんじん,15,g\n玉ねぎ,20,g\n鶏もも肉,40,g\n牛乳,100,ml\nりんご,0.5,個";
     const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
-    const defaultDetailRows = 30;
-    const units = ["kg", "g", "ml", "l", "L", "個", "本", "袋", "缶", "丁", "枚", "束", "箱", "パック"];
+    const units = ["kg", "g", "ml", "l", "L", "個", "本", "袋", "缶", "丁", "枚", "束", "箱", "パック", "尾", "切", "粒", "玉", "房"];
     const aliases = { "人参": "にんじん", "ニンジン": "にんじん", "玉葱": "玉ねぎ", "たまねぎ": "玉ねぎ", "ジャガイモ": "じゃがいも", "じゃが芋": "じゃがいも", "鶏肉": "鶏もも肉", "豚肉": "豚こま肉", "リンゴ": "りんご", "たまご": "卵" };
     const standardRules = [
       { names: ["米", "ごはん", "だし", "だし汁", "しょうゆ", "醤油", "塩", "砂糖", "酢", "みそ", "味噌", "油", "酒", "みりん"], exclude: true, reason: "標準ルールで除外" },
@@ -254,7 +263,7 @@
       const buffer = await file.arrayBuffer();
       const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
       if (!utf8.includes("�")) return utf8;
-      try { return new TextDecoder("shift_jis").decode(buffer); } catch { return utf8; }
+      try { return new TextDecoder("shift_jis").decode(buffer); } catch (error) { return utf8; }
     }
 
     async function loadMenuCsv(file) {
@@ -287,6 +296,7 @@
       lastImage = file;
       preview.src = URL.createObjectURL(file);
       preview.style.display = "block";
+      ocrStatus.textContent = "画像を受け取りました。カメラではなくアルバムが開く場合はブラウザ仕様です。";
       runOcr(file);
     }
 
@@ -294,7 +304,6 @@
       if (!file) return;
       if (!window.Tesseract) {
         ocrStatus.textContent = "OCRを読み込めませんでした。手入力で出力できます。";
-        ensureFallbackRow("OCR読込失敗");
         return;
       }
       ocrStatus.textContent = "OCR中です。";
@@ -306,12 +315,11 @@
         });
         ocrText.value = cleanupOcrText(result.data.text || "");
         menuCsvStatus.textContent = "OCR結果";
-        ocrStatus.textContent = "OCRが終わりました。";
+        ocrStatus.textContent = "OCRが終わりました。文字が違う場合は食品名,数量,単位の形で手直しできます。";
         extractAndRender(true);
       } catch (error) {
         console.error(error);
         ocrStatus.textContent = "OCRに失敗しました。手入力で必ず出力できます。";
-        ensureFallbackRow("OCR失敗");
       }
     }
 
@@ -319,6 +327,17 @@
       ocrText.value = sampleText;
       menuCsvStatus.textContent = "サンプル";
       extractAndRender();
+    }
+
+    function clearAll() {
+      ocrText.value = "";
+      rows = [];
+      stats = { merged: 0, excluded: 0 };
+      renderTable();
+      updateSummary();
+      csvOutput.value = "";
+      csvPanel.classList.remove("is-open");
+      notice.textContent = "消しました。データ0件でも出力できます。";
     }
 
     function extractAndRender(fromOcr) {
@@ -334,77 +353,67 @@
       const result = extractIngredients(text);
       rows = result.rows;
       stats = result.stats;
-      if (rows.length === 0 && fromOcr) ensureFallbackRow("OCR結果から抽出できず", false);
       renderTable();
       updateSummary();
-      notice.textContent = rows.length ? "発注数を計算しました。" : "抽出できませんでした。手入力行を追加するか、そのまま空の様式を出力できます。";
+      notice.textContent = rows.length ? "発注数を計算しました。" : (fromOcr ? "OCR結果から抽出できませんでした。手入力行を追加するか、空の様式を出力できます。" : "抽出できませんでした。手入力行を追加するか、空の様式を出力できます。");
     }
 
     function extractIngredients(text) {
-      const parsedCsv = parseCsv(text);
-      const csvRows = rowsFromCsv(parsedCsv);
-      const sourceRows = csvRows.length ? csvRows : rowsFromText(text);
+      const csvRows = parseLooseCsv(text);
+      const csvItems = rowsFromCsv(csvRows);
+      const sourceRows = csvItems.length ? csvItems : rowsFromLines(text);
       const totals = new Map();
       let found = 0;
       let excluded = 0;
-      for (const item of sourceRows) {
+      sourceRows.forEach(item => {
         const name = normalizeName(item.name);
         const quantity = numberValue(item.quantity) || 1;
         const unit = normalizeUnit(item.unit || "個");
-        if (!isValidFoodName(name)) continue;
+        if (!isValidFoodName(name)) return;
         const rule = findRule(name);
-        if (rule && rule.exclude) { excluded++; continue; }
-        found++;
+        if (rule && rule.exclude) { excluded += 1; return; }
+        found += 1;
         const key = name + "__" + unit;
         const current = totals.get(key) || { name, quantity: 0, unit, count: 0 };
         current.quantity += quantity * childrenCount;
         current.count += 1;
         totals.set(key, current);
-      }
+      });
       const output = Array.from(totals.values()).map(toOrderRow).sort((a, b) => a.name.localeCompare(b.name, "ja"));
       return { rows: output, stats: { merged: Math.max(0, found - output.length), excluded } };
     }
 
     function rowsFromCsv(csvRows) {
-      if (!csvRows.length || !csvRows.some(row => row.length > 1)) return [];
+      if (!csvRows.length || !csvRows.some(row => row.length >= 3)) return [];
       const first = csvRows[0].map(normalizeHeader);
-      const hasHeader = first.some(value => ["食品名", "食材名", "材料名", "name"].includes(value));
-      const nameIndex = hasHeader ? findIndex(first, ["食品名", "食材名", "材料名", "name"]) : 0;
+      const hasHeader = first.some(value => ["食品名", "食材名", "材料名", "品名", "name"].includes(value));
+      const nameIndex = hasHeader ? findIndex(first, ["食品名", "食材名", "材料名", "品名", "name"]) : 0;
       const quantityIndex = hasHeader ? findIndex(first, ["数量", "分量", "使用量", "総使用量", "3歳未満児量", "３歳未満児量", "未満児量", "quantity"]) : 1;
       const unitIndex = hasHeader ? findIndex(first, ["単位", "unit"]) : 2;
       const data = hasHeader ? csvRows.slice(1) : csvRows;
-      return data.map(row => rowFromCsvColumns(row, nameIndex, quantityIndex, unitIndex)).filter(row => isValidFoodName(row.name));
+      return data.map(row => ({
+        name: row[nameIndex] || "",
+        quantity: row[quantityIndex] || "1",
+        unit: row[unitIndex] || "個"
+      })).filter(item => isValidFoodName(normalizeName(item.name)));
     }
 
-    function rowFromCsvColumns(row, nameIndex, quantityIndex, unitIndex) {
-      let n = nameIndex >= 0 ? nameIndex : 0;
-      let q = quantityIndex >= 0 ? quantityIndex : 1;
-      let u = unitIndex >= 0 ? unitIndex : 2;
-      if (!row[n] || isNonFood(row[n])) n = row.findIndex(cell => cell && !isNonFood(cell));
-      if (q < 0 || q === n || !numberValue(row[q])) q = row.findIndex((cell, index) => index !== n && numberValue(cell));
-      if (u < 0 || u === n || u === q || !row[u]) u = row.findIndex((cell, index) => index !== n && index !== q && units.includes(normalizeUnit(cell)));
-      const fallback = findAmount(row.join(","));
-      return { name: normalizeName(row[n] || ""), quantity: numberValue(row[q]) || fallback.quantity || 1, unit: normalizeUnit(row[u] || fallback.unit || "個") };
+    function rowsFromLines(text) {
+      const cleaned = cleanupOcrText(text);
+      return cleaned.split("\n").map(line => parseIngredientLine(line)).filter(Boolean);
     }
 
-    function rowsFromText(text) {
-      const output = [];
-      for (const phrase of textPhrases(text)) {
-        if (!phrase || isHeaderWord(phrase)) continue;
-        const amount = findAmount(phrase);
-        const name = guessName(phrase, amount);
-        if (isValidFoodName(name)) output.push({ name, quantity: amount.quantity, unit: amount.unit });
+    function parseIngredientLine(line) {
+      const normalized = String(line || "").replace(/[\t ]+/g, " ").trim();
+      if (!normalized || isHeaderWord(normalized)) return null;
+      const commaParts = normalized.split(/\s*,\s*/).filter(Boolean);
+      if (commaParts.length >= 3) {
+        return { name: commaParts[0], quantity: commaParts[1], unit: commaParts[2] };
       }
-      return output;
-    }
-
-    function textPhrases(text) {
-      return String(text || "")
-        .replace(/\r\n?/g, "\n")
-        .replace(/[，、]/g, ",")
-        .split(/[\n,]+/)
-        .map(value => value.replace(/\s+/g, " ").trim())
-        .filter(Boolean);
+      const amount = findAmount(normalized);
+      const name = guessName(normalized, amount);
+      if (!isValidFoodName(name)) return null;
+      return { name, quantity: amount.quantity, unit: amount.unit };
     }
 
     function cleanupOcrText(text) {
@@ -420,14 +429,26 @@
         .trim();
     }
 
-    function guessName(line, amount) {
-      const source = String(line || "");
-      const compact = source.replace(/\s/g, "");
-      const known = allKnownNames().find(name => compact.includes(name));
+    function parseLooseCsv(text) {
+      return cleanupOcrText(text).split("\n").map(line => line.split(/\s*,\s*/).map(cell => cell.replace(/^"|"$/g, "").trim())).filter(row => row.some(Boolean));
+    }
+
+    function findAmount(line) {
+      const pattern = new RegExp("([0-9０-９]+(?:[.．][0-9０-９]+)?)\\s*(" + units.map(escapeRegExp).join("|") + ")?", "i");
+      const match = String(line || "").match(pattern);
+      return { quantity: match ? numberValue(match[1]) || 1 : 1, unit: match && match[2] ? normalizeUnit(match[2]) : "個" };
+    }
+
+    function guessName(line) {
+      const source = String(line || "").trim();
+      const known = allKnownNames().find(name => source.replace(/\s/g, "").includes(name));
       if (known) return normalizeName(known);
+      const unitPattern = units.map(escapeRegExp).join("|");
       const withoutAmount = source
-        .replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:kg|g|ml|l|L|個|本|袋|缶|丁|枚|束|箱|パック)?/gi, "")
-        .replace(/[：:]/g, "")
+        .replace(new RegExp("[0-9０-９]+(?:[.．][0-9０-９]+)?\\s*(?:" + unitPattern + ")?", "gi"), "")
+        .replace(/[：:()（）\[\]【】]/g, " ")
+        .replace(/[,]/g, " ")
+        .replace(/\s+/g, " ")
         .trim();
       return normalizeName(withoutAmount);
     }
@@ -472,19 +493,19 @@
     }
 
     function parseChildrenCount(text) {
-      const csv = parseCsv(text);
+      const csv = parseLooseCsv(text);
       if (!csv.length) return 1;
       const header = csv[0].map(normalizeHeader);
-      const index = header.findIndex(value => /3歳未満|３歳未満|未満児|0歳|1歳|１歳|2歳|２歳/.test(value));
+      const index = header.findIndex(value => /3歳未満|３歳未満|未満児|0歳|０歳|1歳|１歳|2歳|２歳/.test(value));
       if (index >= 0) return csv.slice(1).reduce((sum, row) => sum + numberValue(row[index]), 0) || 1;
       return csv.flat().reduce((sum, value) => sum + numberValue(value), 0) || 1;
     }
 
     function parseRuleCsv(text) {
-      const csv = parseCsv(text);
+      const csv = parseLooseCsv(text);
       if (csv.length < 2) return [];
       const header = csv[0].map(normalizeHeader);
-      const ni = findIndex(header, ["食品名", "食材名", "材料名", "name"]);
+      const ni = findIndex(header, ["食品名", "食材名", "材料名", "品名", "name"]);
       const oui = findIndex(header, ["発注単位", "納品単位", "orderunit", "単位"]);
       const pqi = findIndex(header, ["入数", "換算量", "基準量", "packagequantity"]);
       const pui = findIndex(header, ["基準単位", "換算単位", "packageunit"]);
@@ -503,13 +524,6 @@
       })).filter(rule => rule.names.length);
     }
 
-    function ensureFallbackRow(reason, shouldRender = true) {
-      rows = [{ checked: "□", name: "手入力食材", totalQuantity: 1, totalUnit: "個", note: reason + "（修正してください）", orderQuantity: 1, orderUnit: "個", unitPrice: "", amount: "", origin: "" }];
-      stats = { merged: 0, excluded: 0 };
-      if (shouldRender) { renderTable(); updateSummary(); }
-      notice.textContent = reason + "。最低1行を用意しました。";
-    }
-
     function addRow() {
       syncRows();
       rows.push({ checked: "□", name: "", totalQuantity: 1, totalUnit: "個", note: "手入力", orderQuantity: 1, orderUnit: "個", unitPrice: "", amount: "", origin: "" });
@@ -522,6 +536,7 @@
       rows.splice(index, 1);
       renderTable();
       updateSummary();
+      notice.textContent = "行を削除しました。データ0件でも出力できます。";
     }
 
     function renderTable() {
@@ -531,265 +546,212 @@
         return;
       }
       tableArea.className = "table-wrap";
-      tableArea.innerHTML = "<table><thead><tr>" + headers.map(h => "<th>" + h + "</th>").join("") + "<th>操作</th></tr></thead><tbody>" + rows.map(rowHtml).join("") + "</tbody></table>";
-      tableArea.querySelectorAll("input").forEach(input => input.addEventListener("input", syncRows));
+      tableArea.innerHTML = "<table><thead><tr>" + headers.concat(["操作"]).map(header => "<th>" + escapeHtml(header) + "</th>").join("") + "</tr></thead><tbody>" + rows.map((row, index) => rowHtml(row, index)).join("") + "</tbody></table>";
     }
 
     function rowHtml(row, index) {
-      const fields = [["チェック", "checked"], ["材料名", "name"], ["総使用量", "totalQuantity", "number"], ["単位", "totalUnit"], ["摘要", "note"], ["納品数", "orderQuantity", "number"], ["単位", "orderUnit"], ["単価", "unitPrice", "number"], ["金額", "amount", "number"], ["産地", "origin"]];
-      return "<tr>" + fields.map(([label, field, type]) => "<td data-label=\"" + escapeHtml(label) + "\"><input " + (type === "number" ? "type=\"number\" step=\"0.001\" " : "") + "data-index=\"" + index + "\" data-field=\"" + field + "\" value=\"" + escapeHtml(row[field] ?? "") + "\"></td>").join("") + "<td data-label=\"操作\"><button class=\"red delete-row\" type=\"button\" onclick=\"deleteRow(" + index + ");\">削除</button></td></tr>";
+      const cells = [
+        inputCell(index, "checked", row.checked, "チェック"),
+        inputCell(index, "name", row.name, "材料名"),
+        inputCell(index, "totalQuantity", row.totalQuantity, "総使用量", "number", "0.01"),
+        inputCell(index, "totalUnit", row.totalUnit, "単位"),
+        inputCell(index, "note", row.note, "摘要"),
+        inputCell(index, "orderQuantity", row.orderQuantity, "納品数", "number", "0.01"),
+        inputCell(index, "orderUnit", row.orderUnit, "単位"),
+        inputCell(index, "unitPrice", row.unitPrice, "単価", "number", "0.01"),
+        inputCell(index, "amount", row.amount, "金額", "number", "0.01"),
+        inputCell(index, "origin", row.origin, "産地"),
+        "<td data-label=\"操作\"><button class=\"red delete-row\" type=\"button\" onclick=\"deleteRow(" + index + ");\">削除</button></td>"
+      ];
+      return "<tr>" + cells.join("") + "</tr>";
+    }
+
+    function inputCell(index, key, value, label, type = "text", step = "") {
+      return "<td data-label=\"" + escapeHtml(label) + "\"><input data-index=\"" + index + "\" data-key=\"" + key + "\" type=\"" + type + "\" " + (step ? "step=\"" + step + "\"" : "") + " value=\"" + escapeHtml(value) + "\" oninput=\"syncRows(); updateSummary();\"></td>";
     }
 
     function syncRows() {
-      if (!tableArea.querySelector("table")) return;
-      const next = rows.map(row => ({ ...row }));
-      tableArea.querySelectorAll("input[data-index]").forEach(input => {
-        const row = next[Number(input.dataset.index)];
-        if (!row) return;
-        const field = input.dataset.field;
-        row[field] = ["totalQuantity", "orderQuantity", "unitPrice", "amount"].includes(field) ? input.value : input.value;
+      const nextRows = rows.map(row => ({ ...row }));
+      document.querySelectorAll("#tableArea input[data-index]").forEach(input => {
+        const index = Number(input.dataset.index);
+        const key = input.dataset.key;
+        if (nextRows[index]) nextRows[index][key] = input.value;
       });
-      rows = next;
-      updateSummary();
+      rows = nextRows;
     }
 
     function updateSummary() {
-      itemCount.textContent = rows.filter(row => String(row.name || "").trim()).length;
+      itemCount.textContent = rows.length;
       mergedCount.textContent = stats.merged;
       excludedCount.textContent = stats.excluded;
-      document.querySelectorAll("button").forEach(button => button.disabled = false);
     }
 
-    function getExportRows() {
+    function buildOutputRows() {
       syncRows();
-      return rows.filter(row => String(row.name || "").trim()).map(row => {
-        const orderQuantity = numberValue(row.orderQuantity);
-        const unitPrice = numberValue(row.unitPrice);
-        const amount = numberValue(row.amount) || (orderQuantity && unitPrice ? round(orderQuantity * unitPrice) : "");
-        return [row.checked || "□", row.name || "", numberValue(row.totalQuantity) || "", row.totalUnit || "", row.note || "", orderQuantity || "", row.orderUnit || "", unitPrice || "", amount || "", row.origin || ""];
+      return rows.map(row => {
+        const price = numberValue(row.unitPrice);
+        const orderQty = numberValue(row.orderQuantity);
+        const amount = row.amount !== "" ? row.amount : (price && orderQty ? round(price * orderQty) : "");
+        return [row.checked || "□", row.name || "", row.totalQuantity || "", row.totalUnit || "", row.note || "", row.orderQuantity || "", row.orderUnit || "", row.unitPrice || "", amount, row.origin || ""];
       });
     }
 
-    function getRowsForOutput() {
-      const exportRows = getExportRows();
-      return exportRows.length ? exportRows : [["□", "手入力食材", 1, "個", "最低1行出力", 1, "個", "", "", ""]];
-    }
-
-    function buildDocument() {
-      const exportRows = getRowsForOutput();
-      const details = exportRows.slice();
-      while (details.length < defaultDetailRows) details.push(Array(headers.length).fill(""));
-      const totals = calculateTotals(exportRows);
-      const blank = Array(headers.length).fill("");
-      const use = parseDateParts(useDate.value);
-      return [
-        blank, blank, blank, blank,
-        ["", "", "発　注　書　兼　納　品　書", "", "", "", "", "", "", ""],
-        ["", "", "スクルドエンジェル", "", "", "", "", "", "", ""],
-        ["", "", "たかばり　園", "", "", "", "", "", "", ""],
-        blank,
-        ["納品日", formatJapaneseDate(deliveryDate.value), "", "", "", "使用日", use.month || "", "月", use.day || "", "日"],
-        blank,
-        headers,
-        ...details,
-        blank, blank, blank,
-        ["", "", "", "", "", "", "合計金額", "", totals.total || "", ""],
-        ["", "", "", "", "", "", "消費税 課税合計", "", totals.tax || "", ""],
-        ["", "", "検品者", "", "", "", "請求金額", "", totals.billed || "", ""],
-        ["", "", checkerName.value || "", "", "", "", "", "", "", ""]
+    function buildCsvText() {
+      const docRows = [
+        ["納品日", deliveryDate.value || "", "使用日", useDate.value || "", "検品者", checkerName.value || ""],
+        [],
+        headers
       ];
-    }
-
-    function downloadExcel() {
-      if (!window.XLSX) { showCsv("Excel作成機能を読み込めませんでした。CSVを使ってください。"); return; }
-      const documentRows = buildDocument();
-      const worksheet = XLSX.utils.aoa_to_sheet(documentRows);
-      setupWorksheet(worksheet, documentRows.length);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
-      XLSX.writeFile(workbook, fileName("xlsx"));
-      notice.textContent = "Excelを出力しました。";
-    }
-
-    function setupWorksheet(sheet, rowCount) {
-      const layout = getExcelLayout(rowCount);
-      sheet["!cols"] = [{ wch: 7 }, { wch: 18 }, { wch: 10 }, { wch: 7 }, { wch: 22 }, { wch: 8 }, { wch: 7 }, { wch: 8 }, { wch: 10 }, { wch: 10 }];
-      sheet["!rows"] = Array.from({ length: rowCount }, (_, i) => ({ hpt: i === 4 ? 26 : (i >= layout.tableStart && i <= layout.detailEnd ? 20 : 18) }));
-      sheet["!merges"] = [
-        { s: { r: 4, c: 2 }, e: { r: 4, c: 7 } },
-        { s: { r: 5, c: 2 }, e: { r: 5, c: 7 } },
-        { s: { r: 6, c: 2 }, e: { r: 6, c: 7 } },
-        { s: { r: 8, c: 1 }, e: { r: 8, c: 4 } },
-        { s: { r: layout.totalStart, c: 6 }, e: { r: layout.totalStart, c: 7 } },
-        { s: { r: layout.totalStart + 1, c: 6 }, e: { r: layout.totalStart + 1, c: 7 } },
-        { s: { r: layout.totalStart + 2, c: 6 }, e: { r: layout.totalStart + 2, c: 7 } },
-        { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
-        { s: { r: layout.checkerStart + 1, c: 2 }, e: { r: layout.checkerStart + 1, c: 3 } }
-      ];
-      sheet["!margins"] = { left: 0.2, right: 0.2, top: 0.45, bottom: 0.35, header: 0.15, footer: 0.15 };
-      sheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
-      sheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
-      const ref = XLSX.utils.decode_range(sheet["!ref"]);
-      for (let r = ref.s.r; r <= ref.e.r; r++) {
-        for (let c = ref.s.c; c <= ref.e.c; c++) {
-          const address = XLSX.utils.encode_cell({ r, c });
-          if (!sheet[address]) sheet[address] = { t: "s", v: "" };
-          sheet[address].s = cellStyle(r, c, layout);
-        }
-      }
-    }
-
-    function getExcelLayout(rowCount) {
-      const detailCount = Math.max(defaultDetailRows, rowCount - 19);
-      return { tableStart: 10, detailEnd: 10 + detailCount, totalStart: 14 + detailCount, checkerStart: 17 + detailCount };
-    }
-
-    function cellStyle(row, col, layout) {
-      const thin = { style: "thin", color: { rgb: "000000" } };
-      const medium = { style: "medium", color: { rgb: "000000" } };
-      const inTable = row >= layout.tableStart && row <= layout.detailEnd;
-      const inTotals = row >= layout.totalStart && row <= layout.totalStart + 2 && col >= 6 && col <= 9;
-      const inChecker = row >= layout.checkerStart && row <= layout.checkerStart + 1 && col >= 2 && col <= 3;
-      const border = inTable || inTotals || inChecker ? { top: thin, bottom: thin, left: thin, right: thin } : undefined;
-      if (inTable && row === layout.tableStart) border.top = medium;
-      if (inTable && row === layout.detailEnd) border.bottom = medium;
-      if (inTable && col === 0) border.left = medium;
-      if (inTable && col === 9) border.right = medium;
-      return {
-        font: { name: "Yu Gothic", sz: row === 4 ? 16 : 9, bold: row === 4 || row === layout.tableStart || inTotals || inChecker },
-        alignment: { horizontal: row === 4 || row === layout.tableStart || inTotals || inChecker ? "center" : (col === 1 || col === 4 ? "left" : "center"), vertical: "center", wrapText: true },
-        border,
-        fill: row === layout.tableStart ? { patternType: "solid", fgColor: { rgb: "FCE4D6" } } : undefined
-      };
+      return docRows.concat(buildOutputRows()).map(row => row.map(csvEscape).join(",")).join("\n");
     }
 
     function downloadCsv() {
-      const csv = buildCsvText();
-      downloadBlob(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" }), fileName("csv"));
-      csvOutput.value = csv;
-      csvPanel.classList.add("is-open");
+      const blob = new Blob(["\uFEFF" + buildCsvText()], { type: "text/csv;charset=utf-8" });
+      downloadBlob(blob, "発注書.csv");
       notice.textContent = "CSVをダウンロードしました。";
     }
 
-    function copyCsv() {
-      const csv = buildCsvText();
-      csvOutput.value = csv;
+    function showCsv() {
+      csvOutput.value = buildCsvText();
       csvPanel.classList.add("is-open");
-      if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(csv).then(() => notice.textContent = "CSVをコピーしました。").catch(() => notice.textContent = "CSVを表示しました。手動でコピーしてください。");
-      } else {
+      notice.textContent = "CSVを表示しました。コピーできます。";
+    }
+
+    async function copyCsv() {
+      const text = buildCsvText();
+      csvOutput.value = text;
+      csvPanel.classList.add("is-open");
+      try {
+        await navigator.clipboard.writeText(text);
+        notice.textContent = "CSVをコピーしました。";
+      } catch (error) {
         csvOutput.focus();
         csvOutput.select();
-        notice.textContent = "CSVを表示しました。手動でコピーしてください。";
+        notice.textContent = "自動コピーできないため、表示されたCSVを選択してコピーしてください。";
       }
     }
 
-    function showCsv(message) {
-      const csv = buildCsvText();
-      csvOutput.value = csv;
-      csvPanel.classList.add("is-open");
-      csvOutput.focus();
-      csvOutput.select();
-      notice.textContent = message || "CSVを表示しました。";
-    }
-
-    function buildCsvText() { return toCsv([headers, ...getRowsForOutput()]); }
-    function toCsv(rowList) { return rowList.map(row => row.map(csvCell).join(",")).join("\r\n"); }
-    function csvCell(value) { const text = String(value ?? ""); return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text; }
-
-    function parseCsv(text) {
-      const rows = [];
-      let row = [], cell = "", quoted = false;
-      const source = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-      for (let i = 0; i < source.length; i++) {
-        const char = source[i], next = source[i + 1];
-        if (char === '"') {
-          if (quoted && next === '"') { cell += '"'; i++; } else { quoted = !quoted; }
-        } else if (char === "," && !quoted) {
-          row.push(cell.trim()); cell = "";
-        } else if (char === "\n" && !quoted) {
-          row.push(cell.trim()); if (row.some(Boolean)) rows.push(row); row = []; cell = "";
-        } else {
-          cell += char;
-        }
+    function downloadExcel() {
+      const aoa = [
+        ["発注書"],
+        ["納品日", deliveryDate.value || "", "使用日", useDate.value || "", "検品者", checkerName.value || ""],
+        [],
+        headers,
+        ...buildOutputRows()
+      ];
+      if (!window.XLSX) {
+        const html = "<table>" + aoa.map(row => "<tr>" + row.map(cell => "<td>" + escapeHtml(cell) + "</td>").join("") + "</tr>").join("") + "</table>";
+        downloadBlob(new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" }), "発注書.xls");
+        notice.textContent = "Excelライブラリ未読込のため.xlsで出力しました。";
+        return;
       }
-      row.push(cell.trim()); if (row.some(Boolean)) rows.push(row);
-      return rows;
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws["!cols"] = [{ wch: 8 }, { wch: 18 }, { wch: 10 }, { wch: 8 }, { wch: 28 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
+      ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
+      Object.keys(ws).filter(address => !address.startsWith("!")).forEach(address => {
+        const cell = ws[address];
+        cell.s = {
+          font: { name: "Yu Gothic", sz: address === "A1" ? 18 : 11, bold: address === "A1" || /^[A-J]4$/.test(address) },
+          alignment: { vertical: "center", horizontal: address === "A1" ? "center" : "left", wrapText: true },
+          border: { top: { style: "thin", color: { rgb: "000000" } }, bottom: { style: "thin", color: { rgb: "000000" } }, left: { style: "thin", color: { rgb: "000000" } }, right: { style: "thin", color: { rgb: "000000" } } }
+        };
+      });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "発注書");
+      XLSX.writeFile(wb, "発注書.xlsx");
+      notice.textContent = "Excelをダウンロードしました。";
     }
 
-    function findAmount(text) {
-      const normalized = normalizeAmountText(text);
-      const match = normalized.match(/([0-9]+(?:\.[0-9]+)?)\s*(kg|g|ml|l|L|個|本|袋|缶|丁|枚|束|箱|パック)/i);
-      if (match) return { quantity: Number(match[1]), unit: normalizeUnit(match[2]) };
-      const numbers = normalized.match(/[0-9]+(?:\.[0-9]+)?/g);
-      return { quantity: numbers ? Number(numbers[numbers.length - 1]) : 1, unit: "個" };
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
     }
 
-    function calculateTotals(exportRows) {
-      const total = exportRows.reduce((sum, row) => sum + numberValue(row[8]), 0);
-      const tax = Math.floor(total * 0.1);
-      return { total: round(total), tax, billed: round(total + tax) };
-    }
-
-    function clearAll() {
-      rows = [];
-      lastImage = null;
-      childrenCount = 1;
-      customRules = [];
-      stats = { merged: 0, excluded: 0 };
-      ocrText.value = "";
-      ocrStatus.textContent = "";
-      notice.textContent = "入力を消しました。";
-      menuCsvStatus.textContent = "未選択（手入力可）";
-      childrenCsvStatus.textContent = "未選択（1人分）";
-      ruleCsvStatus.textContent = "標準ルール";
-      preview.removeAttribute("src");
-      preview.style.display = "none";
-      csvOutput.value = "";
-      csvPanel.classList.remove("is-open");
-      deliveryDate.value = "";
-      useDate.value = "";
-      checkerName.value = "";
-      renderTable();
-      updateSummary();
-    }
-
-    function allKnownNames() { return Array.from(new Set(standardRules.flatMap(rule => rule.names).concat(Object.keys(aliases), Object.values(aliases)))).sort((a, b) => b.length - a.length); }
     function normalizeName(value) {
-      const text = String(value || "")
-        .replace(/^﻿/, "")
-        .replace(/[　	]+/g, " ")
-        .replace(/[\[\]【】()（）{}<>＜＞「」『』]/g, "")
-        .replace(/[、,，:：;；|｜]/g, " ")
-        .replace(/\s+/g, " ")
+      const normalized = String(value || "")
+        .replace(/^\uFEFF/, "")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[①-⑳]/g, "")
+        .replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?/g, "")
+        .replace(new RegExp("\\b(?:" + units.map(escapeRegExp).join("|") + ")\\b", "gi"), "")
+        .replace(/["'`~^*_=+;<>?？!！\\\\]/g, "")
+        .replace(/\s+/g, "")
         .trim();
-      return aliases[text] || text;
+      return aliases[normalized] || normalized;
     }
-    function normalizeHeader(value) { return String(value || "").trim().replace(/\s/g, "").toLowerCase(); }
-    function normalizeUnit(value) { const text = String(value || "").trim().toLowerCase(); if (text === "l") return "L"; return text || "個"; }
-    function normalizeAmountText(value) { return String(value || "").replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0)).replace(/．/g, ".").replace(/[Ｇｇ]/g, "g").replace(/[Ｍｍ]/g, "m").replace(/[Ｌｌ]/g, "l"); }
-    function numberValue(value) { const match = normalizeAmountText(value).replace(/,/g, "").match(/-?[0-9]+(?:\.[0-9]+)?/); return match ? Number(match[0]) : 0; }
-    function findIndex(row, names) { return row.findIndex(value => names.includes(value) || names.some(name => value.includes(name))); }
-    function isHeaderWord(value) { return /^(日付|曜日|献立|献立名|昼食|おやつ|午前|午後|材料|食品名|食材名|材料名|数量|分量|使用量|総使用量|単位|備考)$/i.test(String(value || "").trim()); }
-    function isNonFood(value) { const text = String(value || "").trim(); return !text || isHeaderWord(text) || /^[0-9０-９]+(?:[./月-][0-9０-９]+)?日?$/.test(text) || Boolean(numberValue(text)); }
-    function isValidFoodName(value) {
-      const text = normalizeName(value).replace(/\s/g, "");
-      if (!text || isHeaderWord(text)) return false;
-      if (/^[ぁ-ん]$/.test(text)) return false;
-      if (text.length < 2 && !allKnownNames().includes(text)) return false;
-      if (/^[\d０-９.,，、\-ー\s]+$/.test(text)) return false;
-      if (!/[ぁ-んァ-ン一-龥々A-Za-z]/.test(text)) return false;
-      if (/^(kg|g|ml|l|L|個|本|袋|缶|丁|枚|束|箱|パック)$/i.test(text)) return false;
+
+    function normalizeUnit(value) {
+      const unit = String(value || "個").trim().replace("リットル", "L").replace("ｇ", "g").replace("ｍｌ", "ml").replace("㎏", "kg");
+      if (/^l$/i.test(unit)) return "L";
+      return unit || "個";
+    }
+
+    function normalizeHeader(value) {
+      return String(value || "").replace(/^\uFEFF/, "").replace(/\s+/g, "").toLowerCase();
+    }
+
+    function isValidFoodName(name) {
+      const value = String(name || "").trim();
+      if (value.length < 2) return false;
+      if (/^[0-9０-９.,．、\-ー\s]+$/.test(value)) return false;
+      if (!/[ぁ-んァ-ヶー一-龠A-Za-z]/.test(value)) return false;
+      if (/^(食品名|食材名|材料名|品名|数量|単位|合計|小計|献立|日付|月|火|水|木|金|土|日)$/.test(value)) return false;
+      if (/^[□■◇◆○●△▲×]+$/.test(value)) return false;
       return true;
     }
-    function round(value) { return Math.round(Number(value || 0) * 1000) / 1000; }
-    function roundUp(value, step) { return round(Math.ceil((Number(value) - 0.0000001) / Number(step || 1)) * Number(step || 1)); }
-    function parseDateParts(value) { if (!value) return { year: "", month: "", day: "", weekday: "" }; const parts = value.split("-").map(Number); const date = new Date(parts[0], parts[1] - 1, parts[2]); return { year: parts[0], month: parts[1], day: parts[2], weekday: ["日", "月", "火", "水", "木", "金", "土"][date.getDay()] }; }
-    function formatJapaneseDate(value) { const parts = parseDateParts(value); return parts.year ? "令和" + (parts.year - 2018) + "年" + parts.month + "月" + parts.day + "日（" + parts.weekday + "）" : "令和　年　月　日"; }
-    function fileName(extension) { const d = new Date(); const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, "0"); const day = String(d.getDate()).padStart(2, "0"); return "発注書兼納品書_" + y + m + day + "." + extension; }
-    function downloadBlob(blob, name) { const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
-    function escapeHtml(value) { return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char])); }
 
+    function isHeaderWord(value) {
+      return /食品名|食材名|材料名|品名|数量|単位|献立名|日付|使用量|総使用量/.test(String(value || ""));
+    }
+
+    function allKnownNames() {
+      const fromRules = customRules.concat(standardRules).flatMap(rule => rule.names || []);
+      return fromRules.concat(Object.keys(aliases)).sort((a, b) => b.length - a.length);
+    }
+
+    function numberValue(value) {
+      const normalized = String(value ?? "").normalize("NFKC").replace(/[^0-9.\-]/g, "");
+      const number = Number(normalized);
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function round(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? Math.round(number * 100) / 100 : value;
+    }
+
+    function roundUp(value, step) {
+      const base = Number(value);
+      const unit = Number(step) || 1;
+      if (!Number.isFinite(base)) return "";
+      return round(Math.ceil(base / unit) * unit);
+    }
+
+    function findIndex(header, names) {
+      const index = header.findIndex(value => names.map(normalizeHeader).includes(value));
+      return index >= 0 ? index : 0;
+    }
+
+    function csvEscape(value) {
+      const text = String(value ?? "");
+      return /[",\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"]/g, match => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[match]));
+    }
+
+    function escapeRegExp(value) {
+      return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    renderTable();
     updateSummary();
   </script>
 </body>
