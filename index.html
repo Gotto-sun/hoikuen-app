@@ -425,10 +425,14 @@
       const totalRowCount = 4 + DETAIL_ROW_COUNT + 4;
       worksheet["!ref"] = "A1:J" + totalRowCount;
       worksheet["!cols"] = [
-        { wch: 8 }, { wch: 24 }, { wch: 10 }, { wch: 7 }, { wch: 16 },
+        { wch: 8 }, { wch: 24 }, { wch: 10 }, { wch: 7 }, { wch: 10 },
         { wch: 9 }, { wch: 7 }, { wch: 9 }, { wch: 10 }, { wch: 10 }
       ];
-      worksheet["!rows"] = Array.from({ length: totalRowCount }, (_, index) => ({ hpt: index >= 3 && index <= 33 ? 21 : 20 }));
+      worksheet["!rows"] = Array.from({ length: totalRowCount }, (_, index) => {
+        if (index === 2) return { hpt: 5 };
+        if (index === 34) return { hpt: 2 };
+        return { hpt: index >= 3 && index <= 33 ? 21 : 20 };
+      });
       worksheet["!merges"] = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
         { s: { r: 1, c: 1 }, e: { r: 1, c: 3 } },
@@ -439,7 +443,7 @@
         { s: { r: 37, c: 6 }, e: { r: 37, c: 7 } },
         { s: { r: 37, c: 1 }, e: { r: 37, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.39, right: 0.39, top: 0.39, bottom: 0.39, header: 0.12, footer: 0.12 };
+      worksheet["!margins"] = { left: 0.39, right: 0.39, top: 0, bottom: 0.39, header: 0.12, footer: 0.12 };
       worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
 
