@@ -112,6 +112,22 @@
     .csv-panel { display: none; margin-top: 12px; padding: 12px; border: 1px solid #fdba74; border-radius: 12px; background: #fffdf8; }
     .csv-panel.is-open { display: block; }
     #csvOutput { min-height: 260px; }
+    .debug-panel { margin: 12px 0; }
+    .debug-panel pre {
+      min-height: 120px;
+      max-height: 260px;
+      overflow: auto;
+      margin: 0;
+      padding: 12px;
+      border: 1px solid #fdba74;
+      border-radius: 12px;
+      background: #111827;
+      color: #e5e7eb;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
 
     @media (max-width: 760px) {
       main { padding: 12px; }
@@ -127,7 +143,7 @@
     @media print {
       html, body { width: 210mm; height: 297mm; margin: 0; padding: 0; background: #fff; color: #000; }
       body { font-size: 10.5pt; line-height: 1.2; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-      header, main section:first-child, .buttons, .summary, .status, .note, .camera-note, .csv-panel, .empty { display: none !important; }
+      header, main section:first-child, .buttons, .summary, .status, .note, .camera-note, .csv-panel, .debug-panel, .empty { display: none !important; }
       main { width: 190mm; max-width: 190mm; margin: 0 auto; padding: 0; }
       section { width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; break-inside: avoid; }
       h2 { display: none; }
@@ -206,6 +222,11 @@
         <div><span>除外件数</span><b id="excludedCount">0</b></div>
       </div>
       <p id="notice" class="status"></p>
+
+      <div class="debug-panel">
+        <h2>抽出結果（JSON）</h2>
+        <pre id="debugJson">[]</pre>
+      </div>
 
       <div class="document-fields">
         <label for="deliveryDate">納品日</label><input id="deliveryDate" type="date">
@@ -337,6 +358,7 @@
       updateSummary();
       csvOutput.value = "";
       csvPanel.classList.remove("is-open");
+      updateDebugJson({ items: [], rows: [], stats, mode: "empty" });
       notice.textContent = "消しました。データ0件でも出力できます。";
     }
 
@@ -347,110 +369,143 @@
         stats = { merged: 0, excluded: 0 };
         renderTable();
         updateSummary();
+        updateDebugJson({ items: [], rows: [], stats, mode: "empty" });
         notice.textContent = "未入力でもExcel/CSV出力できます。必要なら発注行を追加してください。";
         return;
       }
       const result = extractIngredients(text);
       rows = result.rows;
       stats = result.stats;
+      updateDebugJson(result.debug);
       renderTable();
       updateSummary();
       notice.textContent = rows.length ? "発注数を計算しました。" : (fromOcr ? "OCR結果から抽出できませんでした。手入力行を追加するか、空の様式を出力できます。" : "抽出できませんでした。手入力行を追加するか、空の様式を出力できます。");
     }
 
     function extractIngredients(text) {
-      const csvRows = parseLooseCsv(text);
+      const lines = splitOcrLines(text);
+      const csvRows = parseCsvLines(lines);
       const csvItems = rowsFromCsv(csvRows);
-      const sourceRows = csvItems.length ? csvItems : rowsFromLines(text);
+      const fallbackItems = csvItems.length ? [] : rowsFromLines(lines);
+      const sourceRows = csvItems.length ? csvItems : fallbackItems;
+      const mode = csvItems.length ? "csv" : "fallback";
       const totals = new Map();
+      const acceptedItems = [];
       let found = 0;
       let excluded = 0;
+
       sourceRows.forEach(item => {
         const name = normalizeName(item.name);
-        const quantity = numberValue(item.quantity) || 1;
+        const quantity = numberValue(item.quantity);
         const unit = normalizeUnit(item.unit || "個");
-        if (!isValidFoodName(name)) return;
+        if (!isValidFoodName(name) || quantity <= 0 || !unit) return;
         const rule = findRule(name);
         if (rule && rule.exclude) { excluded += 1; return; }
         found += 1;
+        acceptedItems.push({ name, quantity, unit, source: mode });
         const key = name + "__" + unit;
         const current = totals.get(key) || { name, quantity: 0, unit, count: 0 };
         current.quantity += quantity * childrenCount;
         current.count += 1;
         totals.set(key, current);
       });
+
       const output = Array.from(totals.values()).map(toOrderRow).sort((a, b) => a.name.localeCompare(b.name, "ja"));
-      return { rows: output, stats: { merged: Math.max(0, found - output.length), excluded } };
+      const debug = { mode, items: acceptedItems, rows: output, stats: { merged: Math.max(0, found - output.length), excluded } };
+      return { rows: output, stats: debug.stats, debug };
     }
 
     function rowsFromCsv(csvRows) {
-      if (!csvRows.length || !csvRows.some(row => row.length >= 3)) return [];
-      const first = csvRows[0].map(normalizeHeader);
-      const hasHeader = first.some(value => ["食品名", "食材名", "材料名", "品名", "name"].includes(value));
-      const nameIndex = hasHeader ? findIndex(first, ["食品名", "食材名", "材料名", "品名", "name"]) : 0;
-      const quantityIndex = hasHeader ? findIndex(first, ["数量", "分量", "使用量", "総使用量", "3歳未満児量", "３歳未満児量", "未満児量", "quantity"]) : 1;
-      const unitIndex = hasHeader ? findIndex(first, ["単位", "unit"]) : 2;
+      if (!csvRows.length) return [];
+      const first = csvRows[0].cells.map(normalizeHeader);
+      const hasHeader = first.length === 3 && first[0] === "食品名" && first[1] === "数量" && first[2] === "単位";
       const data = hasHeader ? csvRows.slice(1) : csvRows;
-      return data.map(row => ({
-        name: row[nameIndex] || "",
-        quantity: row[quantityIndex] || "1",
-        unit: row[unitIndex] || "個"
-      })).filter(item => isValidFoodName(normalizeName(item.name)));
+      return data
+        .filter(row => row.readable && row.cells.length === 3)
+        .map(row => ({
+          name: row.cells[0] || "",
+          quantity: row.cells[1] || "",
+          unit: row.cells[2] || ""
+        }))
+        .filter(item => {
+          const name = normalizeName(item.name);
+          return isValidFoodName(name) && numberValue(item.quantity) > 0 && normalizeUnit(item.unit);
+        });
     }
 
-    function rowsFromLines(text) {
-      const cleaned = cleanupOcrText(text);
-      return cleaned.split("\n").map(line => parseIngredientLine(line)).filter(Boolean);
+    function rowsFromLines(lines) {
+      return lines.map(line => parseIngredientLine(line)).filter(Boolean);
     }
 
     function parseIngredientLine(line) {
-      const normalized = String(line || "").replace(/[\t ]+/g, " ").trim();
+      const normalized = String(line || "").normalize("NFKC").trim();
       if (!normalized || isHeaderWord(normalized)) return null;
-      const commaParts = normalized.split(/\s*,\s*/).filter(Boolean);
-      if (commaParts.length >= 3) {
-        return { name: commaParts[0], quantity: commaParts[1], unit: commaParts[2] };
-      }
+      const japaneseRuns = normalized.match(/[ぁ-んァ-ヶー一-龠々〆ヵヶ]+/g) || [];
+      const candidates = japaneseRuns
+        .map(part => normalizeName(part))
+        .filter(name => isValidFoodName(name));
+      if (!candidates.length) return null;
+      const name = candidates.sort((a, b) => b.length - a.length)[0];
       const amount = findAmount(normalized);
-      const name = guessName(normalized, amount);
-      if (!isValidFoodName(name)) return null;
       return { name, quantity: amount.quantity, unit: amount.unit };
     }
 
-    function cleanupOcrText(text) {
+    function splitOcrLines(text) {
       return String(text || "")
         .replace(/^\uFEFF/, "")
         .replace(/\r\n?/g, "\n")
-        .replace(/[，、]/g, ",")
-        .replace(/[|｜]/g, ",")
         .split("\n")
-        .map(line => line.replace(/\s*,\s*/g, ",").replace(/[ \t]+/g, " ").trim())
+        .map(line => line.trim())
+        .filter(Boolean);
+    }
+
+    function cleanupOcrText(text) {
+      return splitOcrLines(text)
+        .map(line => line.replace(/[，、]/g, ",").replace(/[|｜]/g, ",").replace(/\s*,\s*/g, ",").replace(/[ \t]+/g, " ").trim())
         .filter(Boolean)
         .join("\n")
         .trim();
     }
 
+    function parseCsvLines(lines) {
+      return lines.map(line => {
+        const parsed = parseCsvLine(line.replace(/[，、]/g, ",").replace(/[|｜]/g, ","));
+        return { cells: parsed.cells.map(cell => cell.trim()), readable: parsed.readable };
+      }).filter(row => row.cells.some(Boolean));
+    }
+
     function parseLooseCsv(text) {
-      return cleanupOcrText(text).split("\n").map(line => line.split(/\s*,\s*/).map(cell => cell.replace(/^"|"$/g, "").trim())).filter(row => row.some(Boolean));
+      return parseCsvLines(splitOcrLines(text)).map(row => row.cells);
+    }
+
+    function parseCsvLine(line) {
+      const cells = [];
+      let cell = "";
+      let inQuotes = false;
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        if (char === '"') {
+          if (inQuotes && line[index + 1] === '"') {
+            cell += '"';
+            index += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === "," && !inQuotes) {
+          cells.push(cell);
+          cell = "";
+        } else {
+          cell += char;
+        }
+      }
+      cells.push(cell);
+      return { cells, readable: !inQuotes };
     }
 
     function findAmount(line) {
       const pattern = new RegExp("([0-9０-９]+(?:[.．][0-9０-９]+)?)\\s*(" + units.map(escapeRegExp).join("|") + ")?", "i");
       const match = String(line || "").match(pattern);
       return { quantity: match ? numberValue(match[1]) || 1 : 1, unit: match && match[2] ? normalizeUnit(match[2]) : "個" };
-    }
-
-    function guessName(line) {
-      const source = String(line || "").trim();
-      const known = allKnownNames().find(name => source.replace(/\s/g, "").includes(name));
-      if (known) return normalizeName(known);
-      const unitPattern = units.map(escapeRegExp).join("|");
-      const withoutAmount = source
-        .replace(new RegExp("[0-9０-９]+(?:[.．][0-9０-９]+)?\\s*(?:" + unitPattern + ")?", "gi"), "")
-        .replace(/[：:()（）\[\]【】]/g, " ")
-        .replace(/[,]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-      return normalizeName(withoutAmount);
     }
 
     function toOrderRow(item) {
@@ -529,6 +584,7 @@
       rows.push({ checked: "□", name: "", totalQuantity: 1, totalUnit: "個", note: "手入力", orderQuantity: 1, orderUnit: "個", unitPrice: "", amount: "", origin: "" });
       renderTable();
       updateSummary();
+      updateDebugJson({ mode: "manual", items: rows.map(row => ({ name: row.name, quantity: row.totalQuantity, unit: row.totalUnit })), rows, stats });
     }
 
     function deleteRow(index) {
@@ -536,6 +592,7 @@
       rows.splice(index, 1);
       renderTable();
       updateSummary();
+      updateDebugJson({ mode: "manual", items: rows.map(row => ({ name: row.name, quantity: row.totalQuantity, unit: row.totalUnit })), rows, stats });
       notice.textContent = "行を削除しました。データ0件でも出力できます。";
     }
 
@@ -699,10 +756,9 @@
     function isValidFoodName(name) {
       const value = String(name || "").trim();
       if (value.length < 2) return false;
-      if (/^[0-9０-９.,．、\-ー\s]+$/.test(value)) return false;
-      if (!/[ぁ-んァ-ヶー一-龠A-Za-z]/.test(value)) return false;
+      if (!/^[ぁ-んァ-ヶー一-龠々〆ヵヶ]+$/.test(value)) return false;
       if (/^(食品名|食材名|材料名|品名|数量|単位|合計|小計|献立|日付|月|火|水|木|金|土|日)$/.test(value)) return false;
-      if (/^[□■◇◆○●△▲×]+$/.test(value)) return false;
+      if (/^[ー々〆ヵヶ]+$/.test(value)) return false;
       return true;
     }
 
@@ -751,6 +807,14 @@
       return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
+    function updateDebugJson(data) {
+      const safeData = data || { items: [], rows: [], stats, mode: "empty" };
+      const json = JSON.stringify(safeData, null, 2);
+      debugJson.textContent = json;
+      console.log("抽出結果（JSON）", safeData);
+    }
+
+    updateDebugJson({ items: [], rows: [], stats, mode: "empty" });
     renderTable();
     updateSummary();
   </script>
