@@ -269,6 +269,13 @@
       font-weight: 700;
     }
 
+    .preview-sheet .total-amount {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+      padding-right: 6px;
+    }
+
     .preview-sheet .checker-input-row td {
       height: 72px;
     }
@@ -526,9 +533,9 @@
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
           '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="6"></td></tr>' +
-          '<tr class="checker-input-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="2"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td>' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr><td colspan="6"></td><td class="total-label" colspan="2">請求金額</td><td>' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="checker-input-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="2"></td><td class="total-label" colspan="2">合計金額</td><td class="total-amount">' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td class="total-amount">' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">請求金額</td><td class="total-amount">' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
         '</tbody>' +
       '</table>';
@@ -663,6 +670,7 @@
       const isHeader = row === 6;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
       const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 8;
+      const isTotalAmountCell = row >= layout.totalStart && row <= layout.totalEnd && col === 8;
 
       return {
         font: {
@@ -671,10 +679,11 @@
           bold: isTitle || isSubTitle || isHeader || isCheckerBox || (isTotalBox && col <= 7)
         },
         alignment: {
-          horizontal: isDateLine ? "left" : (isTitle || isSubTitle || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center")),
+          horizontal: isTotalAmountCell ? "right" : (isDateLine ? "left" : (isTitle || isSubTitle || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center"))),
           vertical: "center",
           wrapText: !isDateLine
         },
+        numFmt: isTotalAmountCell ? "#,##0.###" : undefined,
         border: borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder),
         fill: undefined
       };
