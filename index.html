@@ -364,7 +364,7 @@
 
       @page {
         size: A4 portrait;
-        margin: 0.35cm;
+        margin: 0.35cm 0.55cm 0.35cm 0.2cm;
       }
 
       main,
@@ -665,7 +665,7 @@
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
         { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.2, right: 0.2, top: 0.2, bottom: 0.2, header: 0, footer: 0 };
+      worksheet["!margins"] = { left: 0.08, right: 0.22, top: 0.2, bottom: 0.2, header: 0, footer: 0 };
       worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true, verticalCentered: true };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
