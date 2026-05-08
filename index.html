@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>発注書Excel作成</title>
 
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" onerror="window.pdfLoadError = true"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"></script>
   <script>
     if (!window.XLSX) {
@@ -129,13 +130,28 @@
       font-weight: 700;
     }
 
-    input {
+    input,
+    textarea {
       width: 100%;
       border: 1px solid #fdba74;
       border-radius: 12px;
       padding: 10px;
       font: inherit;
       background: #fffdf8;
+    }
+
+    .pdf-box {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid #ffedd5;
+    }
+
+    .pdf-textarea {
+      min-height: 220px;
+      resize: vertical;
+      white-space: pre-wrap;
     }
 
     .table-wrap {
@@ -400,8 +416,16 @@
 
   <main>
     <section>
-      <h2>1. 手入力テーブル</h2>
-      <p class="note">材料名・数量・単位を入力してください。Excelボタンは常に押せます。</p>
+      <h2>1. PDF読み込み（任意）</h2>
+      <div class="pdf-box">
+        <p class="note">PDFを選ぶと、PDF内の抽出テキストだけを表示します。Excelにはまだ自動反映しません。</p>
+        <input id="pdfFile" type="file" accept="application/pdf,.pdf" aria-label="PDFファイル">
+        <textarea id="pdfText" class="pdf-textarea" readonly placeholder="PDFから抽出したテキストがここに表示されます。"></textarea>
+        <p id="pdfStatus" class="status"></p>
+      </div>
+
+      <h2>2. 手入力テーブル</h2>
+      <p class="note">材料名・数量・単位を入力してください。PDF読み込みに失敗しても、Excelボタンは常に押せます。</p>
 
       <div class="document-fields" aria-label="発注書情報">
         <label for="deliveryDate">納品日</label>
@@ -435,7 +459,7 @@
     </section>
 
     <section>
-      <h2>2. 発注書レイアウト</h2>
+      <h2>3. 発注書レイアウト</h2>
       <p class="note">入力内容は下の発注書レイアウトに自動反映されます。</p>
       <div class="table-wrap" id="orderPreview"></div>
     </section>
@@ -447,6 +471,9 @@
     const addBtn = document.getElementById("addBtn");
     const excelBtn = document.getElementById("excelBtn");
     const clearBtn = document.getElementById("clearBtn");
+    const pdfFile = document.getElementById("pdfFile");
+    const pdfText = document.getElementById("pdfText");
+    const pdfStatus = document.getElementById("pdfStatus");
     const deliveryDate = document.getElementById("deliveryDate");
     const useDate = document.getElementById("useDate");
     const checkerName = document.getElementById("checkerName");
@@ -465,6 +492,7 @@
     });
 
     excelBtn.addEventListener("click", downloadExcel);
+    pdfFile.addEventListener("change", readPdfText);
 
     clearBtn.addEventListener("click", () => {
       rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
@@ -482,6 +510,39 @@
 
     renderManualTable();
     renderOrderPreview();
+
+
+    async function readPdfText() {
+      const file = pdfFile.files && pdfFile.files[0];
+      pdfText.value = "";
+      if (!file) {
+        pdfStatus.textContent = "PDFが選ばれていません。";
+        return;
+      }
+      if (!isPdfReady()) {
+        pdfStatus.textContent = "PDF読み込みライブラリを読み込めませんでした。手入力とExcel出力はそのまま使えます。";
+        return;
+      }
+
+      pdfStatus.textContent = "PDFを読み込んでいます。";
+      try {
+        const buffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+        const pages = [];
+        for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+          const page = await pdf.getPage(pageNumber);
+          const content = await page.getTextContent();
+          const text = content.items.map(item => item.str || "").join(" ").replace(/\s+/g, " ").trim();
+          pages.push("【" + pageNumber + "ページ】\n" + (text || "（抽出できるテキストがありません）"));
+        }
+        pdfText.value = pages.join("\n\n");
+        pdfStatus.textContent = "PDFのテキストを表示しました。Excelには自動反映していません。";
+      } catch (error) {
+        pdfText.value = "";
+        pdfStatus.textContent = "PDFの読み込みに失敗しました。手入力とExcel出力はそのまま使えます。";
+        console.error("PDF読み込みエラー", error);
+      }
+    }
 
     function createBlankRow() {
       return { name: "", quantity: "", unit: "" };
@@ -768,6 +829,14 @@
 
     function isXlsxReady() {
       return Boolean(window.XLSX && XLSX.utils && typeof XLSX.utils.aoa_to_sheet === "function" && typeof XLSX.utils.book_new === "function" && typeof XLSX.utils.book_append_sheet === "function" && typeof XLSX.writeFile === "function");
+    }
+
+    function isPdfReady() {
+      if (!window.pdfjsLib || typeof pdfjsLib.getDocument !== "function") return false;
+      if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+      }
+      return true;
     }
 
     function makeExportFileName(extension) {
