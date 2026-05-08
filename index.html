@@ -241,11 +241,6 @@
     const DETAIL_ROW_COUNT = 30;
     const TAX_RATE = 0.1;
     const SCHOOL_NAME = "スクルドエンジェルたかばり";
-    const EXCEL_TOP_MARGIN_INCH = 0;
-    const EXCEL_HEADER_MARGIN_INCH = 0;
-    const EXCEL_AFTER_SCHOOL_ROW_HEIGHT = 5;
-    const EXCEL_BEFORE_TOTAL_ROW_HEIGHT = 2;
-    const EXCEL_NOTE_COLUMN_WIDTH = 10;
     const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const fields = ["checked", "name", "totalQty", "totalUnit", "note", "deliveryQty", "deliveryUnit", "unitPrice", "amount", "origin"];
     const numericFields = new Set(["totalQty", "deliveryQty", "unitPrice", "amount"]);
@@ -430,14 +425,10 @@
       const totalRowCount = 4 + DETAIL_ROW_COUNT + 4;
       worksheet["!ref"] = "A1:J" + totalRowCount;
       worksheet["!cols"] = [
-        { wch: 8 }, { wch: 24 }, { wch: 10 }, { wch: 7 }, { wch: EXCEL_NOTE_COLUMN_WIDTH },
+        { wch: 8 }, { wch: 24 }, { wch: 10 }, { wch: 7 }, { wch: 16 },
         { wch: 9 }, { wch: 7 }, { wch: 9 }, { wch: 10 }, { wch: 10 }
       ];
-      worksheet["!rows"] = Array.from({ length: totalRowCount }, (_, index) => {
-        if (index === 2) return { hpt: EXCEL_AFTER_SCHOOL_ROW_HEIGHT };
-        if (index === 34) return { hpt: EXCEL_BEFORE_TOTAL_ROW_HEIGHT };
-        return { hpt: index >= 3 && index <= 33 ? 21 : 20 };
-      });
+      worksheet["!rows"] = Array.from({ length: totalRowCount }, (_, index) => ({ hpt: index >= 3 && index <= 33 ? 21 : 20 }));
       worksheet["!merges"] = [
         { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
         { s: { r: 1, c: 1 }, e: { r: 1, c: 3 } },
@@ -448,7 +439,7 @@
         { s: { r: 37, c: 6 }, e: { r: 37, c: 7 } },
         { s: { r: 37, c: 1 }, e: { r: 37, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.39, right: 0.39, top: EXCEL_TOP_MARGIN_INCH, bottom: 0.39, header: EXCEL_HEADER_MARGIN_INCH, footer: 0.12 };
+      worksheet["!margins"] = { left: 0.39, right: 0.39, top: 0.39, bottom: 0.39, header: 0.12, footer: 0.12 };
       worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
 
