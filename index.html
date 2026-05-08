@@ -3,511 +3,682 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>発注書兼納品書 Excel出力</title>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+  <title>発注書Excel作成</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"></script>
   <script>
     if (!window.XLSX) {
-      document.write('<script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"><\/script>');
+      document.write('<script src="https://unpkg.com/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"><\/script>');
+    }
+    if (!window.XLSX) {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"><\/script>');
+    }
+    if (!window.XLSX) {
+      document.write('<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"><\/script>');
     }
   </script>
+
   <style>
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
 
     body {
       margin: 0;
-      background: #f3f4f6;
-      color: #111827;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
-      line-height: 1.5;
+      background: #fff7ed;
+      color: #1f2937;
+      line-height: 1.7;
+    }
+
+    header {
+      padding: 20px 16px 12px;
+      background: linear-gradient(135deg, #fb923c, #f97316);
+      color: #fff;
+    }
+
+    header h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+
+    header p {
+      margin: 0;
+      font-size: 14px;
+      opacity: 0.95;
     }
 
     main {
-      width: min(1200px, 100%);
+      max-width: 1080px;
       margin: 0 auto;
-      padding: 18px;
+      padding: 16px;
     }
 
-    .panel {
-      margin-bottom: 18px;
-      padding: 18px;
+    section {
       background: #fff;
-      border: 1px solid #d1d5db;
-      border-radius: 14px;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+      border: 1px solid #fed7aa;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 24px rgba(154, 52, 18, 0.08);
     }
 
-    h1, h2 { margin: 0 0 12px; }
-    h1 { font-size: 24px; text-align: center; letter-spacing: 0.12em; }
-    h2 { font-size: 17px; }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
 
-    .form-grid {
-      display: grid;
-      grid-template-columns: 120px 1fr 120px 1fr 120px 1fr;
+    .note {
+      margin: 0 0 12px;
+      color: #667085;
+      font-size: 14px;
+    }
+
+    .buttons {
+      display: flex;
+      flex-wrap: wrap;
       gap: 10px;
-      align-items: center;
-      margin-bottom: 14px;
+      margin-top: 12px;
     }
 
-    label { font-weight: 700; }
+    button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 999px;
+      padding: 10px 16px;
+      font: inherit;
+      font-weight: 700;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    .green {
+      background: #16a34a;
+    }
+
+    .gray {
+      background: #64748b;
+    }
+
+    .red {
+      background: #dc2626;
+    }
+
+    .status {
+      min-height: 1.8em;
+      margin: 10px 0 0;
+      color: #475569;
+      font-weight: 700;
+      font-size: 14px;
+    }
+
+    .document-fields {
+      display: grid;
+      grid-template-columns: 90px 1fr 90px 1fr 90px 1fr;
+      gap: 8px;
+      align-items: center;
+      margin: 12px 0;
+      padding: 12px;
+      border: 1px solid #fed7aa;
+      border-radius: 12px;
+      background: #fffdf8;
+    }
+
+    label {
+      display: block;
+      font-weight: 700;
+    }
 
     input {
       width: 100%;
-      min-height: 38px;
-      padding: 6px 8px;
-      border: 1px solid #9ca3af;
-      border-radius: 8px;
+      border: 1px solid #fdba74;
+      border-radius: 12px;
+      padding: 10px;
       font: inherit;
+      background: #fffdf8;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      min-width: 680px;
+      border-collapse: collapse;
       background: #fff;
     }
 
-    .table-wrap { overflow-x: auto; }
-
-    table { border-collapse: collapse; width: 100%; }
-
-    .input-table { min-width: 1120px; }
-    .input-table th, .input-table td {
-      border: 1px solid #d1d5db;
-      padding: 4px;
-      font-size: 13px;
-      vertical-align: middle;
-    }
-    .input-table th { background: #e5e7eb; text-align: center; white-space: nowrap; }
-    .input-table input { min-height: 32px; border-radius: 4px; }
-    .input-table input[type="checkbox"] { min-height: 18px; width: 18px; display: block; margin: 0 auto; }
-    .input-table .name-col { min-width: 220px; }
-    .input-table .note-col { min-width: 180px; }
-    .input-table .num { text-align: right; }
-    .input-table .center { text-align: center; }
-
-    .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-    button {
-      min-height: 42px;
-      padding: 8px 18px;
-      border: 0;
-      border-radius: 999px;
-      background: #2563eb;
-      color: #fff;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .clear { background: #6b7280; }
-    .status { min-height: 24px; margin: 10px 0 0; font-weight: 700; color: #1f2937; }
-
-    .sheet {
-      width: 210mm;
-      min-height: 297mm;
-      margin: 0 auto;
-      padding: 10mm;
-      background: #fff;
-      border: 1px solid #9ca3af;
-      font-size: 10px;
+    th,
+    td {
+      border-bottom: 1px solid #ffedd5;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
     }
 
-    .sheet-title {
-      margin: 0 0 8px;
-      text-align: center;
-      font-size: 22px;
-      font-weight: 800;
-      letter-spacing: 0.12em;
+    th {
+      background: #ffedd5;
+      color: #7c2d12;
+      white-space: nowrap;
     }
 
-    .sheet-info {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 8px;
-      align-items: end;
-      font-size: 12px;
-      font-weight: 700;
-    }
-
-    .sheet-info .line {
-      display: inline-block;
+    .manual-table input {
       min-width: 110px;
-      padding: 0 6px 2px;
-      border-bottom: 1px solid #111827;
-      font-weight: 400;
+    }
+
+    .preview-sheet {
+      min-width: 860px;
+      border: 2px solid #111827;
+      font-size: 13px;
+    }
+
+    .preview-sheet th,
+    .preview-sheet td {
+      border: 1px solid #111827;
+      text-align: center;
+      height: 30px;
+    }
+
+    .preview-sheet .title-row td,
+    .preview-sheet .sub-title-row td {
+      border: 0;
+      font-weight: 700;
       text-align: center;
     }
 
-    .order-sheet { table-layout: fixed; width: 100%; }
-    .order-sheet th, .order-sheet td {
-      height: 21px;
-      border: 1px solid #111827;
-      padding: 1px 4px;
-      vertical-align: middle;
-      overflow: hidden;
-    }
-    .order-sheet th { background: #e5e7eb; text-align: center; font-weight: 800; }
-    .order-sheet td { text-align: center; }
-    .order-sheet .left { text-align: left; }
-    .order-sheet .num { text-align: right; }
-
-    .w-check { width: 9%; }
-    .w-name { width: 24%; }
-    .w-total { width: 10%; }
-    .w-unit1 { width: 7%; }
-    .w-note { width: 14%; }
-    .w-delivery { width: 9%; }
-    .w-unit2 { width: 7%; }
-    .w-price { width: 8%; }
-    .w-amount { width: 9%; }
-    .w-origin { width: 9%; }
-
-    .bottom-area {
-      display: grid;
-      grid-template-columns: 1fr 78mm;
-      gap: 8px;
-      margin-top: 8px;
-      align-items: start;
+    .preview-sheet .title-row td {
+      font-size: 20px;
+      height: 40px;
     }
 
-    .checker-box, .totals-table { width: 100%; }
-    .checker-box td, .totals-table td {
-      height: 24px;
-      border: 1px solid #111827;
-      padding: 2px 6px;
-      font-size: 11px;
-    }
-    .checker-box .label, .totals-table .label { background: #e5e7eb; font-weight: 800; text-align: center; }
-    .totals-table .money { text-align: right; }
-
-    @media (max-width: 900px) {
-      main { padding: 10px; }
-      .form-grid { grid-template-columns: 1fr; }
-      .sheet { width: 100%; min-height: auto; padding: 8px; }
-      .bottom-area { grid-template-columns: 1fr; }
+    .preview-sheet .left {
+      text-align: left;
     }
 
-    @page { size: A4 portrait; margin: 10mm; }
+    .preview-sheet .date-input {
+      background: #fce5cd;
+    }
+
+    .preview-sheet .blank td {
+      border: 0;
+      height: 14px;
+    }
+
+    .preview-sheet .total-label {
+      font-weight: 700;
+    }
+
+    @media (max-width: 760px) {
+      main {
+        padding: 12px;
+      }
+
+      .document-fields {
+        grid-template-columns: 1fr;
+      }
+
+      .manual-table,
+      .manual-table thead,
+      .manual-table tbody,
+      .manual-table tr,
+      .manual-table td {
+        display: block;
+        width: 100%;
+        min-width: 0;
+      }
+
+      .manual-table thead {
+        display: none;
+      }
+
+      .manual-table tr {
+        border: 1px solid #ffedd5;
+        border-radius: 12px;
+        margin-bottom: 10px;
+        padding: 10px;
+      }
+
+      .manual-table td {
+        border: 0;
+        padding: 6px 0;
+      }
+
+      .manual-table td::before {
+        content: attr(data-label);
+        display: block;
+        font-size: 12px;
+        font-weight: 700;
+        color: #667085;
+        margin-bottom: 3px;
+      }
+    }
+
     @media print {
-      body { background: #fff; }
-      main { width: auto; padding: 0; }
-      .panel:first-child { display: none; }
-      .panel { margin: 0; padding: 0; border: 0; box-shadow: none; }
-      h2 { display: none; }
-      .sheet { width: 190mm; min-height: 277mm; padding: 0; border: 0; }
+      body {
+        background: #fff;
+        color: #000;
+      }
+
+      header,
+      section:first-child,
+      .buttons,
+      .status,
+      .note {
+        display: none !important;
+      }
+
+      main,
+      section {
+        max-width: none;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        box-shadow: none;
+      }
     }
   </style>
 </head>
+
 <body>
+  <header>
+    <h1>発注書Excel作成</h1>
+    <p>手入力した材料名・数量・単位を、発注書レイアウトに反映してExcel出力します。</p>
+  </header>
+
   <main>
-    <section class="panel">
-      <h1>発注書兼納品書</h1>
-      <div class="form-grid">
+    <section>
+      <h2>1. 手入力テーブル</h2>
+      <p class="note">材料名・数量・単位を入力してください。Excelボタンは常に押せます。</p>
+
+      <div class="document-fields" aria-label="発注書情報">
         <label for="deliveryDate">納品日</label>
         <input id="deliveryDate" type="date">
         <label for="useDate">使用日</label>
         <input id="useDate" type="date">
         <label for="checkerName">検品者</label>
-        <input id="checkerName" type="text" autocomplete="off">
+        <input id="checkerName" type="text" placeholder="検品者名">
       </div>
 
       <div class="table-wrap">
-        <table class="input-table" aria-label="入力表">
+        <table class="manual-table" aria-label="手入力テーブル">
           <thead>
             <tr>
-              <th>チェック</th>
-              <th class="name-col">材料名</th>
-              <th>総使用量</th>
+              <th>材料名</th>
+              <th>数量</th>
               <th>単位</th>
-              <th class="note-col">摘要</th>
-              <th>納品数</th>
-              <th>単位</th>
-              <th>単価</th>
-              <th>金額</th>
-              <th>産地</th>
+              <th>操作</th>
             </tr>
           </thead>
-          <tbody id="inputRows"></tbody>
+          <tbody id="manualRows"></tbody>
         </table>
       </div>
 
       <div class="buttons">
-        <button type="button" id="excelBtn">Excel（.xlsx）で出力</button>
-        <button type="button" id="clearBtn" class="clear">入力を消す</button>
+        <button class="gray" type="button" id="addBtn">＋ 行を追加</button>
+        <button class="green" type="button" id="excelBtn">Excel出力</button>
+        <button class="red" type="button" id="clearBtn">入力を消す</button>
       </div>
-      <p id="status" class="status" role="status"></p>
+      <p id="notice" class="status"></p>
     </section>
 
-    <section class="panel">
-      <h2>印刷プレビュー</h2>
-      <div class="sheet" id="printSheet"></div>
+    <section>
+      <h2>2. 発注書レイアウト</h2>
+      <p class="note">入力内容は下の発注書レイアウトに自動反映されます。</p>
+      <div class="table-wrap" id="orderPreview"></div>
     </section>
   </main>
 
   <script>
-    const DETAIL_ROW_COUNT = 30;
-    const TAX_RATE = 0.1;
-    const SCHOOL_NAME = "スクルドエンジェルたかばり";
-    const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
-    const fields = ["checked", "name", "totalQty", "totalUnit", "note", "deliveryQty", "deliveryUnit", "unitPrice", "amount", "origin"];
-    const numericFields = new Set(["totalQty", "deliveryQty", "unitPrice", "amount"]);
-
-    const inputRows = document.getElementById("inputRows");
-    const printSheet = document.getElementById("printSheet");
+    const manualRows = document.getElementById("manualRows");
+    const orderPreview = document.getElementById("orderPreview");
+    const addBtn = document.getElementById("addBtn");
+    const excelBtn = document.getElementById("excelBtn");
+    const clearBtn = document.getElementById("clearBtn");
     const deliveryDate = document.getElementById("deliveryDate");
     const useDate = document.getElementById("useDate");
     const checkerName = document.getElementById("checkerName");
-    const excelBtn = document.getElementById("excelBtn");
-    const clearBtn = document.getElementById("clearBtn");
-    const status = document.getElementById("status");
+    const notice = document.getElementById("notice");
 
-    let rows = Array.from({ length: DETAIL_ROW_COUNT }, createBlankRow);
+    const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
+    const orderSheetDetailRows = 30;
+    let rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
 
-    renderInputTable();
-    renderSheet();
+    addBtn.addEventListener("click", () => {
+      syncRows();
+      rows.push(createBlankRow());
+      renderManualTable();
+      renderOrderPreview();
+      focusLastNameInput();
+    });
 
-    [deliveryDate, useDate, checkerName].forEach(element => element.addEventListener("input", renderSheet));
     excelBtn.addEventListener("click", downloadExcel);
+
     clearBtn.addEventListener("click", () => {
-      rows = Array.from({ length: DETAIL_ROW_COUNT }, createBlankRow);
+      rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
       deliveryDate.value = "";
       useDate.value = "";
       checkerName.value = "";
-      renderInputTable();
-      renderSheet();
-      status.textContent = "入力を消しました。";
+      notice.textContent = "入力を消しました。";
+      renderManualTable();
+      renderOrderPreview();
     });
 
+    [deliveryDate, useDate, checkerName].forEach(input => {
+      input.addEventListener("input", renderOrderPreview);
+    });
+
+    renderManualTable();
+    renderOrderPreview();
+
     function createBlankRow() {
-      return { checked: false, name: "", totalQty: "", totalUnit: "", note: "", deliveryQty: "", deliveryUnit: "", unitPrice: "", amount: "", origin: "" };
+      return { name: "", quantity: "", unit: "" };
     }
 
-    function renderInputTable() {
-      inputRows.innerHTML = rows.map((row, rowIndex) => {
-        return "<tr>" + fields.map(field => {
-          if (field === "checked") {
-            return '<td><input type="checkbox" data-row="' + rowIndex + '" data-field="checked"' + (row.checked ? " checked" : "") + '></td>';
-          }
-          const className = numericFields.has(field) ? "num" : (field.includes("Unit") || field === "origin" ? "center" : "");
-          const type = numericFields.has(field) ? "text" : "text";
-          return '<td><input class="' + className + '" type="' + type + '" data-row="' + rowIndex + '" data-field="' + field + '" value="' + escapeHtml(row[field]) + '"></td>';
-        }).join("") + "</tr>";
+    function renderManualTable() {
+      manualRows.innerHTML = rows.map((row, index) => {
+        return "<tr>" +
+          '<td data-label="材料名"><input data-index="' + index + '" data-field="name" type="text" value="' + escapeHtml(row.name) + '" placeholder="例：にんじん"></td>' +
+          '<td data-label="数量"><input data-index="' + index + '" data-field="quantity" type="number" step="0.001" min="0" value="' + escapeHtml(row.quantity) + '" placeholder="例：2"></td>' +
+          '<td data-label="単位"><input data-index="' + index + '" data-field="unit" type="text" value="' + escapeHtml(row.unit) + '" placeholder="例：kg"></td>' +
+          '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
+        "</tr>";
       }).join("");
 
-      inputRows.querySelectorAll("input").forEach(input => input.addEventListener("input", () => {
+      manualRows.querySelectorAll("input").forEach(input => input.addEventListener("input", () => {
         syncRows();
-        renderSheet();
+        renderOrderPreview();
       }));
-      inputRows.querySelectorAll('input[type="checkbox"]').forEach(input => input.addEventListener("change", () => {
-        syncRows();
-        renderSheet();
-      }));
+      manualRows.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => deleteRow(Number(button.dataset.delete))));
+    }
+
+    function focusLastNameInput() {
+      const inputs = manualRows.querySelectorAll('input[data-field="name"]');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    }
+
+    function deleteRow(index) {
+      syncRows();
+      rows.splice(index, 1);
+      if (rows.length === 0) rows.push(createBlankRow());
+      renderManualTable();
+      renderOrderPreview();
     }
 
     function syncRows() {
-      inputRows.querySelectorAll("input[data-row]").forEach(input => {
-        const rowIndex = Number(input.dataset.row);
+      const nextRows = rows.map(row => ({ ...row }));
+      manualRows.querySelectorAll("input[data-index]").forEach(input => {
+        const index = Number(input.dataset.index);
         const field = input.dataset.field;
-        rows[rowIndex][field] = input.type === "checkbox" ? input.checked : input.value;
+        if (nextRows[index]) nextRows[index][field] = input.value;
       });
-      rows.forEach(row => {
-        if (!String(row.amount).trim()) {
-          const deliveryQty = toNumber(row.deliveryQty);
-          const unitPrice = toNumber(row.unitPrice);
-          row.calculatedAmount = deliveryQty && unitPrice ? Math.floor(deliveryQty * unitPrice) : "";
-        } else {
-          row.calculatedAmount = toNumber(row.amount);
-        }
-      });
+      rows = nextRows;
     }
 
-    function renderSheet() {
-      syncRowsIfReady();
-      const totals = calculateTotals();
-      printSheet.innerHTML =
-        '<div class="sheet-title">発注書兼納品書</div>' +
-        '<div class="sheet-info">' +
-          '<div>園名：<span class="line">' + escapeHtml(SCHOOL_NAME) + '</span></div>' +
-          '<div>納品日：<span class="line">' + escapeHtml(formatDateJa(deliveryDate.value)) + '</span></div>' +
-          '<div>使用日：<span class="line">' + escapeHtml(formatDateJa(useDate.value)) + '</span></div>' +
-        '</div>' +
-        '<table class="order-sheet" aria-label="発注書兼納品書">' +
-          '<colgroup>' +
-            '<col class="w-check"><col class="w-name"><col class="w-total"><col class="w-unit1"><col class="w-note">' +
-            '<col class="w-delivery"><col class="w-unit2"><col class="w-price"><col class="w-amount"><col class="w-origin">' +
-          '</colgroup>' +
-          '<thead><tr>' + headers.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr></thead>' +
-          '<tbody>' + rows.map(row => rowHtml(row)).join("") + '</tbody>' +
-        '</table>' +
-        '<div class="bottom-area">' +
-          '<table class="checker-box"><tr><td class="label">検品者</td><td>' + escapeHtml(checkerName.value) + '</td></tr></table>' +
-          '<table class="totals-table">' +
-            '<tr><td class="label">合計金額</td><td class="money">' + formatYen(totals.subtotal) + '</td></tr>' +
-            '<tr><td class="label">消費税（端数切捨）</td><td class="money">' + formatYen(totals.tax) + '</td></tr>' +
-            '<tr><td class="label">請求金額</td><td class="money">' + formatYen(totals.total) + '</td></tr>' +
-          '</table>' +
-        '</div>';
+    function getExportRows() {
+      syncRows();
+      return rows
+        .filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim())
+        .map(row => {
+          const quantity = numberValue(row.quantity);
+          return [
+            "□",
+            String(row.name || "").trim(),
+            quantity || "",
+            String(row.unit || "").trim(),
+            "手入力",
+            quantity || "",
+            String(row.unit || "").trim(),
+            "",
+            "",
+            ""
+          ];
+        });
     }
 
-    function rowHtml(row) {
-      const amount = getRowAmount(row);
-      const cells = [
-        row.checked ? "✓" : "□",
-        row.name,
-        row.totalQty,
-        row.totalUnit,
-        row.note,
-        row.deliveryQty,
-        row.deliveryUnit,
-        row.unitPrice,
-        amount ? formatPlainNumber(amount) : "",
-        row.origin
-      ];
-      return "<tr>" + cells.map((cell, index) => {
-        const className = index === 1 || index === 4 ? "left" : ([2, 5, 7, 8].includes(index) ? "num" : "");
-        return '<td class="' + className + '">' + escapeHtml(cell) + '</td>';
-      }).join("") + "</tr>";
-    }
+    function renderOrderPreview() {
+      const exportRows = getExportRows();
+      const detailRows = paddedOrderRows(exportRows, 10);
+      const use = parseDateParts(useDate.value);
+      const totals = calculateExportTotals(exportRows);
 
-    function syncRowsIfReady() {
-      if (inputRows.children.length) syncRows();
-    }
-
-    function calculateTotals() {
-      const subtotal = rows.reduce((sum, row) => sum + getRowAmount(row), 0);
-      const tax = Math.floor(subtotal * TAX_RATE);
-      return { subtotal, tax, total: subtotal + tax };
-    }
-
-    function getRowAmount(row) {
-      if (String(row.amount || "").trim()) return toNumber(row.amount);
-      const deliveryQty = toNumber(row.deliveryQty);
-      const unitPrice = toNumber(row.unitPrice);
-      return deliveryQty && unitPrice ? Math.floor(deliveryQty * unitPrice) : 0;
+      orderPreview.innerHTML = '<table class="preview-sheet">' +
+        '<tbody>' +
+          '<tr class="title-row"><td colspan="10">発　注　書　兼　納　品　書</td></tr>' +
+          '<tr class="sub-title-row"><td colspan="10">スクルドエンジェル</td></tr>' +
+          '<tr class="sub-title-row"><td colspan="10">たかばり　園</td></tr>' +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
+          '<tr><td>納品日</td><td class="date-input" colspan="4">' + escapeHtml(formatJapaneseDate(deliveryDate.value)) + '</td><td>使用日</td><td>' + escapeHtml(use.month || "") + '</td><td>月</td><td>' + escapeHtml(use.day || "") + '</td><td>日</td></tr>' +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
+          '<tr>' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
+          detailRows.map(row => '<tr>' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td>' + escapeHtml(totals.tax || "") + '</td><td></td></tr>' +
+          '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="2"></td><td class="total-label" colspan="2">請求金額</td><td>' + escapeHtml(totals.billed || "") + '</td><td></td></tr>' +
+          '<tr><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="6"></td></tr>' +
+        '</tbody>' +
+      '</table>';
     }
 
     function downloadExcel() {
-      syncRows();
-      if (!window.XLSX || !XLSX.utils || typeof XLSX.writeFile !== "function") {
-        status.textContent = "Excel出力に必要な読み込みができませんでした。ネット接続後に再度お試しください。";
+      const exportRows = getExportRows();
+      if (!isXlsxReady()) {
+        notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してから、もう一度押してください。";
         return;
       }
 
-      const worksheet = XLSX.utils.aoa_to_sheet(buildSheetData());
-      setupWorksheet(worksheet);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "発注書兼納品書");
-      XLSX.writeFile(workbook, "発注書兼納品書_" + fileDate() + ".xlsx");
-      status.textContent = "Excel（.xlsx）を出力しました。";
+      try {
+        const worksheet = XLSX.utils.aoa_to_sheet(buildExportDocument(exportRows));
+        setupExcelWorksheet(worksheet, exportRows.length);
+
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
+        XLSX.writeFile(workbook, makeExportFileName("xlsx"), { bookType: "xlsx", type: "binary" });
+        notice.textContent = exportRows.length ? "Excelを出力しました。" : "空の発注書Excelを出力しました。";
+      } catch (error) {
+        notice.textContent = "Excelの作成に失敗しました。もう一度押してください。";
+        console.error("Excel作成エラー", error);
+      }
     }
 
-    function buildSheetData() {
-      const totals = calculateTotals();
-      const blank = Array(headers.length).fill("");
+    function buildExportDocument(exportRows) {
+      const totals = calculateExportTotals(exportRows);
+      const detailRows = paddedOrderRows(exportRows, getOrderSheetDetailRowCount(exportRows.length));
+      const blank = Array(orderSheetHeaders.length).fill("");
+      const use = parseDateParts(useDate.value);
+
       return [
-        ["発注書兼納品書", "", "", "", "", "", "", "", "", ""],
-        ["園名", SCHOOL_NAME, "", "", "納品日", formatDateJa(deliveryDate.value), "", "使用日", formatDateJa(useDate.value), ""],
         blank,
-        headers,
-        ...rows.map(row => [
-          row.checked ? "✓" : "□",
-          row.name,
-          valueOrNumber(row.totalQty),
-          row.totalUnit,
-          row.note,
-          valueOrNumber(row.deliveryQty),
-          row.deliveryUnit,
-          valueOrNumber(row.unitPrice),
-          getRowAmount(row) || "",
-          row.origin
-        ]),
         blank,
-        ["", "", "", "", "", "", "合計金額", "", totals.subtotal || "", ""],
-        ["", "", "", "", "", "", "消費税（端数切捨）", "", totals.tax || "", ""],
-        ["検品者", checkerName.value, "", "", "", "", "請求金額", "", totals.total || "", ""]
+        blank,
+        blank,
+        ["", "", "発　注　書　兼　納　品　書", "", "", "", "", "", "", ""],
+        ["", "", "スクルドエンジェル", "", "", "", "", "", "", ""],
+        ["", "", "たかばり　園", "", "", "", "", "", "", ""],
+        blank,
+        ["納品日", formatJapaneseDate(deliveryDate.value), "", "", "", "使用日", use.month || "", "月", use.day || "", "日"],
+        blank,
+        orderSheetHeaders,
+        ...detailRows,
+        blank,
+        blank,
+        ["", "", "", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "合計金額", "", totals.total || "", ""],
+        ["", "", "", "", "", "", "消費税 課税合計", "", totals.tax || "", ""],
+        ["", "", "検品者", "", "", "", "請求金額", "", totals.billed || "", ""],
+        ["", "", checkerName.value || "", "", "", "", "", "", "", ""]
       ];
     }
 
-    function setupWorksheet(worksheet) {
-      const totalRowCount = 4 + DETAIL_ROW_COUNT + 4;
-      worksheet["!ref"] = "A1:J" + totalRowCount;
+    function paddedOrderRows(exportRows, detailRowCount) {
+      const padded = exportRows.slice();
+      while (padded.length < detailRowCount) padded.push(Array(orderSheetHeaders.length).fill(""));
+      return padded;
+    }
+
+    function calculateExportTotals(exportRows) {
+      const total = exportRows.reduce((sum, row) => sum + numberValue(row[8]), 0);
+      const tax = Math.floor(total * 0.1);
+      return { total: round(total), tax, billed: round(total + tax) };
+    }
+
+    function getOrderSheetDetailRowCount(dataLength) {
+      return Math.max(orderSheetDetailRows, dataLength);
+    }
+
+    function getOrderSheetLayout(dataLength) {
+      const detailRowCount = getOrderSheetDetailRowCount(dataLength);
+      return {
+        detailRowCount,
+        totalRows: detailRowCount + 18,
+        detailStart: 11,
+        detailEnd: detailRowCount + 10,
+        totalStart: detailRowCount + 14,
+        totalEnd: detailRowCount + 16,
+        checkerStart: detailRowCount + 16,
+        checkerEnd: detailRowCount + 17
+      };
+    }
+
+    function setupExcelWorksheet(worksheet, dataLength) {
+      const layout = getOrderSheetLayout(dataLength);
       worksheet["!cols"] = [
-        { wch: 8 }, { wch: 24 }, { wch: 10 }, { wch: 7 }, { wch: 16 },
-        { wch: 9 }, { wch: 7 }, { wch: 9 }, { wch: 10 }, { wch: 10 }
+        { wch: 7 }, { wch: 16 }, { wch: 9 }, { wch: 7 }, { wch: 20 },
+        { wch: 7 }, { wch: 5 }, { wch: 7 }, { wch: 10 }, { wch: 10 }
       ];
-      worksheet["!rows"] = Array.from({ length: totalRowCount }, (_, index) => ({ hpt: index >= 3 && index <= 33 ? 21 : 20 }));
+      worksheet["!rows"] = Array.from({ length: layout.totalRows }, (_, row) => ({ hpt: orderSheetRowHeight(row, layout) }));
       worksheet["!merges"] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 9 } },
-        { s: { r: 1, c: 1 }, e: { r: 1, c: 3 } },
-        { s: { r: 1, c: 5 }, e: { r: 1, c: 6 } },
-        { s: { r: 1, c: 8 }, e: { r: 1, c: 9 } },
-        { s: { r: 35, c: 6 }, e: { r: 35, c: 7 } },
-        { s: { r: 36, c: 6 }, e: { r: 36, c: 7 } },
-        { s: { r: 37, c: 6 }, e: { r: 37, c: 7 } },
-        { s: { r: 37, c: 1 }, e: { r: 37, c: 3 } }
+        { s: { r: 4, c: 2 }, e: { r: 4, c: 7 } },
+        { s: { r: 5, c: 2 }, e: { r: 5, c: 7 } },
+        { s: { r: 6, c: 2 }, e: { r: 6, c: 7 } },
+        { s: { r: 8, c: 1 }, e: { r: 8, c: 4 } },
+        { s: { r: layout.totalStart, c: 6 }, e: { r: layout.totalStart, c: 7 } },
+        { s: { r: layout.totalStart + 1, c: 6 }, e: { r: layout.totalStart + 1, c: 7 } },
+        { s: { r: layout.totalStart + 2, c: 6 }, e: { r: layout.totalStart + 2, c: 7 } },
+        { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
+        { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.39, right: 0.39, top: 0.39, bottom: 0.39, header: 0.12, footer: 0.12 };
+      worksheet["!margins"] = { left: 0.2, right: 0.2, top: 0.45, bottom: 0.35, header: 0.15, footer: 0.15 };
       worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
+      worksheet["!ref"] = "A1:J" + layout.totalRows;
 
       const range = XLSX.utils.decode_range(worksheet["!ref"]);
-      for (let r = range.s.r; r <= range.e.r; r++) {
-        for (let c = range.s.c; c <= range.e.c; c++) {
-          const address = XLSX.utils.encode_cell({ r, c });
+      for (let row = range.s.r; row <= range.e.r; row++) {
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const address = XLSX.utils.encode_cell({ r: row, c: col });
           if (!worksheet[address]) worksheet[address] = { t: "s", v: "" };
-          worksheet[address].s = cellStyle(r, c);
+          worksheet[address].s = excelCellStyle(row, col, layout);
         }
       }
     }
 
-    function cellStyle(row, col) {
-      const thin = { style: "thin", color: { rgb: "000000" } };
-      const isTitle = row === 0;
-      const isInfo = row === 1;
-      const isHeader = row === 3;
-      const isDetail = row >= 3 && row <= 33;
-      const isBottom = row >= 35 && row <= 37;
-      const isNumeric = [2, 5, 7, 8].includes(col);
-      const isLeft = [1, 4].includes(col);
+    function orderSheetRowHeight(row, layout) {
+      if (row < 4) return 18;
+      if (row === 4) return 24;
+      if (row === 5 || row === 6) return 18;
+      if (row === 8) return 23;
+      if (row === 10) return 22;
+      if (row >= layout.detailStart && row <= layout.detailEnd) return 19;
+      if (row >= layout.totalStart) return 22;
+      return 14;
+    }
+
+    function excelCellStyle(row, col, layout) {
+      const thinBorder = { style: "thin", color: { rgb: "000000" } };
+      const mediumBorder = { style: "medium", color: { rgb: "000000" } };
+      const isTitle = row === 4;
+      const isSubTitle = row === 5 || row === 6;
+      const isDateInput = row === 8 && col >= 1 && col <= 4;
+      const isDateLabel = row === 8 && (col === 0 || col === 5 || col === 7 || col === 9);
+      const isHeader = row === 10;
+      const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
+
       return {
-        font: { name: "Yu Gothic", sz: isTitle ? 18 : 10, bold: isTitle || isInfo || isHeader || (isBottom && (col === 0 || col === 6 || col === 7)) },
+        font: {
+          name: "Yu Gothic",
+          sz: isTitle ? 16 : (isSubTitle ? 10 : 9),
+          bold: isTitle || isSubTitle || isHeader || isDateLabel || isCheckerBox || (isTotalBox && col <= 7)
+        },
         alignment: {
-          horizontal: isTitle || isInfo || isHeader || (isBottom && col !== 8) ? "center" : (isNumeric ? "right" : (isLeft ? "left" : "center")),
+          horizontal: isTitle || isSubTitle || isDateLabel || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center"),
           vertical: "center",
           wrapText: true
         },
-        border: (isDetail || isBottom) ? { top: thin, bottom: thin, left: thin, right: thin } : undefined,
-        fill: isHeader || (isBottom && (col === 0 || col === 6 || col === 7)) ? { patternType: "solid", fgColor: { rgb: "E5E7EB" } } : undefined
+        border: borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder),
+        fill: isDateInput ? { patternType: "solid", fgColor: { rgb: "F4CCCC" } } : undefined
       };
     }
 
-    function valueOrNumber(value) {
-      const text = String(value || "").trim();
-      if (!text) return "";
-      const number = toNumber(text);
-      return Number.isFinite(number) && String(number) === text.replace(/,/g, "") ? number : text;
+    function borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder) {
+      const isTable = row >= 10 && row <= layout.detailEnd;
+      const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
+      const hasBorder = isTable || isCheckerBox || isTotalBox;
+      if (!hasBorder) return undefined;
+
+      const border = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
+      if (isTable) {
+        if (row === 10) border.top = mediumBorder;
+        if (row === layout.detailEnd) border.bottom = mediumBorder;
+        if (col === 0) border.left = mediumBorder;
+        if (col === 9) border.right = mediumBorder;
+      }
+      if (isCheckerBox || isTotalBox) {
+        const firstRow = isCheckerBox ? layout.checkerStart : layout.totalStart;
+        const lastRow = isCheckerBox ? layout.checkerEnd : layout.totalEnd;
+        const firstCol = isCheckerBox ? 2 : 6;
+        const lastCol = isCheckerBox ? 3 : 9;
+        if (row === firstRow) border.top = mediumBorder;
+        if (row === lastRow) border.bottom = mediumBorder;
+        if (col === firstCol) border.left = mediumBorder;
+        if (col === lastCol) border.right = mediumBorder;
+      }
+      return border;
     }
 
-    function toNumber(value) {
-      const normalized = String(value ?? "")
-        .replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
-        .replace(/．/g, ".")
-        .replace(/,/g, "");
-      const number = Number(normalized);
-      return Number.isFinite(number) ? number : 0;
+    function isXlsxReady() {
+      return Boolean(window.XLSX && XLSX.utils && typeof XLSX.utils.aoa_to_sheet === "function" && typeof XLSX.utils.book_new === "function" && typeof XLSX.utils.book_append_sheet === "function" && typeof XLSX.writeFile === "function");
     }
 
-    function formatDateJa(value) {
+    function makeExportFileName(extension) {
+      return "発注書兼納品書_" + formatDate(new Date()) + "." + extension;
+    }
+
+    function formatDate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return year + month + day;
+    }
+
+    function formatJapaneseDate(value) {
       if (!value) return "";
       const date = new Date(value + "T00:00:00");
       if (Number.isNaN(date.getTime())) return value;
       return date.getFullYear() + "年" + (date.getMonth() + 1) + "月" + date.getDate() + "日";
     }
 
-    function formatYen(value) {
-      return value ? "¥" + Math.floor(value).toLocaleString("ja-JP") : "";
+    function parseDateParts(value) {
+      if (!value) return { month: "", day: "" };
+      const date = new Date(value + "T00:00:00");
+      if (Number.isNaN(date.getTime())) return { month: "", day: "" };
+      return { month: date.getMonth() + 1, day: date.getDate() };
     }
 
-    function formatPlainNumber(value) {
-      return Number(value).toLocaleString("ja-JP", { maximumFractionDigits: 3 });
+    function numberValue(value) {
+      const normalized = String(value ?? "")
+        .replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/．/g, ".")
+        .replace(/,/g, "");
+      const match = normalized.match(/-?[0-9]+(?:\.[0-9]+)?/);
+      return match ? Number(match[0]) : 0;
     }
 
-    function fileDate() {
-      const date = new Date();
-      return date.getFullYear() + String(date.getMonth() + 1).padStart(2, "0") + String(date.getDate()).padStart(2, "0");
+    function round(value) {
+      return Math.round(value * 1000) / 1000;
     }
 
     function escapeHtml(value) {
