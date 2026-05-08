@@ -119,13 +119,28 @@
       td { border: 0; padding: 6px 0; }
       td::before { content: attr(data-label); display: block; font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 3px; }
     }
+    @page { size: A4 portrait; margin: 12mm; }
     @media print {
-      body { background: #fff; color: #000; }
+      html, body { width: 210mm; margin: 0; padding: 0; background: #fff; color: #000; }
+      body { font-size: 10.5pt; line-height: 1.25; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       header, main section:first-child, .buttons, .summary, .document-fields, .status, .note, .csv-panel { display: none !important; }
-      main, section { width: auto; margin: 0; padding: 0; border: 0; box-shadow: none; }
-      table { min-width: 0; font-size: 10.5px; }
-      th, td { border: 1px solid #000; padding: 4px; }
-      td input { border: 0; padding: 0; background: transparent; }
+      main { width: 186mm; max-width: 186mm; margin: 0 auto; padding: 0; }
+      main, section, .table-wrap { overflow: visible !important; border: 0; box-shadow: none; background: #fff; }
+      section { width: 100%; margin: 0; padding: 0; break-inside: avoid; }
+      h2 { margin: 0 0 4mm; font-size: 12pt; color: #000; }
+      table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; font-size: 10pt; page-break-inside: avoid; }
+      th, td { border: 1.2pt solid #000; padding: 2mm 1.4mm; color: #000; background: #fff; vertical-align: middle; }
+      th { font-size: 10pt; font-weight: 700; text-align: center; }
+      td input { width: 100%; min-width: 0; border: 0; padding: 0; background: transparent; color: #000; font-size: 10pt; }
+      th:nth-child(1), td:nth-child(1) { width: 8mm; }
+      th:nth-child(2), td:nth-child(2) { width: 28mm; }
+      th:nth-child(3), td:nth-child(3), th:nth-child(6), td:nth-child(6) { width: 17mm; }
+      th:nth-child(4), td:nth-child(4), th:nth-child(7), td:nth-child(7) { width: 11mm; }
+      th:nth-child(5), td:nth-child(5) { width: 34mm; }
+      th:nth-child(8), td:nth-child(8), th:nth-child(9), td:nth-child(9) { width: 15mm; }
+      th:nth-child(10), td:nth-child(10) { width: 18mm; }
+      th:nth-child(11), td:nth-child(11) { display: none; }
+      tr { page-break-inside: avoid; }
     }
   </style>
 </head>
@@ -143,7 +158,7 @@
         <button class="blue" type="button" onclick="menuCsvInput.value=''; menuCsvInput.click();">📄 CSVを選ぶ</button>
         <button class="green" type="button" onclick="childrenCsvInput.value=''; childrenCsvInput.click();">👶 園児数CSV</button>
         <button class="gray" type="button" onclick="ruleCsvInput.value=''; ruleCsvInput.click();">⚙️ ルールCSV</button>
-        <button class="blue" type="button" onclick="cameraInput.value=''; cameraInput.click();">📷 カメラで撮る</button>
+        <button class="blue" type="button" onclick="cameraInput.click();">📷 カメラで撮る</button>
         <button class="gray" type="button" onclick="imageInput.value=''; imageInput.click();">🖼️ 画像を選ぶ</button>
         <button class="gray" type="button" onclick="if(lastImage){ runOcr(lastImage); } else { notice.textContent='先に画像を選んでください。'; }">🔁 もう一度OCR</button>
       </div>
@@ -289,7 +304,7 @@
             if (message.status === "recognizing text") ocrStatus.textContent = "OCR中です：" + Math.round(message.progress * 100) + "%";
           }
         });
-        ocrText.value = (result.data.text || "").trim();
+        ocrText.value = cleanupOcrText(result.data.text || "");
         menuCsvStatus.textContent = "OCR結果";
         ocrStatus.textContent = "OCRが終わりました。";
         extractAndRender(true);
@@ -336,7 +351,7 @@
         const name = normalizeName(item.name);
         const quantity = numberValue(item.quantity) || 1;
         const unit = normalizeUnit(item.unit || "個");
-        if (!name || isHeaderWord(name)) continue;
+        if (!isValidFoodName(name)) continue;
         const rule = findRule(name);
         if (rule && rule.exclude) { excluded++; continue; }
         found++;
@@ -358,7 +373,7 @@
       const quantityIndex = hasHeader ? findIndex(first, ["数量", "分量", "使用量", "総使用量", "3歳未満児量", "３歳未満児量", "未満児量", "quantity"]) : 1;
       const unitIndex = hasHeader ? findIndex(first, ["単位", "unit"]) : 2;
       const data = hasHeader ? csvRows.slice(1) : csvRows;
-      return data.map(row => rowFromCsvColumns(row, nameIndex, quantityIndex, unitIndex)).filter(row => row.name);
+      return data.map(row => rowFromCsvColumns(row, nameIndex, quantityIndex, unitIndex)).filter(row => isValidFoodName(row.name));
     }
 
     function rowFromCsvColumns(row, nameIndex, quantityIndex, unitIndex) {
@@ -374,20 +389,47 @@
 
     function rowsFromText(text) {
       const output = [];
-      for (const line of text.replace(/\r/g, "\n").split("\n")) {
-        const trimmed = line.trim();
-        if (!trimmed || isHeaderWord(trimmed)) continue;
-        const amount = findAmount(trimmed);
-        const name = guessName(trimmed, amount);
-        if (name) output.push({ name, quantity: amount.quantity, unit: amount.unit });
+      for (const phrase of textPhrases(text)) {
+        if (!phrase || isHeaderWord(phrase)) continue;
+        const amount = findAmount(phrase);
+        const name = guessName(phrase, amount);
+        if (isValidFoodName(name)) output.push({ name, quantity: amount.quantity, unit: amount.unit });
       }
       return output;
     }
 
+    function textPhrases(text) {
+      return String(text || "")
+        .replace(/\r\n?/g, "\n")
+        .replace(/[，、]/g, ",")
+        .split(/[\n,]+/)
+        .map(value => value.replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+    }
+
+    function cleanupOcrText(text) {
+      return String(text || "")
+        .replace(/^\uFEFF/, "")
+        .replace(/\r\n?/g, "\n")
+        .replace(/[，、]/g, ",")
+        .replace(/[|｜]/g, ",")
+        .split("\n")
+        .map(line => line.replace(/\s*,\s*/g, ",").replace(/[ \t]+/g, " ").trim())
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+    }
+
     function guessName(line, amount) {
-      const known = allKnownNames().find(name => line.replace(/\s/g, "").includes(name));
+      const source = String(line || "");
+      const compact = source.replace(/\s/g, "");
+      const known = allKnownNames().find(name => compact.includes(name));
       if (known) return normalizeName(known);
-      return normalizeName(line.replace(/[0-9０-９.,，、\s]+(?:kg|g|ml|l|L|個|本|袋|缶|丁|枚|束|箱|パック)?/gi, "").replace(/[：:]/g, "").trim());
+      const withoutAmount = source
+        .replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?\s*(?:kg|g|ml|l|L|個|本|袋|缶|丁|枚|束|箱|パック)?/gi, "")
+        .replace(/[：:]/g, "")
+        .trim();
+      return normalizeName(withoutAmount);
     }
 
     function toOrderRow(item) {
@@ -713,7 +755,16 @@
     }
 
     function allKnownNames() { return Array.from(new Set(standardRules.flatMap(rule => rule.names).concat(Object.keys(aliases), Object.values(aliases)))).sort((a, b) => b.length - a.length); }
-    function normalizeName(value) { const text = String(value || "").trim(); return aliases[text] || text; }
+    function normalizeName(value) {
+      const text = String(value || "")
+        .replace(/^﻿/, "")
+        .replace(/[　	]+/g, " ")
+        .replace(/[\[\]【】()（）{}<>＜＞「」『』]/g, "")
+        .replace(/[、,，:：;；|｜]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return aliases[text] || text;
+    }
     function normalizeHeader(value) { return String(value || "").trim().replace(/\s/g, "").toLowerCase(); }
     function normalizeUnit(value) { const text = String(value || "").trim().toLowerCase(); if (text === "l") return "L"; return text || "個"; }
     function normalizeAmountText(value) { return String(value || "").replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0)).replace(/．/g, ".").replace(/[Ｇｇ]/g, "g").replace(/[Ｍｍ]/g, "m").replace(/[Ｌｌ]/g, "l"); }
@@ -721,6 +772,16 @@
     function findIndex(row, names) { return row.findIndex(value => names.includes(value) || names.some(name => value.includes(name))); }
     function isHeaderWord(value) { return /^(日付|曜日|献立|献立名|昼食|おやつ|午前|午後|材料|食品名|食材名|材料名|数量|分量|使用量|総使用量|単位|備考)$/i.test(String(value || "").trim()); }
     function isNonFood(value) { const text = String(value || "").trim(); return !text || isHeaderWord(text) || /^[0-9０-９]+(?:[./月-][0-9０-９]+)?日?$/.test(text) || Boolean(numberValue(text)); }
+    function isValidFoodName(value) {
+      const text = normalizeName(value).replace(/\s/g, "");
+      if (!text || isHeaderWord(text)) return false;
+      if (/^[ぁ-ん]$/.test(text)) return false;
+      if (text.length < 2 && !allKnownNames().includes(text)) return false;
+      if (/^[\d０-９.,，、\-ー\s]+$/.test(text)) return false;
+      if (!/[ぁ-んァ-ン一-龥々A-Za-z]/.test(text)) return false;
+      if (/^(kg|g|ml|l|L|個|本|袋|缶|丁|枚|束|箱|パック)$/i.test(text)) return false;
+      return true;
+    }
     function round(value) { return Math.round(Number(value || 0) * 1000) / 1000; }
     function roundUp(value, step) { return round(Math.ceil((Number(value) - 0.0000001) / Number(step || 1)) * Number(step || 1)); }
     function parseDateParts(value) { if (!value) return { year: "", month: "", day: "", weekday: "" }; const parts = value.split("-").map(Number); const date = new Date(parts[0], parts[1] - 1, parts[2]); return { year: parts[0], month: parts[1], day: parts[2], weekday: ["日", "月", "火", "水", "木", "金", "土"][date.getDay()] }; }
