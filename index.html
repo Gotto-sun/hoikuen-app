@@ -168,16 +168,65 @@
     }
 
     .preview-sheet {
-      min-width: 860px;
+      width: 794px;
+      min-width: 794px;
+      table-layout: fixed;
       border: 2px solid #111827;
-      font-size: 13px;
+      font-size: 12px;
+      line-height: 1.25;
     }
 
     .preview-sheet th,
     .preview-sheet td {
       border: 1px solid #111827;
+      padding: 2px 3px;
       text-align: center;
-      height: 30px;
+      height: 24px;
+      overflow-wrap: anywhere;
+    }
+
+    .preview-sheet th:nth-child(1),
+    .preview-sheet td:nth-child(1) {
+      width: 56px;
+    }
+
+    .preview-sheet th:nth-child(2),
+    .preview-sheet td:nth-child(2) {
+      width: 150px;
+    }
+
+    .preview-sheet th:nth-child(3),
+    .preview-sheet td:nth-child(3) {
+      width: 70px;
+    }
+
+    .preview-sheet th:nth-child(4),
+    .preview-sheet td:nth-child(4) {
+      width: 52px;
+    }
+
+    .preview-sheet th:nth-child(5),
+    .preview-sheet td:nth-child(5) {
+      width: 132px;
+    }
+
+    .preview-sheet th:nth-child(6),
+    .preview-sheet td:nth-child(6) {
+      width: 64px;
+    }
+
+    .preview-sheet th:nth-child(7),
+    .preview-sheet td:nth-child(7) {
+      width: 48px;
+    }
+
+    .preview-sheet th:nth-child(8),
+    .preview-sheet td:nth-child(8),
+    .preview-sheet th:nth-child(9),
+    .preview-sheet td:nth-child(9),
+    .preview-sheet th:nth-child(10),
+    .preview-sheet td:nth-child(10) {
+      width: 74px;
     }
 
     .preview-sheet .title-row td,
@@ -188,8 +237,8 @@
     }
 
     .preview-sheet .title-row td {
-      font-size: 20px;
-      height: 40px;
+      font-size: 18px;
+      height: 30px;
     }
 
     .preview-sheet .left {
@@ -202,7 +251,8 @@
 
     .preview-sheet .blank td {
       border: 0;
-      height: 14px;
+      height: 8px;
+      padding: 0;
     }
 
     .preview-sheet .total-label {
@@ -544,8 +594,8 @@
     function setupExcelWorksheet(worksheet, dataLength) {
       const layout = getOrderSheetLayout(dataLength);
       worksheet["!cols"] = [
-        { wch: 7 }, { wch: 16 }, { wch: 9 }, { wch: 7 }, { wch: 20 },
-        { wch: 7 }, { wch: 5 }, { wch: 7 }, { wch: 10 }, { wch: 10 }
+        { wch: 5.8 }, { wch: 17.5 }, { wch: 8 }, { wch: 5.5 }, { wch: 15.5 },
+        { wch: 7 }, { wch: 5 }, { wch: 7 }, { wch: 8.5 }, { wch: 8.5 }
       ];
       worksheet["!rows"] = Array.from({ length: layout.totalRows }, (_, row) => ({ hpt: orderSheetRowHeight(row, layout) }));
       worksheet["!merges"] = [
@@ -559,7 +609,7 @@
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
         { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.2, right: 0.2, top: 0.45, bottom: 0.35, header: 0.15, footer: 0.15 };
+      worksheet["!margins"] = { left: 0.12, right: 0.12, top: 0.28, bottom: 0.25, header: 0.1, footer: 0.1 };
       worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
@@ -575,14 +625,14 @@
     }
 
     function orderSheetRowHeight(row, layout) {
-      if (row < 4) return 18;
-      if (row === 4) return 24;
-      if (row === 5 || row === 6) return 18;
-      if (row === 8) return 23;
-      if (row === 10) return 22;
-      if (row >= layout.detailStart && row <= layout.detailEnd) return 19;
-      if (row >= layout.totalStart) return 22;
-      return 14;
+      if (row < 4) return 10;
+      if (row === 4) return 22;
+      if (row === 5 || row === 6) return 15;
+      if (row === 8) return 18;
+      if (row === 10) return 18;
+      if (row >= layout.detailStart && row <= layout.detailEnd) return 15.5;
+      if (row >= layout.totalStart) return 17;
+      return 7;
     }
 
     function excelCellStyle(row, col, layout) {
@@ -599,7 +649,7 @@
       return {
         font: {
           name: "Yu Gothic",
-          sz: isTitle ? 16 : (isSubTitle ? 10 : 9),
+          sz: isTitle ? 15 : (isSubTitle ? 9 : 8),
           bold: isTitle || isSubTitle || isHeader || isDateLabel || isCheckerBox || (isTotalBox && col <= 7)
         },
         alignment: {
