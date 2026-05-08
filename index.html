@@ -252,8 +252,11 @@
       text-align: left;
     }
 
-    .preview-sheet .date-input {
-      background: #fce5cd;
+    .preview-sheet .date-line {
+      text-align: left;
+      white-space: nowrap;
+      overflow-wrap: normal;
+      word-break: keep-all;
     }
 
     .preview-sheet .blank td {
@@ -331,6 +334,11 @@
       .status,
       .note {
         display: none !important;
+      }
+
+      @page {
+        size: A4 landscape;
+        margin: 0 0 0 0.8cm;
       }
 
       main,
@@ -504,7 +512,7 @@
     function renderOrderPreview() {
       const exportRows = getExportRows();
       const detailRows = paddedOrderRows(exportRows, 10);
-      const use = parseDateParts(useDate.value);
+      const dateLine = formatOrderDateLine(deliveryDate.value, useDate.value);
       const totals = calculateExportTotals(exportRows);
 
       orderPreview.innerHTML = '<table class="preview-sheet">' +
@@ -513,7 +521,7 @@
           '<tr class="sub-title-row"><td colspan="10">スクルドエンジェル</td></tr>' +
           '<tr class="sub-title-row"><td colspan="10">たかばり　園</td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
-          '<tr><td>納品日</td><td class="date-input" colspan="4">' + escapeHtml(formatJapaneseDate(deliveryDate.value)) + '</td><td>使用日</td><td>' + escapeHtml(use.month || "") + '</td><td>月</td><td>' + escapeHtml(use.day || "") + '</td><td>日</td></tr>' +
+          '<tr><td class="date-line" colspan="10">' + escapeHtml(dateLine) + '</td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
@@ -551,14 +559,14 @@
       const totals = calculateExportTotals(exportRows);
       const detailRows = paddedOrderRows(exportRows, getOrderSheetDetailRowCount(exportRows.length));
       const blank = Array(orderSheetHeaders.length).fill("");
-      const use = parseDateParts(useDate.value);
+      const dateLine = formatOrderDateLine(deliveryDate.value, useDate.value);
 
       return [
         ["", "", "発　注　書　兼　納　品　書", "", "", "", "", "", "", ""],
         ["", "", "スクルドエンジェル", "", "", "", "", "", "", ""],
         ["", "", "たかばり　園", "", "", "", "", "", "", ""],
         blank,
-        ["納品日", formatJapaneseDate(deliveryDate.value), "", "", "", "使用日", use.month || "", "月", use.day || "", "日"],
+        [dateLine, "", "", "", "", "", "", "", "", ""],
         blank,
         orderSheetHeaders,
         ...detailRows,
@@ -613,7 +621,7 @@
         { s: { r: 0, c: 2 }, e: { r: 0, c: 7 } },
         { s: { r: 1, c: 2 }, e: { r: 1, c: 7 } },
         { s: { r: 2, c: 2 }, e: { r: 2, c: 7 } },
-        { s: { r: 4, c: 1 }, e: { r: 4, c: 4 } },
+        { s: { r: 4, c: 0 }, e: { r: 4, c: 9 } },
         { s: { r: layout.totalStart, c: 6 }, e: { r: layout.totalStart, c: 7 } },
         { s: { r: layout.totalStart + 1, c: 6 }, e: { r: layout.totalStart + 1, c: 7 } },
         { s: { r: layout.totalStart + 2, c: 6 }, e: { r: layout.totalStart + 2, c: 7 } },
@@ -622,7 +630,7 @@
       ];
       worksheet["!margins"] = { left: 0.315, right: 0.12, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
       worksheet["!pageSetup"] = { orientation: "landscape", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
-      worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
+      worksheet["!printOptions"] = { gridLines: false, horizontalCentered: false };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
 
       const range = XLSX.utils.decode_range(worksheet["!ref"]);
@@ -651,8 +659,7 @@
       const mediumBorder = { style: "medium", color: { rgb: "000000" } };
       const isTitle = row === 0;
       const isSubTitle = row === 1 || row === 2;
-      const isDateInput = row === 4 && col >= 1 && col <= 4;
-      const isDateLabel = row === 4 && (col === 0 || col === 5 || col === 7 || col === 9);
+      const isDateLine = row === 4;
       const isHeader = row === 6;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
       const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 8;
@@ -661,15 +668,15 @@
         font: {
           name: "Yu Gothic",
           sz: isTitle ? 15 : (isSubTitle ? 9 : 8),
-          bold: isTitle || isSubTitle || isHeader || isDateLabel || isCheckerBox || (isTotalBox && col <= 7)
+          bold: isTitle || isSubTitle || isHeader || isCheckerBox || (isTotalBox && col <= 7)
         },
         alignment: {
-          horizontal: isTitle || isSubTitle || isDateLabel || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center"),
+          horizontal: isDateLine ? "left" : (isTitle || isSubTitle || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center")),
           vertical: "center",
-          wrapText: true
+          wrapText: !isDateLine
         },
         border: borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder),
-        fill: isDateInput ? { patternType: "solid", fgColor: { rgb: "F4CCCC" } } : undefined
+        fill: undefined
       };
     }
 
@@ -715,18 +722,26 @@
       return year + month + day;
     }
 
-    function formatJapaneseDate(value) {
-      if (!value) return "";
-      const date = new Date(value + "T00:00:00");
-      if (Number.isNaN(date.getTime())) return value;
-      return date.getFullYear() + "年" + (date.getMonth() + 1) + "月" + date.getDate() + "日";
+    function formatOrderDateLine(deliveryValue, useValue) {
+      const delivery = parseDateParts(deliveryValue);
+      const use = parseDateParts(useValue);
+      return "令和" + dateField(delivery.reiwaYear, 3) + "年" + dateField(delivery.month, 2) + "月" + dateField(delivery.day, 2) + "日(" + dateField(delivery.weekday, 2) + ")　使用日" + dateField(use.month, 3) + "月" + dateField(use.day, 2) + "日";
+    }
+
+    function dateField(value, width) {
+      return value ? String(value).padStart(width, "　") : "　".repeat(width);
     }
 
     function parseDateParts(value) {
-      if (!value) return { month: "", day: "" };
+      if (!value) return { reiwaYear: "", month: "", day: "", weekday: "" };
       const date = new Date(value + "T00:00:00");
-      if (Number.isNaN(date.getTime())) return { month: "", day: "" };
-      return { month: date.getMonth() + 1, day: date.getDate() };
+      if (Number.isNaN(date.getTime())) return { reiwaYear: "", month: "", day: "", weekday: "" };
+      return {
+        reiwaYear: date.getFullYear() - 2018,
+        month: date.getMonth() + 1,
+        day: date.getDate(),
+        weekday: ["日", "月", "火", "水", "木", "金", "土"][date.getDay()]
+      };
     }
 
     function numberValue(value) {
