@@ -16,12 +16,31 @@
       gap: 10px;
       align-items: center;
       justify-content: center;
-      margin: 0 0 16px;
+      margin: 0 0 12px;
       padding: 12px;
       background: #fff;
       border: 1px solid #d1d5db;
       border-radius: 12px;
     }
+    .input-panel {
+      margin: 0 0 16px;
+      padding: 14px;
+      background: #fff;
+      border: 1px solid #d1d5db;
+      border-radius: 12px;
+    }
+    .input-panel label { display: block; margin: 0 0 8px; font-weight: 700; }
+    .input-help { margin: 0 0 10px; color: #4b5563; font-size: 13px; line-height: 1.6; }
+    textarea {
+      width: 100%;
+      min-height: 132px;
+      resize: vertical;
+      padding: 10px;
+      border: 1px solid #9ca3af;
+      border-radius: 8px;
+      font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    .panel-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; }
     button {
       min-height: 44px;
       border: 0;
@@ -121,12 +140,22 @@
 <body>
   <main class="app">
     <div class="toolbar">
-      <input id="menuDataInput" type="file" accept=".csv,.txt,.tsv,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
-      <button type="button" onclick="menuDataInput.value=''; menuDataInput.click();">献立データ読み込み</button>
+      <input id="menuDataInput" type="file" accept=".csv,.txt,.tsv,text/csv,text/tab-separated-values,text/plain" hidden>
+      <button type="button" onclick="menuDataInput.value=''; menuDataInput.click();">献立CSVを読み込む</button>
       <button type="button" onclick="downloadExcel()">Excel出力</button>
       <button class="secondary" type="button" onclick="window.print()">A4印刷</button>
-      <span id="loadStatus" aria-live="polite">献立データ未読み込み</span>
+      <span id="loadStatus" aria-live="polite">CSVまたは手入力テーブル未読み込み</span>
     </div>
+
+    <section class="input-panel" aria-label="手入力テーブル">
+      <label for="manualTableInput">手入力テーブル</label>
+      <p class="input-help">1行目に「材料名,数量,単位」を入れてください。カンマ区切り、タブ区切り、表計算ソフトからの貼り付けに対応します。画像OCRからの自動解析は行いません。</p>
+      <textarea id="manualTableInput" spellcheck="false" placeholder="材料名,数量,単位&#10;にんじん,120,g&#10;玉ねぎ,0.5,kg"></textarea>
+      <div class="panel-actions">
+        <button type="button" onclick="loadManualTable()">手入力テーブルを反映</button>
+        <button class="secondary" type="button" onclick="manualTableInput.value=''; loadStatus.textContent='手入力テーブルを空にしました';">手入力を消す</button>
+      </div>
+    </section>
 
     <div class="sheet-wrap">
       <section class="sheet" aria-label="発注書 兼 納品書">
@@ -198,30 +227,38 @@
       if (!file) return;
       try {
         const sourceRows = await readMenuRows(file);
-        const result = extractIngredients(sourceRows);
-        orderRows = result.rows;
-        renderPreview();
-        loadStatus.textContent = file.name + "：" + orderRows.length + "件を反映";
+        applySourceRows(sourceRows, file.name);
       } catch (error) {
         console.error(error);
         loadStatus.textContent = "読み込みに失敗しました";
-        alert("献立データを読み込めませんでした。CSVまたはExcelを確認してください。");
+        alert("献立CSVを読み込めませんでした。1行目に「材料名,数量,単位」があるCSVを選んでください。");
       }
     }
 
     async function readMenuRows(file) {
       const name = file.name.toLowerCase();
+      if (!/\.(csv|txt|tsv)$/.test(name)) throw new Error("CSV/TXT/TSV files only.");
       const buffer = await file.arrayBuffer();
-      if (/\.xlsx?$/.test(name)) return readWorkbookRows(buffer);
       return rowsFromText(decodeText(buffer));
     }
 
-    function readWorkbookRows(buffer) {
-      if (!window.XLSX) throw new Error("XLSX library is not loaded.");
-      const workbook = XLSX.read(buffer, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-      return rowsFromTable(aoa);
+    function loadManualTable() {
+      try {
+        const sourceRows = rowsFromText(manualTableInput.value);
+        applySourceRows(sourceRows, "手入力テーブル");
+      } catch (error) {
+        console.error(error);
+        loadStatus.textContent = "手入力テーブルの反映に失敗しました";
+        alert("手入力テーブルを読み込めませんでした。1行目に「材料名,数量,単位」を入れてください。");
+      }
+    }
+
+    function applySourceRows(sourceRows, label) {
+      const result = extractIngredients(sourceRows);
+      orderRows = result.rows;
+      renderPreview();
+      loadStatus.textContent = label + "：" + sourceRows.length + "行を読み込み / " + orderRows.length + "件を発注書に反映";
+      if (!sourceRows.length) alert("材料名・数量・単位の3列を読み取れませんでした。CSVまたは手入力テーブルを確認してください。");
     }
 
     function decodeText(buffer) {
@@ -232,36 +269,25 @@
 
     function rowsFromText(text) {
       const lines = splitLines(text);
-      const table = lines.map(line => parseCsvLine(line.replace(/[，、\t|｜]/g, ",")).cells.map(cell => cell.trim()));
-      const tableRows = rowsFromTable(table);
-      return tableRows.length ? tableRows : rowsFromLooseLines(lines);
+      const table = lines.map(line => parseCsvLine(normalizeDelimiterLine(line)).cells.map(cell => cell.trim()));
+      return rowsFromTable(table);
     }
 
     function rowsFromTable(table) {
       if (!table.length) return [];
-      const headerIndex = table.findIndex(row => row.some(cell => /食品名|食材名|材料名|品名|材料/.test(String(cell))) && row.some(cell => /数量|使用量|総使用量|分量/.test(String(cell))));
+      const headerIndex = table.findIndex(row => row.some(cell => /食品名|食材名|材料名|品名|材料/.test(String(cell))) && row.some(cell => /数量|使用量|総使用量|分量/.test(String(cell))) && row.some(cell => /単位|unit/i.test(String(cell))));
       if (headerIndex >= 0) {
         const header = table[headerIndex].map(normalizeHeader);
         const nameIndex = findHeaderIndex(header, ["食品名", "食材名", "材料名", "品名", "材料", "name"]);
         const qtyIndex = findHeaderIndex(header, ["数量", "使用量", "総使用量", "分量", "quantity", "qty"]);
         const unitIndex = findHeaderIndex(header, ["単位", "unit"]);
+        if ([nameIndex, qtyIndex, unitIndex].some(index => index < 0)) return [];
         return table.slice(headerIndex + 1).map(row => ({ name: row[nameIndex] || "", quantity: row[qtyIndex] || "", unit: row[unitIndex] || "" })).filter(isReadableItem);
       }
-      return table.filter(row => row.length >= 3).map(row => ({ name: row[0] || "", quantity: row[1] || "", unit: row[2] || "" })).filter(isReadableItem);
+      const bodyRows = table.filter(row => row.length >= 3 && !isHeaderWord(row.join(",")));
+      return bodyRows.map(row => ({ name: row[0] || "", quantity: row[1] || "", unit: row[2] || "" })).filter(isReadableItem);
     }
 
-    function rowsFromLooseLines(lines) {
-      return lines.map(line => {
-        const normalized = String(line || "").normalize("NFKC").trim();
-        if (!normalized || isHeaderWord(normalized)) return null;
-        const amount = findAmount(normalized);
-        if (!amount) return null;
-        const beforeAmount = normalized.slice(0, amount.index);
-        const candidates = (beforeAmount.match(/[ぁ-んァ-ヶー一-龠々〆ヵヶ]+/g) || []).map(normalizeName).filter(isValidFoodName);
-        if (!candidates.length) return null;
-        return { name: candidates.sort((a, b) => b.length - a.length)[0], quantity: amount.quantity, unit: amount.unit };
-      }).filter(Boolean);
-    }
 
     function extractIngredients(sourceRows) {
       const totals = new Map();
@@ -411,8 +437,9 @@
 
       ws["!ref"] = "A1:J46";
       ws["!margins"] = { left: 0.28, right: 0.28, top: 0.35, bottom: 0.35, header: 0.12, footer: 0.12 };
-      ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 1 };
+      ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 1, fitToPage: true };
       ws["!printOptions"] = { horizontalCentered: true, verticalCentered: false };
+      ws["!printArea"] = "A1:J46";
       ws["!printHeader"] = [];
       ws["!printFooter"] = [];
 
@@ -453,6 +480,10 @@
       return String(text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
     }
 
+    function normalizeDelimiterLine(line) {
+      return String(line || "").replace(/\t/g, ",").replace(/[，|｜]/g, ",");
+    }
+
     function parseCsvLine(line) {
       const cells = [];
       let cell = "";
@@ -477,11 +508,6 @@
       return { cells, readable: !inQuotes };
     }
 
-    function findAmount(line) {
-      const pattern = new RegExp("([0-9０-９]+(?:[.．][0-9０-９]+)?)\\s*(" + units.map(escapeRegExp).join("|") + ")", "i");
-      const match = String(line || "").match(pattern);
-      return match ? { quantity: numberValue(match[1]), unit: normalizeUnit(match[2]), index: match.index } : null;
-    }
 
     function isReadableItem(item) {
       const name = normalizeName(item.name);
@@ -549,8 +575,7 @@
 
     function findHeaderIndex(header, names) {
       const normalizedNames = names.map(normalizeHeader);
-      const index = header.findIndex(value => normalizedNames.includes(value));
-      return index >= 0 ? index : 0;
+      return header.findIndex(value => normalizedNames.includes(value));
     }
 
     function escapeRegExp(value) {
