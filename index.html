@@ -643,15 +643,13 @@
       canvas.height = Math.ceil(viewport.height);
       await page.render({ canvasContext: context, viewport }).promise;
       updateImportProgress(Math.min(72, 20 + Math.round((pageNumber / pageCount) * 50)), "PDF画像をOCR中です（" + pageNumber + "/" + pageCount + "ページ）。");
-      const result = await Tesseract.recognize(canvas, "jpn+eng", {
-        logger: data => {
-          if (data && data.status === "recognizing text") {
-            const progress = Math.round((Number(data.progress) || 0) * 100);
-            pdfStatus.textContent = "PDF画像OCR中です（" + pageNumber + "/" + pageCount + "ページ " + progress + "%）。";
-          }
-        }
+      const ocrResult = await recognizeBestJapaneseOcr(canvas, {
+        baseProgress: 20,
+        progressRange: 52,
+        label: "PDF画像OCR",
+        detail: pageNumber + "/" + pageCount + "ページ"
       });
-      return result && result.data ? String(result.data.text || "").trim() : "";
+      return ocrResult.text;
     }
 
     async function extractTextFromImage(file) {
@@ -661,15 +659,81 @@
 
       pdfStatus.textContent = "画像から文字をOCR中です。しばらくお待ちください。";
       updateImportProgress(20, "画像OCRを開始しました。");
-      const result = await Tesseract.recognize(file, "jpn+eng", {
-        logger: data => {
-          if (data && data.status === "recognizing text") {
-            const progress = Math.round((Number(data.progress) || 0) * 55);
-            updateImportProgress(20 + progress, "画像OCR中です（" + Math.round((Number(data.progress) || 0) * 100) + "%）。");
-          }
-        }
+      const sourceCanvas = await fileToCanvas(file);
+      const ocrResult = await recognizeBestJapaneseOcr(sourceCanvas, {
+        baseProgress: 20,
+        progressRange: 55,
+        label: "画像OCR",
+        detail: "4方向"
       });
-      return result && result.data ? String(result.data.text || "").trim() : "";
+      return ocrResult.text;
+    }
+
+    async function recognizeBestJapaneseOcr(sourceCanvas, options = {}) {
+      const rotations = [0, 90, 180, 270];
+      const results = [];
+      const baseProgress = Number(options.baseProgress) || 0;
+      const progressRange = Number(options.progressRange) || 60;
+      const label = options.label || "画像OCR";
+      const detail = options.detail ? "（" + options.detail + "）" : "";
+
+      for (let index = 0; index < rotations.length; index++) {
+        const angle = rotations[index];
+        const targetCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
+        const rotationStart = baseProgress + Math.round((index / rotations.length) * progressRange);
+        updateImportProgress(rotationStart, label + detail + "中です（" + angle + "度）。");
+        const result = await Tesseract.recognize(targetCanvas, "jpn+eng", {
+          logger: data => {
+            if (data && data.status === "recognizing text") {
+              const progress = Number(data.progress) || 0;
+              const totalProgress = baseProgress + Math.round(((index + progress) / rotations.length) * progressRange);
+              updateImportProgress(totalProgress, label + detail + "中です（" + angle + "度 " + Math.round(progress * 100) + "%）。");
+            }
+          }
+        });
+        const text = result && result.data ? String(result.data.text || "").trim() : "";
+        results.push({ angle, text, japaneseCount: countJapaneseCharacters(text), garbled: isGarbledText(text) });
+      }
+
+      const readableResults = results.filter(result => result.text && !result.garbled);
+      const candidates = readableResults.length ? readableResults : results.filter(result => result.text);
+      const best = candidates.sort((a, b) => b.japaneseCount - a.japaneseCount || a.angle - b.angle)[0] || { angle: 0, text: "", japaneseCount: 0, garbled: true };
+      pdfStatus.textContent = label + "完了。日本語文字数が一番多い" + best.angle + "度の結果を採用しました。";
+      return best;
+    }
+
+    function fileToCanvas(file) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        const objectUrl = URL.createObjectURL(file);
+        image.onload = () => {
+          URL.revokeObjectURL(objectUrl);
+          const canvas = document.createElement("canvas");
+          canvas.width = image.naturalWidth || image.width;
+          canvas.height = image.naturalHeight || image.height;
+          const context = canvas.getContext("2d", { willReadFrequently: true });
+          context.drawImage(image, 0, 0);
+          resolve(canvas);
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("画像を読み込めませんでした。"));
+        };
+        image.src = objectUrl;
+      });
+    }
+
+    function rotateCanvas(sourceCanvas, angle) {
+      const normalizedAngle = ((angle % 360) + 360) % 360;
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      const swapSize = normalizedAngle === 90 || normalizedAngle === 270;
+      canvas.width = swapSize ? sourceCanvas.height : sourceCanvas.width;
+      canvas.height = swapSize ? sourceCanvas.width : sourceCanvas.height;
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate(normalizedAngle * Math.PI / 180);
+      context.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+      return canvas;
     }
 
     function extractTextFromWorkbook(content, fileName) {
@@ -770,13 +834,17 @@
     }
 
     function parseIngredients(text) {
+      if (isGarbledText(text)) return [];
       return extractRowsFromPdfText(text);
     }
 
     function applyParsedRows(parsedRows, options = {}) {
       const append = options.append !== false;
       const statusPrefix = options.statusPrefix || "読み込み完了";
-      const importedRows = Array.isArray(parsedRows) ? parsedRows : [];
+      const importedRows = (Array.isArray(parsedRows) ? parsedRows : []).filter(row => {
+        const rowText = [row.name, row.quantity, row.unit].join(" ");
+        return !isGarbledText(rowText) && !isSuspiciousIngredientName(row.name);
+      });
       syncRows();
       const currentRows = rows.filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim());
       rows = append ? currentRows.concat(importedRows) : importedRows;
@@ -902,6 +970,10 @@
     function countMatches(value, pattern) {
       const matches = String(value || "").match(pattern);
       return matches ? matches.length : 0;
+    }
+
+    function countJapaneseCharacters(value) {
+      return countMatches(value, /[ぁ-んァ-ヶ一-龠々]/g);
     }
 
     function cleanIngredientName(value) {
