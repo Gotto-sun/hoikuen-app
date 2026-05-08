@@ -140,6 +140,7 @@
 
     .table-wrap {
       overflow-x: auto;
+      text-align: center;
     }
 
     table {
@@ -170,6 +171,7 @@
     .preview-sheet {
       width: 794px;
       min-width: 794px;
+      margin: 0 auto;
       table-layout: fixed;
       border: 2px solid #111827;
       font-size: 12px;
@@ -611,7 +613,7 @@
         { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
       worksheet["!margins"] = { left: 0.12, right: 0.12, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
-      worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
+      worksheet["!pageSetup"] = { orientation: "landscape", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
 
