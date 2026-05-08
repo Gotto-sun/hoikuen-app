@@ -121,8 +121,11 @@
 <body>
   <main class="app">
     <div class="toolbar">
+      <input id="menuDataInput" type="file" accept=".csv,.txt,.tsv,.xlsx,.xls,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
+      <button type="button" onclick="menuDataInput.value=''; menuDataInput.click();">献立データ読み込み</button>
       <button type="button" onclick="downloadExcel()">Excel出力</button>
       <button class="secondary" type="button" onclick="window.print()">A4印刷</button>
+      <span id="loadStatus" aria-live="polite">献立データ未読み込み</span>
     </div>
 
     <div class="sheet-wrap">
@@ -168,17 +171,131 @@
 
   <script>
     const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
-    const sampleRows = [
-      ["", "にんじん", 450, "g", "短冊切り", 1, "kg", 280, 280, "国産"],
-      ["", "玉ねぎ", 600, "g", "皮むき", 1, "kg", 230, 230, "北海道"],
-      ["", "牛乳", 3000, "ml", "調理用", 3, "本", 210, 630, "国産"]
+    const detailLineCount = 30;
+    const units = ["g", "kg", "ml", "L", "個", "本", "袋", "缶", "束", "丁", "枚", "切", "尾", "玉", "箱", "パック"];
+    const allowedUnits = new Set(units);
+    const aliases = {
+      "人参": "にんじん", "ニンジン": "にんじん", "玉葱": "玉ねぎ", "たまねぎ": "玉ねぎ",
+      "ジャガイモ": "じゃがいも", "じゃが芋": "じゃがいも", "鶏肉": "鶏もも肉", "豚肉": "豚こま肉",
+      "リンゴ": "りんご", "たまご": "卵"
+    };
+    const standardRules = [
+      { names: ["米", "ごはん", "だし", "だし汁", "しょうゆ", "醤油", "塩", "砂糖", "酢", "みそ", "味噌", "油", "酒", "みりん"], exclude: true, reason: "標準ルールで除外" },
+      { names: ["牛乳"], orderUnit: "本", packageQuantity: 450, packageUnit: "ml", roundStep: 1, note: "450ml換算" },
+      { names: ["キャベツ"], orderUnit: "個", packageQuantity: 1200, packageUnit: "g", roundStep: 0.25, note: "1/4個単位" },
+      { names: ["白菜"], orderUnit: "個", packageQuantity: 2000, packageUnit: "g", roundStep: 0.125, note: "1/8個単位" },
+      { names: ["しめじ", "えのき", "しいたけ", "まいたけ"], orderUnit: "袋", packageQuantity: 100, packageUnit: "g", roundStep: 1, note: "100g袋換算" },
+      { names: ["豆腐"], orderUnit: "丁", packageQuantity: 300, packageUnit: "g", roundStep: 1, note: "300g換算" },
+      { names: ["にんじん", "玉ねぎ", "じゃがいも", "大根", "きゅうり", "トマト", "ほうれん草", "小松菜", "ブロッコリー", "ピーマン", "かぼちゃ", "なす", "もやし", "ねぎ", "鶏もも肉", "鶏むね肉", "鶏ひき肉", "豚こま肉", "豚ひき肉", "牛肉", "鮭", "さば", "たら"], orderUnit: "kg", packageQuantity: 1000, packageUnit: "g", roundStep: 0.1, note: "kg換算" },
+      { names: ["卵", "りんご", "バナナ", "みかん", "オレンジ", "いちご"], orderUnit: "個", packageQuantity: 1, packageUnit: "個", roundStep: 1, note: "個数換算" }
     ];
-    const blankLineCount = 27;
+
+    let orderRows = [];
+
+    menuDataInput.addEventListener("change", event => loadMenuData(event.target.files[0]));
+
+    async function loadMenuData(file) {
+      if (!file) return;
+      try {
+        const sourceRows = await readMenuRows(file);
+        const result = extractIngredients(sourceRows);
+        orderRows = result.rows;
+        renderPreview();
+        loadStatus.textContent = file.name + "：" + orderRows.length + "件を反映";
+      } catch (error) {
+        console.error(error);
+        loadStatus.textContent = "読み込みに失敗しました";
+        alert("献立データを読み込めませんでした。CSVまたはExcelを確認してください。");
+      }
+    }
+
+    async function readMenuRows(file) {
+      const name = file.name.toLowerCase();
+      const buffer = await file.arrayBuffer();
+      if (/\.xlsx?$/.test(name)) return readWorkbookRows(buffer);
+      return rowsFromText(decodeText(buffer));
+    }
+
+    function readWorkbookRows(buffer) {
+      if (!window.XLSX) throw new Error("XLSX library is not loaded.");
+      const workbook = XLSX.read(buffer, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      return rowsFromTable(aoa);
+    }
+
+    function decodeText(buffer) {
+      const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+      if (!utf8.includes("�")) return utf8;
+      try { return new TextDecoder("shift_jis").decode(buffer); } catch (error) { return utf8; }
+    }
+
+    function rowsFromText(text) {
+      const lines = splitLines(text);
+      const table = lines.map(line => parseCsvLine(line.replace(/[，、\t|｜]/g, ",")).cells.map(cell => cell.trim()));
+      const tableRows = rowsFromTable(table);
+      return tableRows.length ? tableRows : rowsFromLooseLines(lines);
+    }
+
+    function rowsFromTable(table) {
+      if (!table.length) return [];
+      const headerIndex = table.findIndex(row => row.some(cell => /食品名|食材名|材料名|品名|材料/.test(String(cell))) && row.some(cell => /数量|使用量|総使用量|分量/.test(String(cell))));
+      if (headerIndex >= 0) {
+        const header = table[headerIndex].map(normalizeHeader);
+        const nameIndex = findHeaderIndex(header, ["食品名", "食材名", "材料名", "品名", "材料", "name"]);
+        const qtyIndex = findHeaderIndex(header, ["数量", "使用量", "総使用量", "分量", "quantity", "qty"]);
+        const unitIndex = findHeaderIndex(header, ["単位", "unit"]);
+        return table.slice(headerIndex + 1).map(row => ({ name: row[nameIndex] || "", quantity: row[qtyIndex] || "", unit: row[unitIndex] || "" })).filter(isReadableItem);
+      }
+      return table.filter(row => row.length >= 3).map(row => ({ name: row[0] || "", quantity: row[1] || "", unit: row[2] || "" })).filter(isReadableItem);
+    }
+
+    function rowsFromLooseLines(lines) {
+      return lines.map(line => {
+        const normalized = String(line || "").normalize("NFKC").trim();
+        if (!normalized || isHeaderWord(normalized)) return null;
+        const amount = findAmount(normalized);
+        if (!amount) return null;
+        const beforeAmount = normalized.slice(0, amount.index);
+        const candidates = (beforeAmount.match(/[ぁ-んァ-ヶー一-龠々〆ヵヶ]+/g) || []).map(normalizeName).filter(isValidFoodName);
+        if (!candidates.length) return null;
+        return { name: candidates.sort((a, b) => b.length - a.length)[0], quantity: amount.quantity, unit: amount.unit };
+      }).filter(Boolean);
+    }
+
+    function extractIngredients(sourceRows) {
+      const totals = new Map();
+      sourceRows.forEach(item => {
+        const name = normalizeName(item.name);
+        const quantity = numberValue(item.quantity);
+        const unit = normalizeCsvUnit(item.unit);
+        if (!isValidFoodName(name) || quantity <= 0) return;
+        const rule = findRule(name);
+        if (rule && rule.exclude) return;
+        const key = name + "__" + unit;
+        const current = totals.get(key) || { name, quantity: 0, unit, count: 0 };
+        current.quantity += quantity;
+        current.count += 1;
+        totals.set(key, current);
+      });
+      return { rows: Array.from(totals.values()).map(toOrderRow).sort((a, b) => String(a[1] || "").localeCompare(String(b[1] || ""), "ja")) };
+    }
+
+    function toOrderRow(item) {
+      const rule = item.unit === "要確認" ? defaultRule(item.unit) : (findRule(item.name) || defaultRule(item.unit));
+      const converted = convertQuantity(item.quantity, item.unit, rule);
+      const notes = [];
+      if (item.count > 1) notes.push(item.count + "件を合算");
+      if (rule.note) notes.push(rule.note);
+      if (converted.warning) notes.push(converted.warning);
+      return ["", item.name, round(item.quantity), item.unit, notes.join(" / "), converted.quantity, converted.unit, "", "", ""];
+    }
 
     function renderPreview() {
       const tbody = document.getElementById("previewRows");
       tbody.innerHTML = "";
-      const rows = sampleRows.concat(Array.from({ length: blankLineCount }, () => Array(headers.length).fill("")));
+      const visibleRows = orderRows.slice(0, detailLineCount);
+      const rows = visibleRows.concat(Array.from({ length: Math.max(0, detailLineCount - visibleRows.length) }, () => Array(headers.length).fill("")));
       rows.forEach(row => {
         const tr = document.createElement("tr");
         headers.forEach((_, index) => {
@@ -188,6 +305,11 @@
         });
         tbody.appendChild(tr);
       });
+    }
+
+    function buildDetailRows() {
+      const rows = orderRows.slice(0, detailLineCount).map(row => row.slice(0, headers.length));
+      return rows.concat(Array.from({ length: Math.max(0, detailLineCount - rows.length) }, () => Array(headers.length).fill("")));
     }
 
     function downloadExcel() {
@@ -208,8 +330,7 @@
       aoa[5][8] = "日";
       aoa[7] = headers.slice();
 
-      const detailRows = sampleRows.concat(Array.from({ length: blankLineCount }, () => Array(headers.length).fill("")));
-      detailRows.forEach((row, index) => {
+      buildDetailRows().forEach((row, index) => {
         aoa[8 + index] = row.slice();
       });
       aoa[41][2] = "検品者";
@@ -296,7 +417,144 @@
       ws["!printFooter"] = [];
 
       XLSX.utils.book_append_sheet(wb, ws, "発注書");
-      XLSX.writeFile(wb, "スクルド発注書_テンプレート.xlsx");
+      XLSX.writeFile(wb, "スクルド発注書.xlsx");
+    }
+
+    function convertQuantity(quantity, unit, rule) {
+      let base = quantity;
+      let warning = "";
+      const from = normalizeUnit(unit);
+      const to = normalizeUnit(rule.packageUnit || from);
+      if (from !== to) base = convertUnit(quantity, from, to);
+      if (base === null) { base = quantity; warning = "単位要確認"; }
+      return { quantity: roundUp(base / (numberValue(rule.packageQuantity) || 1), numberValue(rule.roundStep) || 1), unit: rule.orderUnit || from, warning };
+    }
+
+    function convertUnit(value, from, to) {
+      if (from === to) return value;
+      if (from === "kg" && to === "g") return value * 1000;
+      if (from === "g" && to === "kg") return value / 1000;
+      if (from === "L" && to === "ml") return value * 1000;
+      if (from === "ml" && to === "L") return value / 1000;
+      return null;
+    }
+
+    function defaultRule(unit) {
+      const normalized = normalizeUnit(unit);
+      return { orderUnit: normalized, packageQuantity: 1, packageUnit: normalized, roundStep: normalized === "g" || normalized === "ml" ? 100 : 1, note: "要確認" };
+    }
+
+    function findRule(name) {
+      const normalized = normalizeName(name);
+      return standardRules.find(rule => rule.names.some(ruleName => normalized === normalizeName(ruleName) || normalized.includes(normalizeName(ruleName))));
+    }
+
+    function splitLines(text) {
+      return String(text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n").map(line => line.trim()).filter(Boolean);
+    }
+
+    function parseCsvLine(line) {
+      const cells = [];
+      let cell = "";
+      let inQuotes = false;
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        if (char === '"') {
+          if (inQuotes && line[index + 1] === '"') {
+            cell += '"';
+            index += 1;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === "," && !inQuotes) {
+          cells.push(cell);
+          cell = "";
+        } else {
+          cell += char;
+        }
+      }
+      cells.push(cell);
+      return { cells, readable: !inQuotes };
+    }
+
+    function findAmount(line) {
+      const pattern = new RegExp("([0-9０-９]+(?:[.．][0-9０-９]+)?)\\s*(" + units.map(escapeRegExp).join("|") + ")", "i");
+      const match = String(line || "").match(pattern);
+      return match ? { quantity: numberValue(match[1]), unit: normalizeUnit(match[2]), index: match.index } : null;
+    }
+
+    function isReadableItem(item) {
+      const name = normalizeName(item.name);
+      return isValidFoodName(name) && String(item.quantity || "").trim() && numberValue(item.quantity) > 0;
+    }
+
+    function normalizeName(value) {
+      const normalized = String(value || "")
+        .replace(/^\uFEFF/, "")
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/[①-⑳]/g, "")
+        .replace(/[0-9０-９]+(?:[.．][0-9０-９]+)?/g, "")
+        .replace(new RegExp("\\b(?:" + units.map(escapeRegExp).join("|") + ")\\b", "gi"), "")
+        .replace(/["'`~^*_=+;<>?？!！\\]/g, "")
+        .replace(/\s+/g, "")
+        .trim();
+      return aliases[normalized] || normalized;
+    }
+
+    function normalizeUnit(value) {
+      const unit = String(value || "個").normalize("NFKC").trim().replace("リットル", "L").replace("㎏", "kg");
+      if (/^l$/i.test(unit)) return "L";
+      return unit || "個";
+    }
+
+    function normalizeCsvUnit(value) {
+      const unit = normalizeUnit(value);
+      return allowedUnits.has(unit) ? unit : "要確認";
+    }
+
+    function normalizeHeader(value) {
+      return String(value || "").replace(/^\uFEFF/, "").replace(/\s+/g, "").toLowerCase();
+    }
+
+    function isValidFoodName(name) {
+      const value = String(name || "").trim();
+      if (value.length < 1) return false;
+      if (!/^[ぁ-んァ-ヶー一-龠々〆ヵヶ]+$/.test(value)) return false;
+      if (/^(食品名|食材名|材料名|品名|数量|単位|合計|小計|献立|日付|月|火|水|木|金|土|日)$/.test(value)) return false;
+      if (/^[ー々〆ヵヶ]+$/.test(value)) return false;
+      return true;
+    }
+
+    function isHeaderWord(value) {
+      return /食品名|食材名|材料名|品名|数量|単位|献立名|日付|使用量|総使用量/.test(String(value || ""));
+    }
+
+    function numberValue(value) {
+      const normalized = String(value ?? "").normalize("NFKC").replace(/[^0-9.\-]/g, "");
+      const number = Number(normalized);
+      return Number.isFinite(number) ? number : 0;
+    }
+
+    function round(value) {
+      const number = Number(value);
+      return Number.isFinite(number) ? Math.round(number * 100) / 100 : value;
+    }
+
+    function roundUp(value, step) {
+      const base = Number(value);
+      const unit = Number(step) || 1;
+      if (!Number.isFinite(base)) return "";
+      return round(Math.ceil(base / unit) * unit);
+    }
+
+    function findHeaderIndex(header, names) {
+      const normalizedNames = names.map(normalizeHeader);
+      const index = header.findIndex(value => normalizedNames.includes(value));
+      return index >= 0 ? index : 0;
+    }
+
+    function escapeRegExp(value) {
+      return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
     function styleRange(ws, r1, c1, r2, c2, style) {
