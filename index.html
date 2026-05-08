@@ -252,6 +252,12 @@
       text-align: left;
     }
 
+    .preview-sheet .date-row td {
+      background: #fde2e8;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
     .preview-sheet .date-line {
       text-align: left;
       white-space: nowrap;
@@ -345,8 +351,8 @@
       }
 
       @page {
-        size: A4 landscape;
-        margin: 0 0.4cm 0 1.2cm;
+        size: A4 portrait;
+        margin: 0.35cm;
       }
 
       main,
@@ -356,6 +362,17 @@
         padding: 0;
         border: 0;
         box-shadow: none;
+      }
+
+      .table-wrap {
+        overflow: visible;
+      }
+
+      .preview-sheet {
+        width: 100%;
+        min-width: 0;
+        page-break-inside: avoid;
+        break-inside: avoid;
       }
     }
   </style>
@@ -529,7 +546,7 @@
           '<tr class="sub-title-row"><td colspan="10">スクルドエンジェル</td></tr>' +
           '<tr class="sub-title-row"><td colspan="10">たかばり　園</td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
-          '<tr><td class="date-line" colspan="10">' + escapeHtml(dateLine) + '</td></tr>' +
+          '<tr class="date-row"><td class="date-line" colspan="10">' + escapeHtml(dateLine) + '</td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
@@ -636,9 +653,9 @@
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
         { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.47, right: 0.2, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
-      worksheet["!pageSetup"] = { orientation: "landscape", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
-      worksheet["!printOptions"] = { gridLines: false, horizontalCentered: false };
+      worksheet["!margins"] = { left: 0.2, right: 0.2, top: 0.2, bottom: 0.2, header: 0, footer: 0 };
+      worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 1 };
+      worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true, verticalCentered: true };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
 
       const range = XLSX.utils.decode_range(worksheet["!ref"]);
@@ -686,7 +703,7 @@
         },
         numFmt: isTotalAmountCell ? "#,##0.###" : undefined,
         border: borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder),
-        fill: undefined
+        fill: isDateLine ? { patternType: "solid", fgColor: { rgb: "FDE2E8" } } : undefined
       };
     }
 
