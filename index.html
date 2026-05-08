@@ -338,7 +338,7 @@
 
       @page {
         size: A4 landscape;
-        margin: 0 0 0 1cm;
+        margin: 0 0.4cm 0 1.2cm;
       }
 
       main,
@@ -628,7 +628,7 @@
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
         { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.39, right: 0.12, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
+      worksheet["!margins"] = { left: 0.47, right: 0.2, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
       worksheet["!pageSetup"] = { orientation: "landscape", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: false };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
@@ -725,7 +725,7 @@
     function formatOrderDateLine(deliveryValue, useValue) {
       const delivery = parseDateParts(deliveryValue);
       const use = parseDateParts(useValue);
-      return "令和" + dateField(delivery.reiwaYear, 3) + "年" + dateField(delivery.month, 2) + "月" + dateField(delivery.day, 2) + "日(" + dateField(delivery.weekday, 2) + ")　使用日" + dateField(use.month, 3) + "月" + dateField(use.day, 2) + "日";
+      return "【納品日】令和" + dateField(delivery.reiwaYear, 2) + "年" + dateField(delivery.month, 2) + "月" + dateField(delivery.day, 2) + "日(" + dateField(delivery.weekday, 2) + ")　使用日" + dateField(use.month, 2) + "月" + dateField(use.day, 2) + "日";
     }
 
     function dateField(value, width) {
