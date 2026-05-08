@@ -696,14 +696,16 @@
         ...buildOutputRows()
       ];
       if (!window.XLSX) {
-        const html = "<table>" + aoa.map(row => "<tr>" + row.map(cell => "<td>" + escapeHtml(cell) + "</td>").join("") + "</tr>").join("") + "</table>";
+        const html = buildA4ExcelHtml(aoa);
         downloadBlob(new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" }), "発注書.xls");
-        notice.textContent = "Excelライブラリ未読込のため.xlsで出力しました。";
+        notice.textContent = "Excelライブラリ未読込のため、A4縦サイズの.xlsで出力しました。";
         return;
       }
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws["!cols"] = [{ wch: 8 }, { wch: 18 }, { wch: 10 }, { wch: 8 }, { wch: 28 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
+      ws["!cols"] = [{ wch: 7 }, { wch: 16 }, { wch: 9 }, { wch: 7 }, { wch: 24 }, { wch: 9 }, { wch: 7 }, { wch: 9 }, { wch: 9 }, { wch: 10 }];
+      ws["!rows"] = aoa.map((row, index) => ({ hpt: index === 0 ? 26 : 21 }));
       ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
+      applyA4PrintSettings(ws, aoa.length);
       Object.keys(ws).filter(address => !address.startsWith("!")).forEach(address => {
         const cell = ws[address];
         cell.s = {
@@ -715,7 +717,25 @@
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "発注書");
       XLSX.writeFile(wb, "発注書.xlsx");
-      notice.textContent = "Excelをダウンロードしました。";
+      notice.textContent = "ExcelをA4縦サイズでダウンロードしました。";
+    }
+
+    function applyA4PrintSettings(ws, rowCount) {
+      ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(rowCount - 1, 0), c: 9 } });
+      ws["!autofilter"] = undefined;
+      ws["!margins"] = { left: 0.28, right: 0.28, top: 0.35, bottom: 0.35, header: 0.15, footer: 0.15 };
+      ws["!pageSetup"] = { paperSize: 9, orientation: "portrait", fitToWidth: 1, fitToHeight: 0, scale: 100 };
+      ws["!printOptions"] = { horizontalCentered: true };
+    }
+
+    function buildA4ExcelHtml(aoa) {
+      const style = "<style>@page{size:A4 portrait;margin:10mm}table{border-collapse:collapse;width:100%;font-family:'Yu Gothic',sans-serif;font-size:11pt}td{border:1px solid #000;padding:4px;vertical-align:top}.title{text-align:center;font-size:18pt;font-weight:bold}</style>";
+      const rowsHtml = aoa.map((row, rowIndex) => "<tr>" + row.map((cell, cellIndex) => {
+        const colspan = rowIndex === 0 && cellIndex === 0 ? " colspan=\"10\"" : "";
+        const className = rowIndex === 0 && cellIndex === 0 ? " class=\"title\"" : "";
+        return "<td" + colspan + className + ">" + escapeHtml(cell) + "</td>";
+      }).join("") + "</tr>").join("");
+      return "<!doctype html><html><head><meta charset=\"utf-8\">" + style + "</head><body><table>" + rowsHtml + "</table></body></html>";
     }
 
     function downloadBlob(blob, filename) {
