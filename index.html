@@ -449,9 +449,9 @@
 
       <div class="buttons">
         <button class="gray" type="button" id="addBtn">＋ 発注行を追加</button>
-        <button class="green" type="button" id="excelBtn" disabled>Excel出力</button>
-        <button class="blue" type="button" id="csvCopyBtn" disabled>CSVコピー</button>
-        <button class="orange" type="button" id="csvShowBtn" disabled>CSV表示</button>
+        <button class="green" type="button" id="excelBtn">Excel出力</button>
+        <button class="blue" type="button" id="csvCopyBtn">CSVコピー</button>
+        <button class="orange" type="button" id="csvShowBtn">CSV表示</button>
       </div>
 
       <div id="csvPanel" class="csv-panel" aria-live="polite">
@@ -459,6 +459,9 @@
         <textarea id="csvOutput" readonly></textarea>
         <p class="note">上の全文を選択してコピーし、Googleスプレッドシートの左上セルに貼り付けてください。</p>
       </div>
+
+      <label for="debugOutput">デバッグ表示（抽出した行）</label>
+      <textarea id="debugOutput" readonly placeholder="抽出した行をJSONで表示します。"></textarea>
     </section>
   </main>
 
@@ -554,6 +557,7 @@
     const tableArea = document.getElementById("tableArea");
     const csvPanel = document.getElementById("csvPanel");
     const csvOutput = document.getElementById("csvOutput");
+    const debugOutput = document.getElementById("debugOutput");
 
     const itemCount = document.getElementById("itemCount");
     const mergedCount = document.getElementById("mergedCount");
@@ -686,23 +690,87 @@
       ocrStatus.textContent = "OCRを開始します。初回は時間がかかることがあります。";
 
       try {
-        const result = await Tesseract.recognize(file, "jpn+eng", {
-          logger: message => {
-            if (message.status === "recognizing text") {
-              ocrStatus.textContent = "OCR中です：" + Math.round(message.progress * 100) + "%";
-            }
-          }
-        });
+        const best = await recognizeBestOrientation(file);
 
-        ocrText.value = result.data.text.trim();
+        ocrText.value = best.text;
         menuCsvStatus.textContent = "OCR結果を使用中";
-        ocrStatus.textContent = "OCRが終わりました。内容を確認してください。";
+        ocrStatus.textContent = "OCRが終わりました。採用した向き：" + best.rotation + "度。内容を確認してください。";
         extractAndRender();
       } catch (error) {
         ocrStatus.textContent = "OCRに失敗しました。画像を撮り直すか、文字を手入力してください。";
       } finally {
         setWorking(false);
       }
+    }
+
+    async function recognizeBestOrientation(file) {
+      const candidates = [];
+      for (const rotation of [0, 90, 180, 270]) {
+        const image = rotation === 0 ? file : await rotateImageFile(file, rotation);
+        const result = await Tesseract.recognize(image, "jpn+eng", {
+          logger: message => {
+            if (message.status === "recognizing text") {
+              ocrStatus.textContent = "OCR中です（" + rotation + "度）：" + Math.round(message.progress * 100) + "%";
+            }
+          }
+        });
+        const rawText = result.data.text || "";
+        const text = cleanOcrText(rawText);
+        candidates.push({
+          rotation,
+          rawText,
+          text,
+          score: text.length || countJapaneseChars(rawText)
+        });
+      }
+
+      return candidates.reduce((best, current) => current.score > best.score ? current : best, candidates[0]);
+    }
+
+    function rotateImageFile(file, degrees) {
+      return new Promise((resolve, reject) => {
+        const image = new Image();
+        const url = URL.createObjectURL(file);
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          const quarterTurn = Math.abs(degrees % 180) === 90;
+          canvas.width = quarterTurn ? image.naturalHeight : image.naturalWidth;
+          canvas.height = quarterTurn ? image.naturalWidth : image.naturalHeight;
+          context.translate(canvas.width / 2, canvas.height / 2);
+          context.rotate(degrees * Math.PI / 180);
+          context.drawImage(image, -image.naturalWidth / 2, -image.naturalHeight / 2);
+          canvas.toBlob(blob => {
+            URL.revokeObjectURL(url);
+            if (blob) {
+              resolve(blob);
+            } else {
+              reject(new Error("画像の回転に失敗しました。"));
+            }
+          }, file.type || "image/png");
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(url);
+          reject(new Error("画像を読み込めませんでした。"));
+        };
+        image.src = url;
+      });
+    }
+
+    function cleanOcrText(text) {
+      return String(text || "")
+        .replace(/\r\n/g, "\n")
+        .replace(/\r/g, "\n")
+        .split("\n")
+        .map(line => line.trim())
+        .filter(line => countJapaneseChars(line) >= 2)
+        .filter(line => !/^[A-Za-z0-9\s\p{P}\p{S}]+$/u.test(line))
+        .join("\n");
+    }
+
+    function countJapaneseChars(text) {
+      const matches = String(text || "").match(/[ぁ-んァ-ヶ一-龠々〆〤]/g);
+      return matches ? matches.length : 0;
     }
 
     function setWorking(isWorking) {
@@ -727,6 +795,7 @@
       stats = result.stats;
       renderTable();
       updateSummary();
+      updateDebugOutput(result.debugRows || rows);
 
       notice.textContent = rows.length
         ? "3歳未満児 " + childrenCount + "人分で発注数を計算しました。内容を確認して、必要なら修正してください。"
@@ -758,13 +827,32 @@
         totals.set(key, current);
       }
 
-      const outputRows = Array.from(totals.values()).map(item => toOrderRow(item)).sort((a, b) => a.name.localeCompare(b.name, "ja"));
+      let outputRows = Array.from(totals.values()).map(item => toOrderRow(item)).sort((a, b) => a.name.localeCompare(b.name, "ja"));
+      const provisional = outputRows.length === 0 ? createProvisionalRow(text) : null;
+      if (provisional) outputRows = [provisional];
       return {
         rows: outputRows,
+        debugRows: outputRows,
         stats: {
           merged: Math.max(0, foundCount - outputRows.length),
           excluded: excludedCount
         }
+      };
+    }
+
+    function createProvisionalRow(text) {
+      const line = cleanOcrText(text).split("\n").find(Boolean) || String(text || "").split(/\r?\n/).map(value => value.trim()).find(Boolean) || "仮データ";
+      return {
+        checked: "□",
+        name: line.slice(0, 40),
+        totalQuantity: 1,
+        totalUnit: "個",
+        note: "OCR仮データ（要確認）",
+        orderQuantity: 1,
+        orderUnit: "個",
+        unitPrice: "",
+        amount: "",
+        origin: ""
       };
     }
 
@@ -988,9 +1076,9 @@
       if (rows.length === 0) {
         tableArea.className = "empty";
         tableArea.textContent = "まだ食材がありません。";
-        excelBtn.disabled = true;
-        csvCopyBtn.disabled = true;
-        csvShowBtn.disabled = true;
+        excelBtn.disabled = false;
+        csvCopyBtn.disabled = false;
+        csvShowBtn.disabled = false;
         csvPanel.classList.remove("is-open");
         csvOutput.value = "";
         return;
@@ -1060,16 +1148,17 @@
       itemCount.textContent = validRows.length;
       mergedCount.textContent = stats.merged;
       excludedCount.textContent = stats.excluded;
-      excelBtn.disabled = validRows.length === 0;
-      csvCopyBtn.disabled = validRows.length === 0;
-      csvShowBtn.disabled = validRows.length === 0;
+      excelBtn.disabled = false;
+      csvCopyBtn.disabled = false;
+      csvShowBtn.disabled = false;
     }
 
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetDetailRows = 30;
 
     function getExportRows() {
-      return rows.filter(row => String(row.name || "").trim()).map(row => {
+      const source = rows.filter(row => String(row.name || "").trim());
+      return source.map(row => {
         const orderQuantity = numberValue(row.orderQuantity);
         const unitPrice = numberValue(row.unitPrice);
         const enteredAmount = numberValue(row.amount);
@@ -1138,8 +1227,7 @@
       const exportRows = getExportRows();
 
       if (exportRows.length === 0) {
-        notice.textContent = "Excelにする食材がありません。";
-        return;
+        notice.textContent = "食材行なしの発注書をExcel出力します。";
       }
       if (!isXlsxReady()) {
         notice.textContent = "Excel作成ライブラリを読み込めませんでした。CSV表示またはCSVコピーを使ってください。";
@@ -1311,8 +1399,7 @@
       const exportRows = getExportRows();
 
       if (exportRows.length === 0) {
-        notice.textContent = "CSVにする食材がありません。";
-        return "";
+        notice.textContent = "食材行なしのCSVを表示します。";
       }
 
       return toCsv(buildExportDocument(exportRows));
@@ -1366,6 +1453,7 @@
       childrenCsvInput.value = "";
       ruleCsvInput.value = "";
       csvOutput.value = "";
+      debugOutput.value = "";
       csvPanel.classList.remove("is-open");
       deliveryDate.value = "";
       useDate.value = "";
@@ -1373,6 +1461,10 @@
       retryBtn.disabled = true;
       renderTable();
       updateSummary();
+    }
+
+    function updateDebugOutput(debugRows) {
+      debugOutput.value = JSON.stringify(debugRows || [], null, 2);
     }
 
     function parseDateParts(value) {
