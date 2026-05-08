@@ -7,6 +7,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js" onerror="window.pdfLoadError = true"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js" onerror="window.xlsxLoadError = true"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js" onerror="window.tesseractLoadError = true"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js" onerror="window.mammothLoadError = true"></script>
   <script>
     if (!window.pdfjsLib) {
       document.write('<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js" onerror="window.pdfLoadError = true"><\/script>');
@@ -19,6 +21,12 @@
     }
     if (!window.XLSX) {
       document.write('<script src="https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window.xlsxLoadError = true"><\/script>');
+    }
+    if (!window.Tesseract) {
+      document.write('<script src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js" onerror="window.tesseractLoadError = true"><\/script>');
+    }
+    if (!window.mammoth) {
+      document.write('<script src="https://unpkg.com/mammoth@1.8.0/mammoth.browser.min.js" onerror="window.mammothLoadError = true"><\/script>');
     }
   </script>
 
@@ -457,12 +465,12 @@
       <h2>1. ファイル読み込み（任意）</h2>
       <div class="pdf-box">
         <p class="note">ファイルを選ぶと、すぐに読み込みを開始し、抽出結果を下の確認テーブルと発注書へ自動反映します。</p>
-        <input id="pdfFile" type="file" accept="application/pdf,.pdf,.xlsx,.xls,.csv,.txt,text/plain,text/csv" aria-label="読み込みファイル">
+        <input id="pdfFile" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,image/*,.xlsx,.xls,.csv,text/csv,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.txt,text/plain" aria-label="読み込みファイル">
         <div id="importProgress" class="import-progress" aria-label="読み込み率" aria-live="polite">
           <div class="progress-track"><div id="importProgressBar" class="progress-bar"></div></div>
           <span id="importProgressPercent" class="progress-percent">0%</span>
         </div>
-        <textarea id="pdfText" class="pdf-textarea" placeholder="ファイルから読み込んだテキストがここに表示されます。抽出0件の場合は、ここに内容を貼り付けても確認テーブルへ反映できます。"></textarea>
+        <textarea id="pdfText" class="pdf-textarea" placeholder="抽出テキスト欄：ファイルから読み込んだ文字を必ずここに表示します。抽出0件の場合は、ここに内容を貼り付けてください。"></textarea>
         <p id="pdfStatus" class="status"></p>
       </div>
 
@@ -568,27 +576,27 @@
     async function handleFileSelect(file) {
       pdfText.value = "";
       notice.textContent = "";
+      if (!file) {
+        pdfStatus.textContent = "ファイルが選ばれていません。";
+        return;
+      }
+
       updateImportProgress(0, "処理を開始しました。");
       pdfFile.disabled = true;
 
       try {
-        updateImportProgress(25, "ファイルを読み込み中です。");
+        updateImportProgress(10, "ファイルを読み込み中です。");
         const text = await readFileText(file);
-        updateImportProgress(50, "文字化けを確認中です。");
-
-        if (isGarbledText(text)) {
-          markFileImportFailed("文字化けのため読み込めませんでした。内容を貼り付けてください");
-          return;
-        }
-
-        pdfText.value = text;
+        const extractedText = String(text || "").trim();
+        pdfText.value = extractedText;
         updateImportProgress(75, "材料を抽出中です。");
-        const parsedRows = parseIngredients(text);
+        const parsedRows = parseIngredients(extractedText);
         updateImportProgress(100, "読み込み完了");
-        applyParsedRows(parsedRows, { append: true, statusPrefix: "読み込み完了" });
+        applyParsedRows(parsedRows, { append: true, statusPrefix: file.name + " の読み込み完了" });
       } catch (error) {
         console.error("file import error", error);
-        markFileImportFailed("文字化けのため読み込めませんでした。内容を貼り付けてください");
+        pdfText.value = "";
+        markFileImportFailed("読み込みできませんでした。抽出テキスト欄に内容を貼り付けてください。");
       } finally {
         pdfFile.disabled = false;
         pdfFile.value = "";
@@ -596,51 +604,127 @@
     }
 
     async function readFileText(file) {
-      if (!file) {
-        pdfStatus.textContent = "ファイルが選ばれていません。";
-        return "";
-      }
-
+      const fileKind = getFileKind(file);
       pdfStatus.textContent = "ファイルを読み込み中です。";
-      if (isPdfFile(file)) return extractTextFromPdf(await file.arrayBuffer());
-      if (isExcelFile(file)) return extractTextFromWorkbook(await file.arrayBuffer());
-      return file.text();
+
+      if (fileKind === "pdf") return extractTextFromPdf(await file.arrayBuffer());
+      if (fileKind === "image") return extractTextFromImage(file);
+      if (fileKind === "spreadsheet") return extractTextFromWorkbook(await file.arrayBuffer(), file.name);
+      if (fileKind === "word") return extractTextFromWord(await file.arrayBuffer());
+      return readPlainText(file);
     }
 
     async function extractTextFromPdf(content) {
       if (!isPdfReady()) {
-        pdfStatus.textContent = "PDF読み込みライブラリを読み込めませんでした。貼り付け欄か手入力を使ってください。";
-        return "";
+        throw new Error("PDF読み込みライブラリを読み込めませんでした。");
       }
 
       pdfStatus.textContent = "PDFからテキストを抽出中です。しばらくお待ちください。";
       const pdf = await pdfjsLib.getDocument({ data: content }).promise;
       const pages = [];
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+        updateImportProgress(Math.min(70, 10 + Math.round((pageNumber / pdf.numPages) * 55)), "PDF " + pageNumber + "/" + pdf.numPages + "ページを読み込み中です。");
         const page = await pdf.getPage(pageNumber);
         const pageContent = await page.getTextContent();
-        const pageText = getPageTextLines(pageContent.items);
-        pages.push("【" + pageNumber + "ページ】\n" + (pageText || "（抽出できるテキストがありません）"));
+        let pageText = getPageTextLines(pageContent.items);
+        if (!pageText && isTesseractReady()) {
+          pageText = await extractTextFromPdfPageImage(page, pageNumber, pdf.numPages);
+        }
+        pages.push("【" + pageNumber + "ページ】\n" + (pageText || ""));
       }
-      return pages.join("\n\n");
+      return pages.join("\n\n").trim();
     }
 
-    function extractTextFromWorkbook(content) {
-      if (!isXlsxReady() || typeof XLSX.read !== "function" || !XLSX.utils.sheet_to_json) {
-        pdfStatus.textContent = "Excel読み込みライブラリを読み込めませんでした。貼り付け欄か手入力を使ってください。";
-        return "";
+    async function extractTextFromPdfPageImage(page, pageNumber, pageCount) {
+      const viewport = page.getViewport({ scale: 2 });
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await page.render({ canvasContext: context, viewport }).promise;
+      updateImportProgress(Math.min(72, 20 + Math.round((pageNumber / pageCount) * 50)), "PDF画像をOCR中です（" + pageNumber + "/" + pageCount + "ページ）。");
+      const result = await Tesseract.recognize(canvas, "jpn+eng", {
+        logger: data => {
+          if (data && data.status === "recognizing text") {
+            const progress = Math.round((Number(data.progress) || 0) * 100);
+            pdfStatus.textContent = "PDF画像OCR中です（" + pageNumber + "/" + pageCount + "ページ " + progress + "%）。";
+          }
+        }
+      });
+      return result && result.data ? String(result.data.text || "").trim() : "";
+    }
+
+    async function extractTextFromImage(file) {
+      if (!isTesseractReady()) {
+        throw new Error("画像OCRライブラリを読み込めませんでした。");
       }
 
-      pdfStatus.textContent = "Excelから内容を読み込み中です。";
-      const workbook = XLSX.read(content, { type: "array" });
+      pdfStatus.textContent = "画像から文字をOCR中です。しばらくお待ちください。";
+      updateImportProgress(20, "画像OCRを開始しました。");
+      const result = await Tesseract.recognize(file, "jpn+eng", {
+        logger: data => {
+          if (data && data.status === "recognizing text") {
+            const progress = Math.round((Number(data.progress) || 0) * 55);
+            updateImportProgress(20 + progress, "画像OCR中です（" + Math.round((Number(data.progress) || 0) * 100) + "%）。");
+          }
+        }
+      });
+      return result && result.data ? String(result.data.text || "").trim() : "";
+    }
+
+    function extractTextFromWorkbook(content, fileName) {
+      if (!isSheetJsReady()) {
+        throw new Error("Excel/CSV読み込みライブラリを読み込めませんでした。");
+      }
+
+      pdfStatus.textContent = "Excel/CSVから内容を読み込み中です。";
+      const isCsv = String(fileName || "").toLowerCase().endsWith(".csv");
+      const workbook = isCsv
+        ? XLSX.read(decodeTextBuffer(content), { type: "string", raw: false, dense: false, WTF: false })
+        : XLSX.read(content, { type: "array", raw: false, cellDates: false, dense: false, WTF: false });
       return workbook.SheetNames.map(sheetName => {
         const sheet = workbook.Sheets[sheetName];
         const rowsInSheet = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
         const lines = rowsInSheet
-          .map(row => row.map(cell => String(cell || "").trim()).filter(Boolean).join("\t"))
+          .map(row => row.map(cell => String(cell ?? "").trim()).filter(Boolean).join("\t"))
           .filter(Boolean);
-        return "【" + sheetName + "】\n" + lines.join("\n");
-      }).join("\n\n");
+        return "【" + (sheetName || fileName || "シート") + "】\n" + lines.join("\n");
+      }).join("\n\n").trim();
+    }
+
+    async function extractTextFromWord(content) {
+      if (!isMammothReady()) {
+        throw new Error("Word読み込みライブラリを読み込めませんでした。");
+      }
+
+      pdfStatus.textContent = "Wordからテキストを読み込み中です。";
+      const result = await mammoth.extractRawText({ arrayBuffer: content });
+      return String(result && result.value ? result.value : "").trim();
+    }
+
+    async function readPlainText(file) {
+      const buffer = await file.arrayBuffer();
+      return decodeTextBuffer(buffer);
+    }
+
+    function decodeTextBuffer(buffer) {
+      const encodings = ["utf-8", "shift_jis", "euc-jp"];
+      for (const encoding of encodings) {
+        try {
+          const decoded = new TextDecoder(encoding, { fatal: false }).decode(buffer);
+          if (decoded && !isMostlyBrokenText(decoded)) return decoded.trim();
+        } catch (error) {
+          console.warn("text decode failed", encoding, error);
+        }
+      }
+      return new TextDecoder("utf-8", { fatal: false }).decode(buffer).trim();
+    }
+
+    function isMostlyBrokenText(value) {
+      const text = String(value || "").replace(/\s/g, "");
+      if (!text) return false;
+      const broken = countMatches(text, /�/g);
+      return broken > 0 && broken / text.length > 0.02;
     }
 
     function getPageTextLines(items) {
@@ -1129,6 +1213,30 @@
 
     function isXlsxReady() {
       return Boolean(window.XLSX && XLSX.utils && typeof XLSX.utils.aoa_to_sheet === "function" && typeof XLSX.utils.book_new === "function" && typeof XLSX.utils.book_append_sheet === "function" && typeof XLSX.writeFile === "function");
+    }
+
+    function isSheetJsReady() {
+      return Boolean(window.XLSX && typeof XLSX.read === "function" && XLSX.utils && typeof XLSX.utils.sheet_to_json === "function");
+    }
+
+    function isTesseractReady() {
+      return Boolean(window.Tesseract && typeof Tesseract.recognize === "function");
+    }
+
+    function isMammothReady() {
+      return Boolean(window.mammoth && typeof mammoth.extractRawText === "function");
+    }
+
+    function getFileKind(file) {
+      const fileName = String(file && file.name ? file.name : "").toLowerCase();
+      const fileType = String(file && file.type ? file.type : "").toLowerCase();
+      const extension = fileName.includes(".") ? fileName.split(".").pop() : "";
+
+      if (extension === "pdf" || fileType === "application/pdf") return "pdf";
+      if (["png", "jpg", "jpeg", "webp", "bmp", "gif", "tif", "tiff"].includes(extension) || fileType.startsWith("image/")) return "image";
+      if (["xlsx", "xls", "xlsm", "csv"].includes(extension) || /spreadsheet|excel|csv/.test(fileType)) return "spreadsheet";
+      if (["docx", "doc"].includes(extension) || /word|officedocument\.wordprocessingml/.test(fileType)) return "word";
+      return "text";
     }
 
     function isPdfReady() {
