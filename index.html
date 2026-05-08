@@ -30,6 +30,7 @@
       border-radius: 12px;
     }
     .input-panel label { display: block; margin: 0 0 8px; font-weight: 700; }
+    .input-panel.need-input { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, .16); }
     .input-help { margin: 0 0 10px; color: #4b5563; font-size: 13px; line-height: 1.6; }
     textarea {
       width: 100%;
@@ -149,8 +150,8 @@
 
     <section class="input-panel" aria-label="手入力テーブル">
       <label for="manualTableInput">手入力テーブル</label>
-      <p class="input-help">1行目に「材料名,数量,単位」を入れてください。カンマ区切り、タブ区切り、表計算ソフトからの貼り付けに対応します。画像OCRからの自動解析は行いません。</p>
-      <textarea id="manualTableInput" spellcheck="false" placeholder="材料名,数量,単位&#10;にんじん,120,g&#10;玉ねぎ,0.5,kg"></textarea>
+      <p class="input-help">ヘッダーあり・なしのどちらでも読み込めます。食品名／食材名／材料／品名、使用量／分量／総使用量にも対応します。</p>
+      <textarea id="manualTableInput" spellcheck="false" placeholder="にんじん,120,g&#10;玉ねぎ,0.5,kg"></textarea>
       <div class="panel-actions">
         <button type="button" onclick="loadManualTable()">手入力テーブルを反映</button>
         <button class="secondary" type="button" onclick="manualTableInput.value=''; loadStatus.textContent='手入力テーブルを空にしました';">手入力を消す</button>
@@ -230,14 +231,11 @@
         applySourceRows(sourceRows, file.name);
       } catch (error) {
         console.error(error);
-        loadStatus.textContent = "読み込みに失敗しました";
-        alert("献立CSVを読み込めませんでした。1行目に「材料名,数量,単位」があるCSVを選んでください。");
+        showManualInput("CSVを自動で読み込めませんでした。手入力欄に貼り付けてください。");
       }
     }
 
     async function readMenuRows(file) {
-      const name = file.name.toLowerCase();
-      if (!/\.(csv|txt|tsv)$/.test(name)) throw new Error("CSV/TXT/TSV files only.");
       const buffer = await file.arrayBuffer();
       return rowsFromText(decodeText(buffer));
     }
@@ -248,17 +246,28 @@
         applySourceRows(sourceRows, "手入力テーブル");
       } catch (error) {
         console.error(error);
-        loadStatus.textContent = "手入力テーブルの反映に失敗しました";
-        alert("手入力テーブルを読み込めませんでした。1行目に「材料名,数量,単位」を入れてください。");
+        showManualInput("手入力テーブルを読み込めませんでした。1列目=材料名、2列目=数量、3列目=単位で入力してください。");
       }
     }
 
     function applySourceRows(sourceRows, label) {
       const result = extractIngredients(sourceRows);
+      if (!sourceRows.length) {
+        showManualInput(label + "を読み取れませんでした。手入力欄に貼り付けてください。");
+        return;
+      }
       orderRows = result.rows;
       renderPreview();
       loadStatus.textContent = label + "：" + sourceRows.length + "行を読み込み / " + orderRows.length + "件を発注書に反映";
-      if (!sourceRows.length) alert("材料名・数量・単位の3列を読み取れませんでした。CSVまたは手入力テーブルを確認してください。");
+      document.querySelector(".input-panel").classList.remove("need-input");
+    }
+
+    function showManualInput(message) {
+      loadStatus.textContent = message;
+      const panel = document.querySelector(".input-panel");
+      panel.classList.add("need-input");
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+      manualTableInput.focus();
     }
 
     function decodeText(buffer) {
@@ -275,17 +284,23 @@
 
     function rowsFromTable(table) {
       if (!table.length) return [];
-      const headerIndex = table.findIndex(row => row.some(cell => /食品名|食材名|材料名|品名|材料/.test(String(cell))) && row.some(cell => /数量|使用量|総使用量|分量/.test(String(cell))) && row.some(cell => /単位|unit/i.test(String(cell))));
+      const headerIndex = table.findIndex(row => detectColumnIndexes(row).found);
       if (headerIndex >= 0) {
-        const header = table[headerIndex].map(normalizeHeader);
-        const nameIndex = findHeaderIndex(header, ["食品名", "食材名", "材料名", "品名", "材料", "name"]);
-        const qtyIndex = findHeaderIndex(header, ["数量", "使用量", "総使用量", "分量", "quantity", "qty"]);
-        const unitIndex = findHeaderIndex(header, ["単位", "unit"]);
-        if ([nameIndex, qtyIndex, unitIndex].some(index => index < 0)) return [];
-        return table.slice(headerIndex + 1).map(row => ({ name: row[nameIndex] || "", quantity: row[qtyIndex] || "", unit: row[unitIndex] || "" })).filter(isReadableItem);
+        const indexes = detectColumnIndexes(table[headerIndex]);
+        return table.slice(headerIndex + 1)
+          .map(row => ({ name: row[indexes.name] || "", quantity: row[indexes.quantity] || "", unit: row[indexes.unit] || "" }))
+          .filter(isReadableItem);
       }
       const bodyRows = table.filter(row => row.length >= 3 && !isHeaderWord(row.join(",")));
       return bodyRows.map(row => ({ name: row[0] || "", quantity: row[1] || "", unit: row[2] || "" })).filter(isReadableItem);
+    }
+
+    function detectColumnIndexes(row) {
+      const header = row.map(normalizeHeader);
+      const name = findHeaderIndex(header, ["食品名", "食材名", "材料名", "品名", "材料", "name"]);
+      const quantity = findHeaderIndex(header, ["数量", "使用量", "分量", "総使用量", "quantity", "qty"]);
+      const unit = findHeaderIndex(header, ["単位", "unit"]);
+      return { found: [name, quantity, unit].every(index => index >= 0), name, quantity, unit };
     }
 
 
@@ -546,13 +561,13 @@
       const value = String(name || "").trim();
       if (value.length < 1) return false;
       if (!/^[ぁ-んァ-ヶー一-龠々〆ヵヶ]+$/.test(value)) return false;
-      if (/^(食品名|食材名|材料名|品名|数量|単位|合計|小計|献立|日付|月|火|水|木|金|土|日)$/.test(value)) return false;
+      if (/^(食品名|食材名|材料名|品名|材料|数量|使用量|分量|総使用量|単位|合計|小計|献立|日付|月|火|水|木|金|土|日)$/.test(value)) return false;
       if (/^[ー々〆ヵヶ]+$/.test(value)) return false;
       return true;
     }
 
     function isHeaderWord(value) {
-      return /食品名|食材名|材料名|品名|数量|単位|献立名|日付|使用量|総使用量/.test(String(value || ""));
+      return /食品名|食材名|材料名|品名|材料|数量|使用量|分量|総使用量|単位|献立名|日付/.test(String(value || ""));
     }
 
     function numberValue(value) {
