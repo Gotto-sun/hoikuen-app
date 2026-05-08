@@ -185,6 +185,11 @@
       overflow-wrap: anywhere;
     }
 
+    .preview-sheet .ingredient-row th,
+    .preview-sheet .ingredient-row td {
+      height: 20px;
+    }
+
     .preview-sheet th:nth-child(1),
     .preview-sheet td:nth-child(1) {
       width: 56px;
@@ -500,8 +505,8 @@
           '<tr class="blank"><td colspan="10"></td></tr>' +
           '<tr><td>納品日</td><td class="date-input" colspan="4">' + escapeHtml(formatJapaneseDate(deliveryDate.value)) + '</td><td>使用日</td><td>' + escapeHtml(use.month || "") + '</td><td>月</td><td>' + escapeHtml(use.day || "") + '</td><td>日</td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
-          '<tr>' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
-          detailRows.map(row => '<tr>' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
+          '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
+          detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
           '<tr class="blank"><td colspan="10"></td></tr>' +
           '<tr><td colspan="6"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td></td></tr>' +
           '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td>' + escapeHtml(totals.tax || "") + '</td><td></td></tr>' +
@@ -539,10 +544,6 @@
       const use = parseDateParts(useDate.value);
 
       return [
-        blank,
-        blank,
-        blank,
-        blank,
         ["", "", "発　注　書　兼　納　品　書", "", "", "", "", "", "", ""],
         ["", "", "スクルドエンジェル", "", "", "", "", "", "", ""],
         ["", "", "たかばり　園", "", "", "", "", "", "", ""],
@@ -581,13 +582,13 @@
       const detailRowCount = getOrderSheetDetailRowCount(dataLength);
       return {
         detailRowCount,
-        totalRows: detailRowCount + 18,
-        detailStart: 11,
-        detailEnd: detailRowCount + 10,
-        totalStart: detailRowCount + 14,
-        totalEnd: detailRowCount + 16,
-        checkerStart: detailRowCount + 16,
-        checkerEnd: detailRowCount + 17
+        totalRows: detailRowCount + 14,
+        detailStart: 7,
+        detailEnd: detailRowCount + 6,
+        totalStart: detailRowCount + 10,
+        totalEnd: detailRowCount + 12,
+        checkerStart: detailRowCount + 12,
+        checkerEnd: detailRowCount + 13
       };
     }
 
@@ -599,17 +600,17 @@
       ];
       worksheet["!rows"] = Array.from({ length: layout.totalRows }, (_, row) => ({ hpt: orderSheetRowHeight(row, layout) }));
       worksheet["!merges"] = [
-        { s: { r: 4, c: 2 }, e: { r: 4, c: 7 } },
-        { s: { r: 5, c: 2 }, e: { r: 5, c: 7 } },
-        { s: { r: 6, c: 2 }, e: { r: 6, c: 7 } },
-        { s: { r: 8, c: 1 }, e: { r: 8, c: 4 } },
+        { s: { r: 0, c: 2 }, e: { r: 0, c: 7 } },
+        { s: { r: 1, c: 2 }, e: { r: 1, c: 7 } },
+        { s: { r: 2, c: 2 }, e: { r: 2, c: 7 } },
+        { s: { r: 4, c: 1 }, e: { r: 4, c: 4 } },
         { s: { r: layout.totalStart, c: 6 }, e: { r: layout.totalStart, c: 7 } },
         { s: { r: layout.totalStart + 1, c: 6 }, e: { r: layout.totalStart + 1, c: 7 } },
         { s: { r: layout.totalStart + 2, c: 6 }, e: { r: layout.totalStart + 2, c: 7 } },
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
         { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
-      worksheet["!margins"] = { left: 0.12, right: 0.12, top: 0.28, bottom: 0.25, header: 0.1, footer: 0.1 };
+      worksheet["!margins"] = { left: 0.12, right: 0.12, top: 0, bottom: 0.25, header: 0, footer: 0.1 };
       worksheet["!pageSetup"] = { orientation: "portrait", paperSize: 9, fitToWidth: 1, fitToHeight: 1 };
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: true };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
@@ -625,12 +626,11 @@
     }
 
     function orderSheetRowHeight(row, layout) {
-      if (row < 4) return 10;
-      if (row === 4) return 22;
-      if (row === 5 || row === 6) return 15;
-      if (row === 8) return 18;
-      if (row === 10) return 18;
-      if (row >= layout.detailStart && row <= layout.detailEnd) return 15.5;
+      if (row === 0) return 22;
+      if (row === 1 || row === 2) return 15;
+      if (row === 4) return 18;
+      if (row === 6) return 20;
+      if (row >= layout.detailStart && row <= layout.detailEnd) return 20;
       if (row >= layout.totalStart) return 17;
       return 7;
     }
@@ -638,11 +638,11 @@
     function excelCellStyle(row, col, layout) {
       const thinBorder = { style: "thin", color: { rgb: "000000" } };
       const mediumBorder = { style: "medium", color: { rgb: "000000" } };
-      const isTitle = row === 4;
-      const isSubTitle = row === 5 || row === 6;
-      const isDateInput = row === 8 && col >= 1 && col <= 4;
-      const isDateLabel = row === 8 && (col === 0 || col === 5 || col === 7 || col === 9);
-      const isHeader = row === 10;
+      const isTitle = row === 0;
+      const isSubTitle = row === 1 || row === 2;
+      const isDateInput = row === 4 && col >= 1 && col <= 4;
+      const isDateLabel = row === 4 && (col === 0 || col === 5 || col === 7 || col === 9);
+      const isHeader = row === 6;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
       const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
 
@@ -663,7 +663,7 @@
     }
 
     function borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder) {
-      const isTable = row >= 10 && row <= layout.detailEnd;
+      const isTable = row >= 6 && row <= layout.detailEnd;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
       const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
       const hasBorder = isTable || isCheckerBox || isTotalBox;
@@ -671,7 +671,7 @@
 
       const border = { top: thinBorder, bottom: thinBorder, left: thinBorder, right: thinBorder };
       if (isTable) {
-        if (row === 10) border.top = mediumBorder;
+        if (row === 6) border.top = mediumBorder;
         if (row === layout.detailEnd) border.bottom = mediumBorder;
         if (col === 0) border.left = mediumBorder;
         if (col === 9) border.right = mediumBorder;
