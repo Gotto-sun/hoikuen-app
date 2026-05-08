@@ -266,6 +266,14 @@
       font-weight: 700;
     }
 
+    .preview-sheet .checker-input-row td {
+      height: 72px;
+    }
+
+    .preview-sheet .no-border {
+      border: 0;
+    }
+
     @media (max-width: 760px) {
       main {
         padding: 12px;
@@ -510,10 +518,10 @@
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
           '<tr class="blank"><td colspan="10"></td></tr>' +
-          '<tr><td colspan="6"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td></td></tr>' +
-          '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td>' + escapeHtml(totals.tax || "") + '</td><td></td></tr>' +
-          '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="2"></td><td class="total-label" colspan="2">請求金額</td><td>' + escapeHtml(totals.billed || "") + '</td><td></td></tr>' +
-          '<tr><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="6"></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td>' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="2"></td><td class="total-label" colspan="2">請求金額</td><td>' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="checker-input-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="6"></td></tr>' +
         '</tbody>' +
       '</table>';
     }
@@ -633,6 +641,7 @@
       if (row === 4) return 18;
       if (row === 6) return 20;
       if (row >= layout.detailStart && row <= layout.detailEnd) return 20;
+      if (row === layout.checkerEnd) return 51;
       if (row >= layout.totalStart) return 17;
       return 7;
     }
@@ -646,7 +655,7 @@
       const isDateLabel = row === 4 && (col === 0 || col === 5 || col === 7 || col === 9);
       const isHeader = row === 6;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
-      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 8;
 
       return {
         font: {
@@ -667,7 +676,7 @@
     function borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder) {
       const isTable = row >= 6 && row <= layout.detailEnd;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
-      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 9;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 8;
       const hasBorder = isTable || isCheckerBox || isTotalBox;
       if (!hasBorder) return undefined;
 
@@ -682,7 +691,7 @@
         const firstRow = isCheckerBox ? layout.checkerStart : layout.totalStart;
         const lastRow = isCheckerBox ? layout.checkerEnd : layout.totalEnd;
         const firstCol = isCheckerBox ? 2 : 6;
-        const lastCol = isCheckerBox ? 3 : 9;
+        const lastCol = isCheckerBox ? 3 : 8;
         if (row === firstRow) border.top = mediumBorder;
         if (row === lastRow) border.bottom = mediumBorder;
         if (col === firstCol) border.left = mediumBorder;
