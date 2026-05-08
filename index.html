@@ -254,7 +254,8 @@
   <script>
     const sampleText = "食品名,数量,単位\nにんじん,15,g\n玉ねぎ,20,g\n鶏もも肉,40,g\n牛乳,100,ml\nりんご,0.5,個";
     const headers = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
-    const units = ["kg", "g", "ml", "l", "L", "個", "本", "袋", "缶", "丁", "枚", "束", "箱", "パック", "尾", "切", "粒", "玉", "房"];
+    const units = ["g", "kg", "ml", "L", "個", "本", "袋", "缶", "束"];
+    const allowedUnits = new Set(units);
     const aliases = { "人参": "にんじん", "ニンジン": "にんじん", "玉葱": "玉ねぎ", "たまねぎ": "玉ねぎ", "ジャガイモ": "じゃがいも", "じゃが芋": "じゃがいも", "鶏肉": "鶏もも肉", "豚肉": "豚こま肉", "リンゴ": "りんご", "たまご": "卵" };
     const standardRules = [
       { names: ["米", "ごはん", "だし", "だし汁", "しょうゆ", "醤油", "塩", "砂糖", "酢", "みそ", "味噌", "油", "酒", "みりん"], exclude: true, reason: "標準ルールで除外" },
@@ -385,10 +386,8 @@
     function extractIngredients(text) {
       const lines = splitOcrLines(text);
       const csvRows = parseCsvLines(lines);
-      const csvItems = rowsFromCsv(csvRows);
-      const fallbackItems = csvItems.length ? [] : rowsFromLines(lines);
-      const sourceRows = csvItems.length ? csvItems : fallbackItems;
-      const mode = csvItems.length ? "csv" : "fallback";
+      const sourceRows = rowsFromCsv(csvRows);
+      const mode = "csv";
       const totals = new Map();
       const acceptedItems = [];
       let found = 0;
@@ -397,8 +396,8 @@
       sourceRows.forEach(item => {
         const name = normalizeName(item.name);
         const quantity = numberValue(item.quantity);
-        const unit = normalizeUnit(item.unit || "個");
-        if (!isValidFoodName(name) || quantity <= 0 || !unit) return;
+        const unit = normalizeCsvUnit(item.unit);
+        if (!isValidFoodName(name) || quantity <= 0) return;
         const rule = findRule(name);
         if (rule && rule.exclude) { excluded += 1; return; }
         found += 1;
@@ -418,10 +417,10 @@
     function rowsFromCsv(csvRows) {
       if (!csvRows.length) return [];
       const first = csvRows[0].cells.map(normalizeHeader);
-      const hasHeader = first.length === 3 && first[0] === "食品名" && first[1] === "数量" && first[2] === "単位";
+      const hasHeader = first[0] === "食品名" && first[1] === "数量" && first[2] === "単位";
       const data = hasHeader ? csvRows.slice(1) : csvRows;
       return data
-        .filter(row => row.readable && row.cells.length === 3)
+        .filter(row => row.readable && row.cells.length >= 3)
         .map(row => ({
           name: row.cells[0] || "",
           quantity: row.cells[1] || "",
@@ -429,7 +428,7 @@
         }))
         .filter(item => {
           const name = normalizeName(item.name);
-          return isValidFoodName(name) && numberValue(item.quantity) > 0 && normalizeUnit(item.unit);
+          return isValidFoodName(name) && String(item.quantity || "").trim() && numberValue(item.quantity) > 0 && String(item.unit || "").trim();
         });
     }
 
@@ -509,7 +508,7 @@
     }
 
     function toOrderRow(item) {
-      const rule = findRule(item.name) || defaultRule(item.unit);
+      const rule = item.unit === "要確認" ? defaultRule(item.unit) : (findRule(item.name) || defaultRule(item.unit));
       const converted = convertQuantity(item.quantity, item.unit, rule);
       const notes = [];
       if (item.count > 1) notes.push(item.count + "件を合算");
@@ -747,6 +746,11 @@
       const unit = String(value || "個").trim().replace("リットル", "L").replace("ｇ", "g").replace("ｍｌ", "ml").replace("㎏", "kg");
       if (/^l$/i.test(unit)) return "L";
       return unit || "個";
+    }
+
+    function normalizeCsvUnit(value) {
+      const unit = String(value || "").normalize("NFKC").trim();
+      return allowedUnits.has(unit) ? unit : "要確認";
     }
 
     function normalizeHeader(value) {
