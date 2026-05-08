@@ -525,11 +525,11 @@
           '<tr class="blank"><td colspan="10"></td></tr>' +
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
-          '<tr class="blank"><td colspan="10"></td></tr>' +
-          '<tr><td colspan="6"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="6"></td></tr>' +
+          '<tr class="checker-input-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="2"></td><td class="total-label" colspan="2">合計金額</td><td>' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
           '<tr><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td>' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="2"></td><td class="total-label" colspan="2">請求金額</td><td>' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr class="checker-input-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="6"></td></tr>' +
+          '<tr><td colspan="6"></td><td class="total-label" colspan="2">請求金額</td><td>' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
         '</tbody>' +
       '</table>';
     }
@@ -572,11 +572,11 @@
         ...detailRows,
         blank,
         blank,
-        ["", "", "", "", "", "", "", "", "", ""],
-        ["", "", "", "", "", "", "合計金額", "", totals.total || "", ""],
+        ["", "", "検品者", "", "", "", "", "", "", ""],
+        ["", "", checkerName.value || "", "", "", "", "合計金額", "", totals.total || "", ""],
         ["", "", "", "", "", "", "消費税 課税合計", "", totals.tax || "", ""],
-        ["", "", "検品者", "", "", "", "請求金額", "", totals.billed || "", ""],
-        ["", "", checkerName.value || "", "", "", "", "", "", "", ""]
+        ["", "", "", "", "", "", "請求金額", "", totals.billed || "", ""],
+        blank
       ];
     }
 
@@ -605,8 +605,8 @@
         detailEnd: detailRowCount + 6,
         totalStart: detailRowCount + 10,
         totalEnd: detailRowCount + 12,
-        checkerStart: detailRowCount + 12,
-        checkerEnd: detailRowCount + 13
+        checkerStart: detailRowCount + 9,
+        checkerEnd: detailRowCount + 10
       };
     }
 
