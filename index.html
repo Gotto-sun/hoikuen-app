@@ -679,10 +679,12 @@
 
       for (let index = 0; index < rotations.length; index++) {
         const angle = rotations[index];
-        const targetCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
+        const rotatedCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
+        const targetCanvas = preprocessCanvasForOcr(rotatedCanvas);
         const rotationStart = baseProgress + Math.round((index / rotations.length) * progressRange);
-        updateImportProgress(rotationStart, label + detail + "中です（" + angle + "度）。");
-        const result = await Tesseract.recognize(targetCanvas, "jpn+eng", {
+        updateImportProgress(rotationStart, label + detail + "中です（" + angle + "度・画像補正済み）。");
+        const result = await Tesseract.recognize(targetCanvas, "jpn", {
+          langPath: "https://tessdata.projectnaptha.com/4.0.0",
           logger: data => {
             if (data && data.status === "recognizing text") {
               const progress = Number(data.progress) || 0;
@@ -696,9 +698,10 @@
       }
 
       const readableResults = results.filter(result => result.text && !result.garbled);
-      const candidates = readableResults.length ? readableResults : results.filter(result => result.text);
-      const best = candidates.sort((a, b) => b.japaneseCount - a.japaneseCount || a.angle - b.angle)[0] || { angle: 0, text: "", japaneseCount: 0, garbled: true };
-      pdfStatus.textContent = label + "完了。日本語文字数が一番多い" + best.angle + "度の結果を採用しました。";
+      const best = readableResults.sort((a, b) => b.japaneseCount - a.japaneseCount || a.angle - b.angle)[0] || { angle: 0, text: "", japaneseCount: 0, garbled: true };
+      pdfStatus.textContent = best.garbled
+        ? label + "完了。文字化けの可能性が高いため、発注書には反映しません。"
+        : label + "完了。日本語文字数が一番多い" + best.angle + "度の結果を採用しました。";
       return best;
     }
 
@@ -733,6 +736,117 @@
       context.translate(canvas.width / 2, canvas.height / 2);
       context.rotate(normalizedAngle * Math.PI / 180);
       context.drawImage(sourceCanvas, -sourceCanvas.width / 2, -sourceCanvas.height / 2);
+      return canvas;
+    }
+
+    function preprocessCanvasForOcr(sourceCanvas) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, sourceCanvas.width);
+      canvas.height = Math.max(1, sourceCanvas.height);
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(sourceCanvas, 0, 0);
+
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const threshold = calculateOtsuThreshold(image.data);
+      const contrast = 1.55;
+
+      for (let index = 0; index < image.data.length; index += 4) {
+        const red = image.data[index];
+        const green = image.data[index + 1];
+        const blue = image.data[index + 2];
+        const gray = red * 0.299 + green * 0.587 + blue * 0.114;
+        const contrasted = Math.max(0, Math.min(255, (gray - 128) * contrast + 128));
+        const value = contrasted < threshold ? 0 : 255;
+        image.data[index] = value;
+        image.data[index + 1] = value;
+        image.data[index + 2] = value;
+        image.data[index + 3] = 255;
+      }
+      context.putImageData(image, 0, 0);
+
+      const trimmedCanvas = trimCanvasMargins(canvas);
+      return scaleCanvas(trimmedCanvas, 2);
+    }
+
+    function calculateOtsuThreshold(data) {
+      const histogram = new Array(256).fill(0);
+      const total = data.length / 4;
+      for (let index = 0; index < data.length; index += 4) {
+        const gray = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+        histogram[gray] += 1;
+      }
+
+      let sum = 0;
+      for (let index = 0; index < 256; index++) sum += index * histogram[index];
+
+      let sumBackground = 0;
+      let weightBackground = 0;
+      let maximumVariance = 0;
+      let threshold = 180;
+
+      for (let index = 0; index < 256; index++) {
+        weightBackground += histogram[index];
+        if (weightBackground === 0) continue;
+        const weightForeground = total - weightBackground;
+        if (weightForeground === 0) break;
+
+        sumBackground += index * histogram[index];
+        const meanBackground = sumBackground / weightBackground;
+        const meanForeground = (sum - sumBackground) / weightForeground;
+        const variance = weightBackground * weightForeground * Math.pow(meanBackground - meanForeground, 2);
+        if (variance > maximumVariance) {
+          maximumVariance = variance;
+          threshold = index;
+        }
+      }
+
+      return Math.max(120, Math.min(220, threshold));
+    }
+
+    function trimCanvasMargins(sourceCanvas) {
+      const context = sourceCanvas.getContext("2d", { willReadFrequently: true });
+      const image = context.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+      const margin = 8;
+      let top = sourceCanvas.height;
+      let right = 0;
+      let bottom = 0;
+      let left = sourceCanvas.width;
+
+      for (let y = 0; y < sourceCanvas.height; y++) {
+        for (let x = 0; x < sourceCanvas.width; x++) {
+          const offset = (y * sourceCanvas.width + x) * 4;
+          if (image.data[offset] < 245) {
+            if (x < left) left = x;
+            if (x > right) right = x;
+            if (y < top) top = y;
+            if (y > bottom) bottom = y;
+          }
+        }
+      }
+
+      if (left > right || top > bottom) return sourceCanvas;
+
+      left = Math.max(0, left - margin);
+      top = Math.max(0, top - margin);
+      right = Math.min(sourceCanvas.width - 1, right + margin);
+      bottom = Math.min(sourceCanvas.height - 1, bottom + margin);
+
+      const width = Math.max(1, right - left + 1);
+      const height = Math.max(1, bottom - top + 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d", { willReadFrequently: true }).drawImage(sourceCanvas, left, top, width, height, 0, 0, width, height);
+      return canvas;
+    }
+
+    function scaleCanvas(sourceCanvas, scale) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+      canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.imageSmoothingEnabled = false;
+      context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
       return canvas;
     }
 
