@@ -578,6 +578,7 @@
       { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] }
     ];
     const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
+    const recipeInstructionPattern = /(作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 1000;
     const imageLoadTimeoutMs = 6000;
@@ -1380,16 +1381,19 @@
       let skipped = 0;
       let sourceRows = [];
 
+      let currentWeekday = "";
       if (columns && columns.name >= 0 && columns.quantity >= 0) {
         for (let index = headerIndex + 1; index < table.length; index++) {
           const row = table[index];
           const lineText = row.join(" ");
           if (!lineText.trim()) continue;
-          if (isGarbledText(lineText)) { skipped++; continue; }
+          if (isGarbledText(lineText) || isSentenceNoise(lineText)) { skipped++; continue; }
+          const detectedWeekday = detectWeekday(row[columns.day] || lineText);
+          if (detectedWeekday) currentWeekday = detectedWeekday;
           const name = cleanIngredientName(row[columns.name]);
           const quantity = normalizeQuantity(row[columns.quantity]);
           const unit = normalizeUnit(row[columns.unit] || guessUnitNearQuantity(row, columns.quantity));
-          const weekday = detectWeekday(row[columns.day] || row.join(" "));
+          const weekday = detectedWeekday || currentWeekday;
           if (addMenuSourceRow(sourceRows, name, quantity, unit, weekday)) continue;
           skipped++;
         }
@@ -1436,6 +1440,7 @@
 
     function findMenuHeaderIndex(table) {
       for (let index = 0; index < Math.min(table.length, 20); index++) {
+        if (table[index].length < 2) continue;
         const columns = detectMenuColumns(table[index]);
         if (columns.name >= 0 && columns.quantity >= 0) return index;
       }
@@ -1656,15 +1661,19 @@
       const table = lines.map(line => line.split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean));
       const headerIndex = findMenuHeaderIndex(table);
       const columns = headerIndex >= 0 ? detectMenuColumns(table[headerIndex]) : null;
+      let currentWeekday = "";
       if (columns && columns.name >= 0 && columns.quantity >= 0) {
         for (let index = headerIndex + 1; index < table.length; index++) {
           const cells = table[index];
-          if (!cells.length || isIgnoredPdfLine(cells.join(" "))) continue;
+          const rowText = cells.join(" ");
+          if (!cells.length || isIgnoredPdfLine(rowText) || isSentenceNoise(rowText)) continue;
+          const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
+          if (detectedWeekday) currentWeekday = detectedWeekday;
           rows.push({
             name: cells[columns.name],
             quantity: cells[columns.quantity],
             unit: cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity),
-            weekday: detectWeekday(cells[columns.day] || cells.join(" ")),
+            weekday: detectedWeekday || currentWeekday,
             sourceLine: cells.join(" "),
             source: "3歳未満児"
           });
@@ -1674,7 +1683,6 @@
       const markerPattern = /(3歳未満児?|３歳未満児?|未満児|乳児)/;
       const unitPattern = unitNames().map(unit => escapeRegExp(unit)).join("|");
       const inlinePattern = new RegExp("^(.{1,80}?)" + markerPattern.source + ".*?([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")", "i");
-      let currentWeekday = "";
       lines.forEach(line => {
         const normalized = normalizeOcrLine(line);
         const detectedWeekday = detectWeekday(normalized);
@@ -1755,7 +1763,7 @@
     }
 
     function isSentenceNoise(line) {
-      return /を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます|入れる|加える|混ぜる|焼く|煮る|炒める/.test(String(line || ""));
+      return recipeInstructionPattern.test(String(line || "")) || /を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます/.test(String(line || ""));
     }
 
     function isLikelyIngredientRow(row, sourceLine = "") {
@@ -1869,12 +1877,12 @@
         .replace(/[ｇＧ]/g, "g")
         .replace(/[ｍＭ]/g, "m")
         .replace(/[ｌＬ]/g, "l")
-        .replace(/([0-9])\s*(キロ|ＫＧ|KG)/gi, "$1kg")
-        .replace(/([0-9])\s*(グラム|Ｇ|G)(?=\s|$)/gi, "$1g")
-        .replace(/([0-9])\s*(ＭＬ|ML)(?=\s|$)/gi, "$1ml")
+        .replace(/([0-9])[ \f\v]*(キロ|ＫＧ|KG)/gi, "$1kg")
+        .replace(/([0-9])[ \f\v]*(グラム|Ｇ|G)(?=\s|$)/gi, "$1g")
+        .replace(/([0-9])[ \f\v]*(ＭＬ|ML)(?=\s|$)/gi, "$1ml")
         .replace(/[|＿_~〜=]+/g, " ")
         .replace(/[<>《》]+/g, " ")
-        .replace(/\s+/g, " ")
+        .replace(/[ \f\v\r\n]+/g, " ")
         .trim();
     }
 
