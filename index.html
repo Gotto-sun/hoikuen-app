@@ -478,19 +478,9 @@
   <main>
     <section>
 
-      <h2>1. 献立CSV → 発注書作成</h2>
-      <p class="note">献立CSVを貼り付けて「発注書を作る」を押すと、3歳未満児の分量で食材を集計し、発注書とExcel貼り付け用テキストを作ります。</p>
-      <textarea id="menuCsvText" class="csv-textarea" placeholder="ここに献立CSVを貼り付けてください"></textarea>
-      <div class="buttons">
-        <button class="green" type="button" id="menuCsvBtn">発注書を作る</button>
-        <button class="gray" type="button" id="copyTsvBtn">Excel貼り付け用をコピー</button>
-      </div>
-      <p id="csvStatus" class="status"></p>
-      <textarea id="orderTsv" class="copy-textarea" readonly placeholder="発注書を作ると、Excelに貼れるタブ区切りテキストがここに出ます。"></textarea>
-
-      <h2>2. ファイル読み込み（任意）</h2>
+      <h2>1. ファイル読み込み（OCR確認）</h2>
       <div class="pdf-box">
-        <p class="note">ファイルを選ぶと、すぐに読み込みを開始し、抽出結果を下の確認テーブルと発注書へ自動反映します。</p>
+        <p class="note">ファイルを選ぶと、OCR結果を下の確認テーブルへ表示します。読めない行や文字化けした行は反映しません。</p>
         <input id="pdfFile" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,image/*,.xlsx,.xls,.csv,text/csv,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.txt,text/plain" aria-label="読み込みファイル">
         <div id="importProgress" class="import-progress" aria-label="読み込み率" aria-live="polite">
           <div class="progress-track"><div id="importProgressBar" class="progress-bar"></div></div>
@@ -500,7 +490,15 @@
         <p id="pdfStatus" class="status"></p>
       </div>
 
-      <h2>3. 確認・手入力テーブル</h2>
+      <div hidden aria-hidden="true">
+        <textarea id="menuCsvText" class="csv-textarea" disabled></textarea>
+        <button class="green" type="button" id="menuCsvBtn" disabled>発注書を作る</button>
+        <button class="gray" type="button" id="copyTsvBtn" disabled>Excel貼り付け用をコピー</button>
+        <p id="csvStatus" class="status"></p>
+        <textarea id="orderTsv" class="copy-textarea" readonly disabled></textarea>
+      </div>
+
+      <h2>2. 確認・手入力テーブル</h2>
       <p class="note">材料名・数量・単位を確認してください。ファイル読み込みに失敗しても、手入力とExcel出力は常に使えます。</p>
 
       <div class="document-fields" aria-label="発注書情報">
@@ -535,7 +533,7 @@
     </section>
 
     <section>
-      <h2>4. 発注書レイアウト</h2>
+      <h2>3. 発注書レイアウト</h2>
       <p class="note">入力内容は下の発注書レイアウトに自動反映されます。</p>
       <div class="table-wrap" id="orderPreview"></div>
     </section>
@@ -578,16 +576,22 @@
     ];
     const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
     const maxImageOcrSizeBytes = 25 * 1024 * 1024;
-    const maxImageOcrDimension = 1500;
+    const maxImageOcrDimension = 1800;
     const imageLoadTimeoutMs = 15000;
-    const ocrTargetTimeoutMs = 10000;
-    const ocrTimeoutMs = 30000;
-    const maxOcrCandidatePatterns = 3;
+    const ocrTargetTimeoutMs = 18000;
+    const ocrTimeoutMs = 45000;
+    const maxOcrCandidatePatterns = 8;
     const ocrTimeoutMessage = "タイムアウト：画像が重すぎるため処理を中断しました";
     let rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
 
-    menuCsvBtn.addEventListener("click", buildOrderFromMenuCsv);
-    copyTsvBtn.addEventListener("click", copyOrderTsv);
+    menuCsvBtn.addEventListener("click", event => {
+      event.preventDefault();
+      csvStatus.textContent = "献立CSVからの発注書作成は現在停止中です。";
+    });
+    copyTsvBtn.addEventListener("click", event => {
+      event.preventDefault();
+      csvStatus.textContent = "献立CSVからの発注書作成は現在停止中です。";
+    });
 
     addBtn.addEventListener("click", () => {
       syncRows();
@@ -720,8 +724,8 @@
         const ocrResult = await withTimeout(recognizeBestJapaneseOcr(sourceCanvas, {
           baseProgress: 20,
           progressRange: 75,
-          label: "軽量画像OCR",
-          detail: "最大3パターン"
+          label: "画像OCR",
+          detail: "前処理強化"
         }), ocrTimeoutMs, ocrTimeoutMessage);
         updateImportProgress(100, "画像OCR完了");
         return ocrResult.text;
@@ -741,7 +745,7 @@
     }
 
     async function recognizeBestJapaneseOcr(sourceCanvas, options = {}) {
-      const rotations = [0];
+      const rotations = [0, 90, 270];
       const baseProgress = Number(options.baseProgress) || 0;
       const progressRange = Number(options.progressRange) || 60;
       const label = options.label || "画像OCR";
@@ -750,7 +754,7 @@
         const rotatedCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
         return createOcrPreprocessCanvases(rotatedCanvas).map(variant => ({ angle, ...variant }));
       }).slice(0, maxOcrCandidatePatterns);
-      console.info("ocr lightweight mode", { maxSeconds: ocrTimeoutMs / 1000, maxWidth: maxImageOcrDimension, candidatePatterns: ocrTargets.length });
+      console.info("ocr enhanced mode", { maxSeconds: ocrTimeoutMs / 1000, maxWidth: maxImageOcrDimension, candidatePatterns: ocrTargets.length });
       const results = [];
 
       for (let index = 0; index < ocrTargets.length; index++) {
@@ -766,7 +770,8 @@
             }
           }, ocrTargetTimeoutMs, ocrTimeoutMessage);
           const text = result && result.data ? String(result.data.text || "").trim() : "";
-          results.push(scoreOcrText({ angle: target.angle, variant: target.label, text }));
+          const confidence = result && result.data && Number.isFinite(Number(result.data.confidence)) ? Number(result.data.confidence) : 0;
+          results.push(scoreOcrText({ angle: target.angle, variant: target.label, text, confidence }));
         } catch (error) {
           console.error("ocr target failed", { angle: target.angle, variant: target.label, reason: error && error.message ? error.message : error });
           if (error && error.message === ocrTimeoutMessage) throw error;
@@ -774,7 +779,7 @@
         }
       }
 
-      const readableResults = results.filter(result => result.text && !result.garbled);
+      const readableResults = results.filter(result => result.text && !result.garbled && result.materialRowCount > 0);
       const best = readableResults.sort((a, b) => b.score - a.score || b.materialRowCount - a.materialRowCount || b.japaneseCount - a.japaneseCount || a.angle - b.angle)[0] || { angle: 0, variant: "", text: "", score: 0, japaneseCount: 0, materialRowCount: 0, garbled: true };
       updateImportProgress(100, best.garbled
         ? label + "完了。文字化けの可能性が高いため、発注書には反映しません。"
@@ -810,7 +815,7 @@
       const ocrPromise = (async () => {
         try {
           if (typeof Tesseract.createWorker === "function") {
-            worker = await Tesseract.createWorker("jpn", 1, {
+            worker = await Tesseract.createWorker("jpn+eng", 1, {
               langPath: "https://tessdata.projectnaptha.com/4.0.0",
               logger
             });
@@ -818,11 +823,21 @@
               await terminateWorker();
               throw new Error(timeoutMessage);
             }
+            await worker.setParameters({
+              tessedit_pageseg_mode: "6",
+              preserve_interword_spaces: "1",
+              user_defined_dpi: "300",
+              textord_heavy_nr: "1"
+            });
             return await worker.recognize(canvas);
           }
-          return await Tesseract.recognize(canvas, "jpn", {
+          return await Tesseract.recognize(canvas, "jpn+eng", {
             langPath: "https://tessdata.projectnaptha.com/4.0.0",
-            logger
+            logger,
+            tessedit_pageseg_mode: "6",
+            preserve_interword_spaces: "1",
+            user_defined_dpi: "300",
+            textord_heavy_nr: "1"
           });
         } finally {
           if (timerId) clearTimeout(timerId);
@@ -908,18 +923,146 @@
     function createOcrPreprocessCanvases(sourceCanvas) {
       const resizedCanvas = resizeCanvasToMaxWidth(sourceCanvas, maxImageOcrDimension);
       const baseCanvas = trimCanvasMargins(resizedCanvas);
-      const baseImage = canvasToContrastedImageData(baseCanvas, 2.0);
+      const normalizedCanvas = normalizeCanvasForOcr(baseCanvas);
+      const sharpenedCanvas = sharpenCanvas(normalizedCanvas);
+      const baseImage = canvasToContrastedImageData(sharpenedCanvas, 2.25);
       const otsu = calculateOtsuThreshold(baseImage.data);
-      const thresholds = [
-        { label: "二値化標準", threshold: otsu },
-        { label: "二値化薄字", threshold: Math.max(80, otsu - 24) },
-        { label: "二値化濃字", threshold: Math.min(245, otsu + 24) }
+      const variants = [
+        { label: "濃淡補正", canvas: scaleCanvas(trimCanvasMargins(normalizedCanvas), 1.35) },
+        { label: "輪郭強調", canvas: scaleCanvas(trimCanvasMargins(sharpenedCanvas), 1.45) },
+        { label: "二値化標準", canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, otsu)), 1.55) },
+        { label: "二値化薄字", canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, Math.max(80, otsu - 28))), 1.65) },
+        { label: "二値化濃字", canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, Math.min(245, otsu + 28))), 1.55) },
+        { label: "局所二値化", canvas: scaleCanvas(trimCanvasMargins(adaptiveThresholdCanvas(sharpenedCanvas, 21, 12)), 1.55) }
       ];
-      return thresholds.map(setting => ({
-        label: setting.label,
-        canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, setting.threshold)), 1.6)
-      }));
+      return variants.filter(variant => variant.canvas.width > 0 && variant.canvas.height > 0);
     }
+
+    function normalizeCanvasForOcr(sourceCanvas) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, sourceCanvas.width);
+      canvas.height = Math.max(1, sourceCanvas.height);
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(sourceCanvas, 0, 0);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      let minimum = 255;
+      let maximum = 0;
+
+      for (let index = 0; index < image.data.length; index += 4) {
+        const gray = Math.round(image.data[index] * 0.299 + image.data[index + 1] * 0.587 + image.data[index + 2] * 0.114);
+        minimum = Math.min(minimum, gray);
+        maximum = Math.max(maximum, gray);
+      }
+
+      const range = Math.max(1, maximum - minimum);
+      const shouldInvert = estimateDarkPixelRatio(image.data) > 0.62;
+      for (let index = 0; index < image.data.length; index += 4) {
+        const gray = Math.round(image.data[index] * 0.299 + image.data[index + 1] * 0.587 + image.data[index + 2] * 0.114);
+        let normalized = Math.max(0, Math.min(255, ((gray - minimum) / range) * 255));
+        normalized = Math.max(0, Math.min(255, (normalized - 128) * 1.25 + 128));
+        if (normalized > 238) normalized = 255;
+        if (normalized < 18) normalized = 0;
+        if (shouldInvert) normalized = 255 - normalized;
+        image.data[index] = normalized;
+        image.data[index + 1] = normalized;
+        image.data[index + 2] = normalized;
+        image.data[index + 3] = 255;
+      }
+
+      context.putImageData(image, 0, 0);
+      return canvas;
+    }
+
+    function estimateDarkPixelRatio(data) {
+      let dark = 0;
+      const total = Math.max(1, data.length / 4);
+      for (let index = 0; index < data.length; index += 4) {
+        const gray = Math.round(data[index] * 0.299 + data[index + 1] * 0.587 + data[index + 2] * 0.114);
+        if (gray < 128) dark += 1;
+      }
+      return dark / total;
+    }
+
+    function sharpenCanvas(sourceCanvas) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, sourceCanvas.width);
+      canvas.height = Math.max(1, sourceCanvas.height);
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(sourceCanvas, 0, 0);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const output = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+      const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+
+      for (let y = 1; y < image.height - 1; y++) {
+        for (let x = 1; x < image.width - 1; x++) {
+          let value = 0;
+          let kernelIndex = 0;
+          for (let ky = -1; ky <= 1; ky++) {
+            for (let kx = -1; kx <= 1; kx++) {
+              const offset = ((y + ky) * image.width + (x + kx)) * 4;
+              value += image.data[offset] * kernel[kernelIndex];
+              kernelIndex += 1;
+            }
+          }
+          const outputOffset = (y * image.width + x) * 4;
+          const clamped = Math.max(0, Math.min(255, value));
+          output.data[outputOffset] = clamped;
+          output.data[outputOffset + 1] = clamped;
+          output.data[outputOffset + 2] = clamped;
+          output.data[outputOffset + 3] = 255;
+        }
+      }
+
+      context.putImageData(output, 0, 0);
+      return canvas;
+    }
+
+    function adaptiveThresholdCanvas(sourceCanvas, windowSize, offsetValue) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, sourceCanvas.width);
+      canvas.height = Math.max(1, sourceCanvas.height);
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(sourceCanvas, 0, 0);
+      const image = context.getImageData(0, 0, canvas.width, canvas.height);
+      const output = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+      const width = image.width;
+      const height = image.height;
+      const radius = Math.max(1, Math.floor(windowSize / 2));
+      const integral = new Float64Array((width + 1) * (height + 1));
+
+      for (let y = 1; y <= height; y++) {
+        let rowSum = 0;
+        for (let x = 1; x <= width; x++) {
+          rowSum += image.data[((y - 1) * width + (x - 1)) * 4];
+          integral[y * (width + 1) + x] = integral[(y - 1) * (width + 1) + x] + rowSum;
+        }
+      }
+
+      for (let y = 0; y < height; y++) {
+        const yMin = Math.max(0, y - radius);
+        const yMax = Math.min(height - 1, y + radius);
+        for (let x = 0; x < width; x++) {
+          const xMin = Math.max(0, x - radius);
+          const xMax = Math.min(width - 1, x + radius);
+          const area = (xMax - xMin + 1) * (yMax - yMin + 1);
+          const sum = integral[(yMax + 1) * (width + 1) + (xMax + 1)]
+            - integral[yMin * (width + 1) + (xMax + 1)]
+            - integral[(yMax + 1) * (width + 1) + xMin]
+            + integral[yMin * (width + 1) + xMin];
+          const pixelOffset = (y * width + x) * 4;
+          const localMean = sum / Math.max(1, area);
+          const value = image.data[pixelOffset] < localMean - offsetValue ? 0 : 255;
+          output.data[pixelOffset] = value;
+          output.data[pixelOffset + 1] = value;
+          output.data[pixelOffset + 2] = value;
+          output.data[pixelOffset + 3] = 255;
+        }
+      }
+
+      context.putImageData(output, 0, 0);
+      return canvas;
+    }
+
 
 
     function resizeCanvasToMaxWidth(sourceCanvas, maxWidth) {
@@ -1356,7 +1499,6 @@
     }
 
     function parseIngredients(text) {
-      if (isGarbledText(text)) return [];
       return extractRowsFromPdfText(text);
     }
 
@@ -1365,7 +1507,7 @@
       const statusPrefix = options.statusPrefix || "読み込み完了";
       const importedRows = (Array.isArray(parsedRows) ? parsedRows : []).filter(row => {
         const rowText = [row.name, row.quantity, row.unit].join(" ");
-        return !isGarbledText(rowText) && !isSuspiciousIngredientName(row.name);
+        return !isGarbledText(rowText) && !isSuspiciousIngredientName(row.name) && isLikelyIngredientRow(row, rowText);
       });
       syncRows();
       const currentRows = rows.filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim());
@@ -1389,8 +1531,9 @@
     function extractRowsFromPdfText(text) {
       const lines = String(text || "")
         .replace(/【[^】]+】/g, "\n")
-        .split(/\r?\n/)
-        .map(line => line.replace(/　/g, " ").replace(/\s+/g, " ").trim())
+        .replace(/[|｜]/g, "\n")
+        .split(/\r?\n|(?<=\d)\s{2,}|(?<=[ｇgｍmlL個本袋パック玉束枚缶箱尾切片丁株房杯食])\s+(?=[ぁ-んァ-ヶ一-龠々])/i)
+        .map(line => normalizeOcrLine(line))
         .filter(Boolean);
       const extracted = [];
       const seen = new Set();
@@ -1411,7 +1554,8 @@
     function extractRowsFromLine(line) {
       const escapedUnits = unitNames().map(unit => unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
       const results = [];
-      const normalizedLine = String(line || "").replace(/,/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
+      const normalizedLine = normalizeOcrLine(line).replace(/,/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
+      if (!normalizedLine || isGarbledText(normalizedLine) || isIgnoredPdfLine(normalizedLine)) return results;
       const nameFirstPattern = new RegExp("^(.+?)\\s+([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
       const joinedNameFirstPattern = new RegExp("^(.{1,40}?)([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
       const quantityFirstPattern = new RegExp("^([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")\\s+(.+)$", "i");
@@ -1447,7 +1591,7 @@
     }
 
     function unitNames() {
-      return ["kg", "ｋｇ", "KG", "g", "ｇ", "G", "グラム", "㎏", "ｍｌ", "ml", "ML", "cc", "L", "l", "リットル", "個", "本", "袋", "パック", "玉", "束", "枚", "缶", "箱", "尾", "切", "片", "丁", "株", "房", "杯", "膳", "食", "人前"];
+      return ["kg", "ｋｇ", "KG", "㎏", "キロ", "g", "ｇ", "G", "グラム", "ｍｌ", "ml", "ML", "cc", "L", "l", "リットル", "個", "本", "袋", "パック", "玉", "束", "枚", "缶", "箱", "尾", "切", "片", "丁", "株", "房", "杯", "膳", "食", "人前"];
     }
 
     function isQuantity(value) {
@@ -1471,8 +1615,9 @@
       const hasFoodLikeChars = /[ぁ-んァ-ヶ一-龠々]/.test(compactName);
       const hasQuantityAndUnit = isQuantity(row.quantity) && isKnownUnit(row.unit);
       const tooLong = compactName.length > 32 || line.length > 80;
-      const looksLikeSentence = /です|ます|ください|お願い|備考|注意|以下|以上/.test(line);
-      return hasQuantityAndUnit && hasFoodLikeChars && japaneseCount >= 1 && !tooLong && !looksLikeSentence && !isGarbledText(line);
+      const looksLikeSentence = /です|ます|ください|お願い|備考|注意|以下|以上|合計|小計|税込|税抜/.test(line);
+      const hasTooManyDigits = countMatches(compactName, /[0-9０-９]/g) > Math.max(1, japaneseCount);
+      return hasQuantityAndUnit && hasFoodLikeChars && japaneseCount >= 1 && !tooLong && !looksLikeSentence && !hasTooManyDigits && !isGarbledText(line);
     }
 
     function scoreOcrText(result) {
@@ -1482,7 +1627,8 @@
       const unitCount = countUnitMentions(text);
       const materialRowCount = parseIngredients(text).length;
       const garbled = isGarbledText(text);
-      const score = garbled ? -100000 : (japaneseCount * 3) + (digitCount * 2) + (unitCount * 8) + (materialRowCount * 30);
+      const confidence = Number(result.confidence) || 0;
+      const score = garbled ? -100000 : (japaneseCount * 3) + (digitCount * 2) + (unitCount * 8) + (materialRowCount * 45) + confidence;
       return { ...result, text, japaneseCount, digitCount, unitCount, materialRowCount, garbled, score };
     }
 
@@ -1504,8 +1650,14 @@
       const boxRatio = boxCount / length;
       const symbolRatio = symbolCount / length;
 
-      return replacementCount > 0 || boxCount >= 15 || (boxCount >= 5 && boxRatio > 0.08) ||
-        (length >= 20 && japaneseRatio < 0.03) || (length >= 20 && symbolRatio > 0.25);
+      const mojibakeCount = countMatches(compact, /[�□■◇◆○●◎�]/g);
+      const latinCount = countMatches(compact, /[a-zA-Z]/g);
+      const digitCount = countMatches(compact, /[0-9０-９]/g);
+      const readableCount = japaneseCount + latinCount + digitCount;
+      const readableRatio = readableCount / length;
+
+      return replacementCount > 0 || mojibakeCount >= 8 || boxCount >= 15 || (boxCount >= 5 && boxRatio > 0.08) ||
+        (length >= 12 && readableRatio < 0.45) || (length >= 20 && japaneseRatio < 0.03) || (length >= 20 && symbolRatio > 0.22);
     }
 
     function isSuspiciousIngredientName(value) {
@@ -1515,8 +1667,10 @@
       const length = compact.length;
       const japaneseCount = countMatches(compact, /[ぁ-んァ-ヶ一-龠々]/g);
       const symbolCount = countMatches(compact, /[^ぁ-んァ-ヶ一-龠々a-zA-Z0-9０-９ーｰ－・/／()（）]/g);
-      return /�/.test(compact) || countMatches(compact, /□/g) >= 3 ||
-        (length >= 4 && japaneseCount === 0) || (length >= 3 && symbolCount / length > 0.35);
+      const digitCount = countMatches(compact, /[0-9０-９]/g);
+      return /�/.test(compact) || countMatches(compact, /[□■◇◆]/g) >= 2 ||
+        (length >= 4 && japaneseCount === 0) || (length >= 3 && symbolCount / length > 0.28) ||
+        (length >= 3 && digitCount > japaneseCount);
     }
 
     function countMatches(value, pattern) {
@@ -1529,8 +1683,28 @@
     }
 
     function cleanIngredientName(value) {
+      return normalizeOcrLine(value)
+        .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
+        .replace(/[：:].*$/, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function normalizeOcrLine(value) {
       return String(value || "")
-        .replace(/^[□■☑✓・*\-－—\s]+/, "")
+        .replace(/[０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+        .replace(/[，、]/g, ",")
+        .replace(/[．。]/g, ".")
+        .replace(/[㎏]/g, "kg")
+        .replace(/[ｋＫ]/g, "k")
+        .replace(/[ｇＧ]/g, "g")
+        .replace(/[ｍＭ]/g, "m")
+        .replace(/[ｌＬ]/g, "l")
+        .replace(/([0-9])\s*(キロ|ＫＧ|KG)/gi, "$1kg")
+        .replace(/([0-9])\s*(グラム|Ｇ|G)(?=\s|$)/gi, "$1g")
+        .replace(/([0-9])\s*(ＭＬ|ML)(?=\s|$)/gi, "$1ml")
+        .replace(/[|＿_~〜=]+/g, " ")
+        .replace(/[<>《》]+/g, " ")
         .replace(/\s+/g, " ")
         .trim();
     }
@@ -1544,10 +1718,10 @@
     }
 
     function normalizeUnit(value) {
-      const unit = String(value || "").trim();
+      const unit = normalizeOcrLine(value);
       const lowerUnit = unit.toLowerCase();
-      if (["ｋｇ", "kg", "㎏"].includes(lowerUnit)) return "kg";
-      if (["ｇ", "g"].includes(lowerUnit)) return "g";
+      if (["ｋｇ", "kg", "㎏", "キロ"].includes(lowerUnit)) return "kg";
+      if (["ｇ", "g", "グラム"].includes(lowerUnit)) return "g";
       if (["ｍｌ", "ml"].includes(lowerUnit)) return "ml";
       return unit;
     }
