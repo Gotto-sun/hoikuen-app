@@ -74,15 +74,16 @@ def load_required_dependencies() -> None:
 
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
-ORIENTATIONS = (0, 90, 180, 270)
+ORIENTATIONS = (0,)
 LOW_CONFIDENCE_THRESHOLD = 70.0
 VERY_LOW_CONFIDENCE_THRESHOLD = 45.0
-MAX_IMAGE_WIDTH = 1500
-MAX_IMAGE_HEIGHT = 2000
-MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+MAX_IMAGE_WIDTH = 1000
+MAX_IMAGE_HEIGHT = 1400
+MAX_FILE_SIZE_BYTES = 60 * 1024 * 1024
+JPEG_QUALITY = 55
 OCR_TIMEOUT_SECONDS = 30
-TESSERACT_CALL_TIMEOUT_SECONDS = 8
-OCR_CANDIDATE_LIMIT = 3
+TESSERACT_CALL_TIMEOUT_SECONDS = 12
+OCR_CANDIDATE_LIMIT = 2
 TIMEOUT_MESSAGE = "タイムアウト：画像が重すぎるため処理を中断しました"
 
 HEADERS = [
@@ -190,11 +191,22 @@ def load_image(path: Path) -> Image.Image:
             raise ValueError("読み込み失敗: 画像の解像度を確認できませんでした")
         image = ImageOps.exif_transpose(opened).convert("RGB")
 
-    if image.width > MAX_IMAGE_WIDTH:
-        ratio = MAX_IMAGE_WIDTH / image.width
-        image = image.resize((MAX_IMAGE_WIDTH, max(1, round(image.height * ratio))), Image.Resampling.LANCZOS)
-        logging.info("OCR前縮小: %s resized=%sx%s", path, image.width, image.height)
+    image = lighten_image_for_ocr(image, path)
     return image
+
+
+def lighten_image_for_ocr(image: Image.Image, path: Path) -> Image.Image:
+    scale = min(1.0, MAX_IMAGE_WIDTH / max(1, image.width), MAX_IMAGE_HEIGHT / max(1, image.height))
+    if scale < 1.0:
+        image = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.Resampling.LANCZOS)
+        logging.info("OCR前軽量化: %s resized=%sx%s", path, image.width, image.height)
+
+    safe_stem = re.sub(r"[^0-9A-Za-zぁ-んァ-ン一-龥_-]+", "_", path.stem).strip("_") or "image"
+    temp_path = PROCESSED_DIR / f"{safe_stem}_light.jpg"
+    image.save(temp_path, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+    logging.info("OCR前JPEG軽量化: %s quality=%s temp=%s", path, JPEG_QUALITY, temp_path)
+    with Image.open(temp_path) as reopened:
+        return ImageOps.exif_transpose(reopened).convert("RGB")
 
 
 def trim_margin(image: Image.Image) -> Image.Image:
@@ -214,7 +226,7 @@ def trim_margin(image: Image.Image) -> Image.Image:
     return image.crop((left, top, right, bottom))
 
 
-def upscale(image: Image.Image, min_width: int = 1500) -> Image.Image:
+def upscale(image: Image.Image, min_width: int = 1000) -> Image.Image:
     if image.width >= min_width:
         return image
     ratio = min_width / max(1, image.width)
@@ -255,20 +267,11 @@ def otsu_threshold(gray: Image.Image) -> Image.Image:
 
 def pil_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
     trimmed = trim_margin(image)
-    scaled = upscale(trimmed)
-    gray = ImageOps.grayscale(scaled)
-    bright = ImageEnhance.Brightness(gray).enhance(1.18)
-    contrast = ImageEnhance.Contrast(bright).enhance(1.65)
-    gamma = gamma_correct(contrast, 1.25)
-    denoised = gamma.filter(ImageFilter.MedianFilter(size=3))
-    binary = gamma.point(lambda p: 255 if p > 165 else 0)
-    otsu = otsu_threshold(denoised)
+    gray = ImageOps.grayscale(trimmed)
+    contrast = ImageEnhance.Contrast(ImageEnhance.Brightness(gray).enhance(1.08)).enhance(1.35)
     variants = [
-        ("余白カット+拡大+グレースケール", gray),
-        ("明るさ補正+コントラスト強調", contrast),
-        ("ガンマ補正+ノイズ除去", denoised),
-        ("二値化", binary),
-        ("Otsu threshold", otsu),
+        ("軽量JPEG+通常向き", gray),
+        ("軽量JPEG+濃淡補正", contrast),
     ]
     return variants[:OCR_CANDIDATE_LIMIT]
 

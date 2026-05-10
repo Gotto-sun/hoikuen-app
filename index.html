@@ -578,12 +578,13 @@
       { key: "banana", label: "バナナ", quantity: 1, unit: "房", note: "固定ルール", tests: [/バナナ/] }
     ];
     const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
-    const maxImageOcrSizeBytes = 25 * 1024 * 1024;
-    const maxImageOcrDimension = 1800;
-    const imageLoadTimeoutMs = 15000;
-    const ocrTargetTimeoutMs = 18000;
-    const ocrTimeoutMs = 45000;
-    const maxOcrCandidatePatterns = 8;
+    const maxImageOcrSizeBytes = 60 * 1024 * 1024;
+    const maxImageOcrDimension = 1000;
+    const imageLoadTimeoutMs = 6000;
+    const ocrTargetTimeoutMs = 10000;
+    const ocrTimeoutMs = 30000;
+    const maxOcrCandidatePatterns = 2;
+    const lightImageJpegQuality = 0.55;
     const ocrTimeoutMessage = "タイムアウト：画像が重すぎるため処理を中断しました";
     let rows = [];
 
@@ -709,12 +710,13 @@
       canvas.height = Math.ceil(viewport.height);
       await page.render({ canvasContext: context, viewport }).promise;
       updateImportProgress(Math.min(72, 20 + Math.round((pageNumber / pageCount) * 50)), "PDF画像をOCR中です（" + pageNumber + "/" + pageCount + "ページ）。");
-      const ocrResult = await recognizeBestJapaneseOcr(canvas, {
+      const lightCanvas = await createLightweightOcrCanvas(canvas);
+      const ocrResult = await withTimeout(recognizeBestJapaneseOcr(lightCanvas, {
         baseProgress: 20,
         progressRange: 52,
         label: "PDF画像OCR",
-        detail: pageNumber + "/" + pageCount + "ページ"
-      });
+        detail: "軽量モード " + pageNumber + "/" + pageCount + "ページ"
+      }), ocrTimeoutMs, ocrTimeoutMessage);
       return ocrResult.text;
     }
 
@@ -728,11 +730,12 @@
       updateImportProgress(20, "画像OCRを開始しました。");
       try {
         const sourceCanvas = await fileToCanvas(file);
-        const ocrResult = await withTimeout(recognizeBestJapaneseOcr(sourceCanvas, {
+        const lightCanvas = await createLightweightOcrCanvas(sourceCanvas);
+        const ocrResult = await withTimeout(recognizeBestJapaneseOcr(lightCanvas, {
           baseProgress: 20,
           progressRange: 75,
           label: "画像OCR",
-          detail: "前処理強化"
+          detail: "軽量モード"
         }), ocrTimeoutMs, ocrTimeoutMessage);
         updateImportProgress(100, "画像OCR完了");
         return ocrResult.text;
@@ -746,13 +749,39 @@
 
     function validateImageFileSize(file) {
       if (file.size > maxImageOcrSizeBytes) {
-        throw new Error("画像ファイルが大きすぎます（最大25MB）。");
+        throw new Error("画像ファイルが大きすぎます。60MB以下の画像を選んでください。");
       }
       console.info("image file check", { fileName: file.name, sizeBytes: file.size, type: file.type });
     }
 
+
+    async function createLightweightOcrCanvas(sourceCanvas) {
+      const resizedCanvas = resizeCanvasToMaxWidth(sourceCanvas, maxImageOcrDimension);
+      const blob = await new Promise((resolve, reject) => {
+        resizedCanvas.toBlob(result => result ? resolve(result) : reject(new Error("画像の軽量化に失敗しました。")), "image/jpeg", lightImageJpegQuality);
+      });
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const image = await new Promise((resolve, reject) => {
+          const element = new Image();
+          element.onload = () => resolve(element);
+          element.onerror = () => reject(new Error("軽量化した画像を読み込めませんでした。"));
+          element.src = objectUrl;
+        });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, image.naturalWidth || image.width);
+        canvas.height = Math.max(1, image.naturalHeight || image.height);
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        console.info("ocr jpeg lightweight image", { width: canvas.width, height: canvas.height, bytes: blob.size, quality: lightImageJpegQuality });
+        return canvas;
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
     async function recognizeBestJapaneseOcr(sourceCanvas, options = {}) {
-      const rotations = [0, 90, 270];
+      const rotations = [0];
       const baseProgress = Number(options.baseProgress) || 0;
       const progressRange = Number(options.progressRange) || 60;
       const label = options.label || "画像OCR";
@@ -761,7 +790,7 @@
         const rotatedCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
         return createOcrPreprocessCanvases(rotatedCanvas).map(variant => ({ angle, ...variant }));
       }).slice(0, maxOcrCandidatePatterns);
-      console.info("ocr enhanced mode", { maxSeconds: ocrTimeoutMs / 1000, maxWidth: maxImageOcrDimension, candidatePatterns: ocrTargets.length });
+      console.info("ocr lightweight mode", { maxSeconds: ocrTimeoutMs / 1000, maxWidth: maxImageOcrDimension, jpegQuality: lightImageJpegQuality, candidatePatterns: ocrTargets.length });
       const results = [];
 
       for (let index = 0; index < ocrTargets.length; index++) {
@@ -931,18 +960,11 @@
       const resizedCanvas = resizeCanvasToMaxWidth(sourceCanvas, maxImageOcrDimension);
       const baseCanvas = trimCanvasMargins(resizedCanvas);
       const normalizedCanvas = normalizeCanvasForOcr(baseCanvas);
-      const sharpenedCanvas = sharpenCanvas(normalizedCanvas);
-      const baseImage = canvasToContrastedImageData(sharpenedCanvas, 2.25);
-      const otsu = calculateOtsuThreshold(baseImage.data);
       const variants = [
-        { label: "濃淡補正", canvas: scaleCanvas(trimCanvasMargins(normalizedCanvas), 1.35) },
-        { label: "輪郭強調", canvas: scaleCanvas(trimCanvasMargins(sharpenedCanvas), 1.45) },
-        { label: "二値化標準", canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, otsu)), 1.55) },
-        { label: "二値化薄字", canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, Math.max(80, otsu - 28))), 1.65) },
-        { label: "二値化濃字", canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, Math.min(245, otsu + 28))), 1.55) },
-        { label: "局所二値化", canvas: scaleCanvas(trimCanvasMargins(adaptiveThresholdCanvas(sharpenedCanvas, 21, 12)), 1.55) }
+        { label: "軽量JPEG", canvas: baseCanvas },
+        { label: "軽量JPEG+濃淡補正", canvas: normalizedCanvas }
       ];
-      return variants.filter(variant => variant.canvas.width > 0 && variant.canvas.height > 0);
+      return variants.filter(variant => variant.canvas.width > 0 && variant.canvas.height > 0).slice(0, maxOcrCandidatePatterns);
     }
 
     function normalizeCanvasForOcr(sourceCanvas) {
