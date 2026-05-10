@@ -566,16 +566,16 @@
 
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetDetailRows = 30;
+    const weekdayPeople = { 月: 5, 火: 7, 水: 7, 木: 7, 金: 7 };
     const fixedOrderRules = [
-      { key: "milk", label: "牛乳", quantity: 2, unit: "本", note: "450ml × 2本", tests: [/牛乳/, /ミルク/] },
-      { key: "cabbage", label: "キャベツ", quantity: "1/4", unit: "個", note: "固定ルール", tests: [/キャベツ/] },
-      { key: "hakusai", label: "白菜", quantity: "1/8", unit: "個", note: "固定ルール", tests: [/白菜/] },
-      { key: "carrot", label: "にんじん", quantity: "1/2", unit: "本", note: "固定ルール", tests: [/にんじん|人参/] },
-      { key: "mushroom", label: "きのこ類", quantity: 1, unit: "袋", note: "固定ルール", tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
-      { key: "yogurt", label: "ヨーグルト", quantity: 2, unit: "パック", note: "牧場の朝 3個パック × 2", tests: [/ヨーグルト|牧場の朝/] },
-      { key: "apple", label: "りんご", quantity: 1, unit: "個", note: "固定ルール", tests: [/りんご|リンゴ|林檎/] },
-      { key: "orange", label: "オレンジ", quantity: 2, unit: "個", note: "固定ルール", tests: [/オレンジ|みかん|蜜柑/] },
-      { key: "banana", label: "バナナ", quantity: 1, unit: "房", note: "固定ルール", tests: [/バナナ/] }
+      { key: "milk", label: "牛乳", unit: "本", note: "450ml単位（人数計算後に切り上げ）", tests: [/牛乳/, /ミルク/] },
+      { key: "yogurt", label: "ヨーグルト", quantity: 2, unit: "パック", note: "3個パック × 2", tests: [/ヨーグルト|牧場の朝/] }
+    ];
+    const roundingOrderRules = [
+      { label: "キャベツ", unit: "個", step: 0.25, tests: [/キャベツ/] },
+      { label: "白菜", unit: "個", step: 0.125, tests: [/白菜/] },
+      { label: "にんじん", unit: "本", step: 0.5, tests: [/にんじん|人参/] },
+      { label: "きのこ類", unit: "袋", step: 1, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] }
     ];
     const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
@@ -1443,6 +1443,7 @@
 
     function detectMenuColumns(header) {
       const normalized = header.map(cell => String(cell || "").replace(/\s/g, ""));
+      let day = normalized.findIndex(cell => /曜日|使用日|日付|献立日/.test(cell));
       let name = normalized.findIndex(cell => /食材|食品|材料|品名|食料|料理名/.test(cell));
       if (name < 0) name = 0;
       let quantity = normalized.findIndex(cell => /(3歳未満|３歳未満|未満児|乳児|未満).*?(分量|使用量|数量|量|g|ｇ|グラム)/.test(cell));
@@ -1451,7 +1452,7 @@
       let unit = normalized.findIndex((cell, index) => index > name && /単位/.test(cell));
       if (unit < 0 && quantity >= 0 && /単位/.test(normalized[quantity + 1] || "")) unit = quantity + 1;
       if (unit < 0 && quantity >= 0 && isKnownUnit(header[quantity + 1])) unit = quantity + 1;
-      return { name, quantity, unit };
+      return { day, name, quantity, unit };
     }
 
     function guessUnitNearQuantity(row, quantityIndex) {
@@ -1477,15 +1478,30 @@
       const aggregate = new Map();
 
       sourceRows.forEach(row => {
+        const people = peopleForWeekday(row.weekday);
+        if (!people) return;
         const fixed = findFixedRule(row.name);
-        if (fixed) {
+        if (fixed && fixed.key === "yogurt") {
           fixedKeys.add(fixed.key);
           return;
         }
         const converted = convertMenuQuantity(row.quantity, row.unit);
-        const key = normalizeIngredientForGrouping(row.name) + "|" + converted.unit;
-        if (!aggregate.has(key)) aggregate.set(key, { name: normalizeIngredientForGrouping(row.name), quantity: 0, unit: converted.unit });
-        aggregate.get(key).quantity += converted.quantity;
+        const weightedQuantity = converted.quantity * people;
+        if (!weightedQuantity || weightedQuantity <= 0) return;
+
+        if (fixed && fixed.key === "milk") {
+          const milkMl = converted.unit === "ml" ? weightedQuantity : converted.unit === "L" ? weightedQuantity * 1000 : 450 * weightedQuantity;
+          addAggregateQuantity(aggregate, "牛乳", milkMl, "ml");
+          return;
+        }
+
+        const rounding = findRoundingRule(row.name);
+        if (rounding) {
+          addAggregateQuantity(aggregate, rounding.label, weightedQuantity, rounding.unit, rounding.step);
+          return;
+        }
+
+        addAggregateQuantity(aggregate, normalizeIngredientForGrouping(row.name), weightedQuantity, converted.unit);
       });
 
       const fixedRows = fixedOrderRules.filter(rule => fixedKeys.has(rule.key)).map(rule => ({
@@ -1499,8 +1515,30 @@
       return fixedRows.concat(aggregatedRows).sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
     }
 
+    function addAggregateQuantity(aggregate, name, quantity, unit, step = null) {
+      const key = name + "|" + unit;
+      if (!aggregate.has(key)) aggregate.set(key, { name, quantity: 0, unit, step });
+      const row = aggregate.get(key);
+      row.quantity += quantity;
+      if (step) row.step = step;
+    }
+
     function findFixedRule(name) {
       return fixedOrderRules.find(rule => rule.tests.some(pattern => pattern.test(name)));
+    }
+
+    function findRoundingRule(name) {
+      return roundingOrderRules.find(rule => rule.tests.some(pattern => pattern.test(name)));
+    }
+
+    function peopleForWeekday(weekday) {
+      return weekdayPeople[weekday] || 0;
+    }
+
+    function detectWeekday(value) {
+      const text = normalizeOcrLine(value);
+      const match = text.match(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/);
+      return match ? match[0].charAt(0) : "";
     }
 
     function normalizeIngredientForGrouping(name) {
@@ -1517,17 +1555,28 @@
       if (normalizedUnit === "L" || normalizedUnit === "l" || normalizedUnit === "リットル") return { quantity: amount * 1000, unit: "ml" };
       if (normalizedUnit === "グラム") return { quantity: amount, unit: "g" };
       if (normalizedUnit === "cc") return { quantity: amount, unit: "ml" };
-      if (normalizedUnit === "缶") return { quantity: Math.ceil(amount), unit: "缶" };
       return { quantity: amount, unit: normalizedUnit };
     }
 
     function finalizeMenuQuantity(row, sourceLabel) {
       let quantity = round(row.quantity);
       let unit = row.unit;
+      let note = sourceLabel === "OCR" ? "3歳未満児×人数集計" : "3歳未満児×人数集計";
+      if (row.name === "牛乳" && unit === "ml") {
+        quantity = Math.max(2, Math.ceil(quantity / 450));
+        unit = "本";
+        note = "450ml単位";
+      } else if (row.step) {
+        quantity = round(Math.ceil(quantity / row.step) * row.step);
+        note = "端数切り上げ";
+      } else if (unit === "缶") {
+        quantity = Math.ceil(quantity);
+        note = "缶単位切り上げ";
+      }
       if (unit === "g" && quantity >= 1000) { quantity = round(quantity / 1000); unit = "kg"; }
       if (unit === "ml" && quantity >= 1000) { quantity = round(quantity / 1000); unit = "L"; }
       if (!quantity || quantity <= 0) return { name: "", quantity: "", unit: "", note: "", source: "" };
-      return { name: row.name, quantity, unit, note: sourceLabel === "OCR" ? "3歳未満児集計" : "献立CSV集計", source: sourceLabel };
+      return { name: row.name, quantity, unit, note, source: sourceLabel };
     }
 
     function createBlankRow() {
@@ -1535,7 +1584,7 @@
     }
 
     function parseIngredients(text) {
-      const sourceRows = extractRowsFromPdfText(text);
+      const sourceRows = extractUnderThreeSourceRows(text);
       return mapMenuRowsToOrderRows(sourceRows, "OCR");
     }
 
@@ -1572,23 +1621,20 @@
     }
 
     function extractRowsFromPdfText(text) {
+      return extractUnderThreeSourceRows(text);
+    }
+
+    function extractUnderThreeSourceRows(text) {
       const lines = String(text || "")
         .replace(/OCR全文/g, "\n")
         .replace(/【[^】]+】/g, "\n")
         .replace(/[|｜]/g, "\n")
-        .split(/\r?\n|(?<=\d)\s{2,}|(?<=[ｇgｍmlL個本袋パック玉束枚缶箱尾切片丁株房杯食])\s+(?=[ぁ-んァ-ヶ一-龠々])/i)
+        .split(/\r?\n|(?<=\d)\s{2,}|(?<=[ｇgｍmlL個本袋パック玉束枚缶箱尾切片丁株房杯食])\s+(?=[月火水木金]?[ぁ-んァ-ヶ一-龠々])/i)
         .map(line => normalizeOcrLine(line))
         .filter(Boolean);
       const extracted = [];
       const seen = new Set();
-
       collectUnderThreeRows(lines).forEach(row => addUniqueSourceRow(extracted, seen, row));
-
-      lines.forEach(line => {
-        if (isIgnoredPdfLine(line) || isSentenceNoise(line)) return;
-        extractRowsFromLine(line).forEach(row => addUniqueSourceRow(extracted, seen, row));
-      });
-
       return extracted;
     }
 
@@ -1597,11 +1643,12 @@
       const cleanUnit = normalizeUnit(row.unit || "g");
       const quantity = normalizeQuantity(row.quantity);
       const numericQuantity = numberValue(quantity);
-      if (!cleanName || !cleanUnit || !numericQuantity || numericQuantity <= 0 || isExcludedIngredient(cleanName)) return;
-      const key = [normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
+      const weekday = row.weekday || detectWeekday(row.sourceLine || "");
+      if (!cleanName || !cleanUnit || !numericQuantity || numericQuantity <= 0 || !peopleForWeekday(weekday) || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
+      const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
       if (seen.has(key)) return;
       seen.add(key);
-      target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, source: row.source || "OCR" });
+      target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: row.source || "3歳未満児" });
     }
 
     function collectUnderThreeRows(lines) {
@@ -1617,6 +1664,8 @@
             name: cells[columns.name],
             quantity: cells[columns.quantity],
             unit: cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity),
+            weekday: detectWeekday(cells[columns.day] || cells.join(" ")),
+            sourceLine: cells.join(" "),
             source: "3歳未満児"
           });
         }
@@ -1624,10 +1673,18 @@
 
       const markerPattern = /(3歳未満児?|３歳未満児?|未満児|乳児)/;
       const unitPattern = unitNames().map(unit => escapeRegExp(unit)).join("|");
-      const inlinePattern = new RegExp("^(.{1,40}?)" + markerPattern.source + ".*?([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")", "i");
+      const inlinePattern = new RegExp("^(.{1,50}?)" + markerPattern.source + ".*?([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")", "i");
       lines.forEach(line => {
-        const match = normalizeOcrLine(line).match(inlinePattern);
-        if (match) rows.push({ name: match[1], quantity: match[2], unit: match[3], source: "3歳未満児" });
+        const normalized = normalizeOcrLine(line);
+        const match = normalized.match(inlinePattern);
+        if (match) rows.push({
+          name: match[1].replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, ""),
+          quantity: match[2],
+          unit: match[3],
+          weekday: detectWeekday(normalized),
+          sourceLine: normalized,
+          source: "3歳未満児"
+        });
       });
       return rows;
     }
@@ -1779,6 +1836,8 @@
 
     function cleanIngredientName(value) {
       return normalizeOcrLine(value)
+        .replace(/OCR全文/g, " ")
+        .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, " ")
         .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
         .replace(/[：:].*$/, "")
         .replace(/\s+/g, " ")
