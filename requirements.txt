@@ -1,0 +1,8 @@
+pillow>=10.0.0
+openpyxl>=3.1.0
+pytesseract>=0.3.10
+opencv-python>=4.8.0
+numpy>=1.24.0
+# 低信頼度時の追加OCR候補です。必要な場合だけ入れてください。
+# easyocr>=1.7.0
+# paddleocr>=2.7.0
