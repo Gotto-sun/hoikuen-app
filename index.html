@@ -579,6 +579,8 @@
     ];
     const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
     const recipeInstructionPattern = /(作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す)/;
+    const mealSectionHeadingPattern = /(午前中?おやつ|午前おやつ|昼食|午後おやつ)/;
+    const mealSectionStopPattern = /(作り方|つくり方|手順|調理方法|下処理|備考|ポイント|メモ|栄養|給与栄養目標量|予定献立|献立名|料理名のみ)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 1000;
     const imageLoadTimeoutMs = 6000;
@@ -1633,7 +1635,9 @@
       const lines = splitOcrRowsForIngredients(text);
       const extracted = [];
       const seen = new Set();
-      collectUnderThreeRows(lines).forEach(row => addUniqueSourceRow(extracted, seen, row));
+      const mealRows = collectMealSectionRows(lines);
+      const sourceRows = mealRows.length || lines.some(isMealSectionHeading) ? mealRows : collectUnderThreeRows(lines);
+      sourceRows.forEach(row => addUniqueSourceRow(extracted, seen, row));
       return extracted;
     }
 
@@ -1701,6 +1705,78 @@
       if (seen.has(key)) return;
       seen.add(key);
       target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: row.source || "3歳未満児" });
+    }
+
+    function collectMealSectionRows(lines) {
+      const rows = [];
+      let inMealSection = false;
+      let currentWeekday = "";
+      let columns = null;
+
+      lines.forEach(line => {
+        const cells = splitIngredientCells(line);
+        const rowText = cells.join(" ") || normalizeOcrLine(line);
+        const detectedWeekday = detectWeekday(rowText);
+        if (detectedWeekday) currentWeekday = detectedWeekday;
+
+        if (isMealSectionHeading(rowText)) {
+          inMealSection = true;
+          columns = null;
+          return;
+        }
+        if (!inMealSection || !cells.length || isIgnoredPdfLine(rowText)) return;
+        if (isMealSectionStop(rowText) || isSentenceNoise(rowText)) return;
+
+        const detectedColumns = detectMenuColumns(cells);
+        if (detectedColumns && detectedColumns.name >= 0 && detectedColumns.quantity >= 0) {
+          columns = detectedColumns;
+          return;
+        }
+
+        const row = columns ? rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText) : rowFromSimpleMealTable(cells, currentWeekday, rowText);
+        if (row) rows.push(row);
+      });
+
+      return rows;
+    }
+
+    function splitIngredientCells(line) {
+      return normalizeOcrLine(line).split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
+    }
+
+    function isMealSectionHeading(value) {
+      const text = String(value || "").replace(/\s/g, "");
+      return mealSectionHeadingPattern.test(text);
+    }
+
+    function isMealSectionStop(value) {
+      const text = String(value || "").replace(/\s/g, "");
+      return mealSectionStopPattern.test(text) && !isMealSectionHeading(text);
+    }
+
+    function rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText) {
+      const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
+      const weekday = detectedWeekday || currentWeekday;
+      const markerRow = parseMarkerNumericRow(cells.join("\t"), columns.quantity, cells[columns.quantity] || "");
+      const name = cells[columns.name] || (markerRow && markerRow.name) || "";
+      const quantity = markerRow ? markerRow.quantity : cells[columns.quantity];
+      const unit = markerRow ? markerRow.unit : cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity);
+      if (!name || !isQuantity(quantity) || !isKnownUnit(unit)) return null;
+      return { name, quantity, unit, weekday, sourceLine: rowText, source: "3歳未満児" };
+    }
+
+    function rowFromSimpleMealTable(cells, currentWeekday, rowText) {
+      const detectedWeekday = detectWeekday(rowText);
+      const weekday = detectedWeekday || currentWeekday;
+      for (let index = 0; index < cells.length - 2; index++) {
+        const name = cells[index];
+        const quantity = cells[index + 1];
+        const unit = cells[index + 2];
+        if (isQuantity(quantity) && isKnownUnit(unit) && !isMealSectionHeading(name)) {
+          return { name, quantity, unit, weekday, sourceLine: rowText, source: "3歳未満児" };
+        }
+      }
+      return null;
     }
 
     function collectUnderThreeRows(lines) {

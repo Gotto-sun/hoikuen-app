@@ -574,6 +574,8 @@ def extract_fields(text: str) -> ExtractedFields:
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
 SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます")
+MEAL_SECTION_HEADING_PATTERN = re.compile(r"午前中?おやつ|午前おやつ|昼食|午後おやつ")
+MEAL_SECTION_STOP_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|備考|ポイント|メモ|栄養|給与栄養目標量|予定献立|献立名|料理名のみ")
 EXCLUDED_INGREDIENT_PATTERN = re.compile(r"米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
 FIXED_ORDER_RULES = [
@@ -652,14 +654,19 @@ def is_suspicious_ingredient_name(value: str) -> bool:
 
 
 def extract_ingredient_rows(text: str) -> list[IngredientRow]:
+    lines = split_ocr_rows_for_ingredients(text)
     rows: list[IngredientRow] = []
     seen: set[str] = set()
+    meal_rows = collect_meal_section_rows(lines)
+    if meal_rows or any(is_meal_section_heading(line) for line in lines):
+        return meal_rows
+
     quantity = r"([0-9０-９]+(?:[.,．][0-9０-９]+)?)"
     unit_pattern = r"(" + UNIT_PATTERN + r")"
     marker = r"(?:3歳未満児?|３歳未満児?|未満児|乳児)"
     current_weekday = ""
     table_columns: dict[str, int] | None = None
-    for raw_line in split_ocr_rows_for_ingredients(text):
+    for raw_line in lines:
         line = normalize_ocr_line(raw_line)
         if not line or IGNORED_LINE_PATTERN.search(line) or SENTENCE_NOISE_PATTERN.search(line) or is_garbled_text(line):
             continue
@@ -694,6 +701,65 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
                     if re.fullmatch(quantity, value) and re.search(unit_pattern, unit, re.IGNORECASE):
                         add_ingredient_row(rows, seen, name, value, unit, weekday or detect_weekday(" ".join(cells)) or current_weekday)
     return rows
+
+
+def collect_meal_section_rows(lines: list[str]) -> list[IngredientRow]:
+    rows: list[IngredientRow] = []
+    seen: set[str] = set()
+    in_meal_section = False
+    current_weekday = ""
+    table_columns: dict[str, int] | None = None
+
+    for raw_line in lines:
+        line = normalize_ocr_line(raw_line)
+        cells = split_ocr_cells(line)
+        row_text = " ".join(cells) if cells else line
+        weekday = detect_weekday(row_text)
+        if weekday:
+            current_weekday = weekday
+
+        if is_meal_section_heading(row_text):
+            in_meal_section = True
+            table_columns = None
+            continue
+        if not in_meal_section or not cells or IGNORED_LINE_PATTERN.search(row_text):
+            continue
+        if is_meal_section_stop(row_text) or SENTENCE_NOISE_PATTERN.search(row_text):
+            continue
+
+        detected_columns = detect_under_three_table_columns(cells)
+        if detected_columns:
+            table_columns = detected_columns
+            continue
+
+        if table_columns:
+            table_weekday = detect_weekday(cells[table_columns.get("day", -1)]) if 0 <= table_columns.get("day", -1) < len(cells) else ""
+            add_row_from_detected_columns(rows, seen, cells, table_columns, table_weekday or weekday or current_weekday)
+            continue
+
+        add_row_from_simple_meal_table(rows, seen, cells, weekday or current_weekday)
+    return rows
+
+
+def is_meal_section_heading(value: str) -> bool:
+    return bool(MEAL_SECTION_HEADING_PATTERN.search(re.sub(r"\s+", "", str(value or ""))))
+
+
+def is_meal_section_stop(value: str) -> bool:
+    text = re.sub(r"\s+", "", str(value or ""))
+    return bool(MEAL_SECTION_STOP_PATTERN.search(text)) and not is_meal_section_heading(text)
+
+
+def add_row_from_simple_meal_table(rows: list[IngredientRow], seen: set[str], cells: list[str], weekday: str) -> bool:
+    for index in range(0, max(0, len(cells) - 2)):
+        name = cells[index]
+        value = cells[index + 1]
+        unit = cells[index + 2]
+        if re.fullmatch(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?", value) and re.search(r"^(?:" + UNIT_PATTERN + r")$", unit, re.IGNORECASE) and not is_meal_section_heading(name):
+            before = len(rows)
+            add_ingredient_row(rows, seen, name, value, unit, weekday)
+            return len(rows) > before
+    return False
 
 
 def split_ocr_rows_for_ingredients(text: str) -> list[str]:
