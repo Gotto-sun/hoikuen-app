@@ -654,6 +654,7 @@ def format_order_quantity(quantity: float, unit: str) -> tuple[str, str]:
 
 
 def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
+    fixed_milk = False
     fixed_yogurt = False
     aggregate: dict[tuple[str, str], dict[str, Any]] = {}
     for row in source_rows:
@@ -661,6 +662,9 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
             continue
         people = WEEKDAY_PEOPLE[row.weekday]
         fixed_key = fixed_order_key(row.name)
+        if fixed_key == "milk":
+            fixed_milk = True
+            continue
         if fixed_key == "yogurt":
             fixed_yogurt = True
             continue
@@ -671,10 +675,7 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
         quantity *= people
         if quantity <= 0:
             continue
-        if fixed_key == "milk":
-            quantity = quantity if unit == "ml" else quantity * 1000 if unit in {"L", "l", "リットル"} else quantity * 450
-            name, unit, step = "牛乳", "ml", None
-        elif rule := rounding_order_rule(row.name):
+        if rule := rounding_order_rule(row.name):
             quantity = convert_to_purchase_unit(quantity, unit, rule)
             name, unit, step = rule[0], rule[1], rule[2]
         else:
@@ -687,18 +688,17 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
             aggregate[key]["step"] = step
 
     order_rows: list[IngredientRow] = []
+    if fixed_milk:
+        order_rows.append(IngredientRow("牛乳", "2", "本"))
     if fixed_yogurt:
         order_rows.append(IngredientRow("ヨーグルト", "2", "パック"))
     for (name, unit), info in aggregate.items():
         quantity = float(info["quantity"])
-        if name == "牛乳" and unit == "ml":
-            formatted_quantity, formatted_unit = str(max(2, int((quantity + 449.999999) // 450))), "本"
-        else:
-            if info.get("step"):
-                quantity = ceil_to_step(quantity, float(info["step"]))
-            if unit == "缶":
-                quantity = int(quantity + 0.999999)
-            formatted_quantity, formatted_unit = format_order_quantity(quantity, unit)
+        if info.get("step"):
+            quantity = ceil_to_step(quantity, float(info["step"]))
+        if unit == "缶":
+            quantity = int(quantity + 0.999999)
+        formatted_quantity, formatted_unit = format_order_quantity(quantity, unit)
         if name and formatted_quantity != "0":
             order_rows.append(IngredientRow(name, formatted_quantity, formatted_unit))
     return sorted(order_rows, key=lambda row: row.name)
