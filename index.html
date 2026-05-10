@@ -200,6 +200,21 @@
       white-space: pre-wrap;
     }
 
+    .csv-textarea {
+      min-height: 180px;
+      resize: vertical;
+      white-space: pre;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .copy-textarea {
+      min-height: 180px;
+      resize: vertical;
+      white-space: pre;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #f8fafc;
+    }
+
     .table-wrap {
       overflow-x: auto;
       text-align: center;
@@ -462,7 +477,18 @@
 
   <main>
     <section>
-      <h2>1. ファイル読み込み（任意）</h2>
+
+      <h2>1. 献立CSV → 発注書作成</h2>
+      <p class="note">献立CSVを貼り付けて「発注書を作る」を押すと、3歳未満児の分量で食材を集計し、発注書とExcel貼り付け用テキストを作ります。</p>
+      <textarea id="menuCsvText" class="csv-textarea" placeholder="ここに献立CSVを貼り付けてください"></textarea>
+      <div class="buttons">
+        <button class="green" type="button" id="menuCsvBtn">発注書を作る</button>
+        <button class="gray" type="button" id="copyTsvBtn">Excel貼り付け用をコピー</button>
+      </div>
+      <p id="csvStatus" class="status"></p>
+      <textarea id="orderTsv" class="copy-textarea" readonly placeholder="発注書を作ると、Excelに貼れるタブ区切りテキストがここに出ます。"></textarea>
+
+      <h2>2. ファイル読み込み（任意）</h2>
       <div class="pdf-box">
         <p class="note">ファイルを選ぶと、すぐに読み込みを開始し、抽出結果を下の確認テーブルと発注書へ自動反映します。</p>
         <input id="pdfFile" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,image/*,.xlsx,.xls,.csv,text/csv,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.txt,text/plain" aria-label="読み込みファイル">
@@ -474,7 +500,7 @@
         <p id="pdfStatus" class="status"></p>
       </div>
 
-      <h2>2. 確認・手入力テーブル</h2>
+      <h2>3. 確認・手入力テーブル</h2>
       <p class="note">材料名・数量・単位を確認してください。ファイル読み込みに失敗しても、手入力とExcel出力は常に使えます。</p>
 
       <div class="document-fields" aria-label="発注書情報">
@@ -509,7 +535,7 @@
     </section>
 
     <section>
-      <h2>3. 発注書レイアウト</h2>
+      <h2>4. 発注書レイアウト</h2>
       <p class="note">入力内容は下の発注書レイアウトに自動反映されます。</p>
       <div class="table-wrap" id="orderPreview"></div>
     </section>
@@ -531,9 +557,26 @@
     const useDate = document.getElementById("useDate");
     const checkerName = document.getElementById("checkerName");
     const notice = document.getElementById("notice");
+    const menuCsvText = document.getElementById("menuCsvText");
+    const menuCsvBtn = document.getElementById("menuCsvBtn");
+    const copyTsvBtn = document.getElementById("copyTsvBtn");
+    const orderTsv = document.getElementById("orderTsv");
+    const csvStatus = document.getElementById("csvStatus");
 
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetDetailRows = 30;
+    const fixedOrderRules = [
+      { key: "milk", label: "牛乳", quantity: 2, unit: "本", note: "450ml × 2本", tests: [/牛乳/, /ミルク/] },
+      { key: "cabbage", label: "キャベツ", quantity: "1/4", unit: "個", note: "固定ルール", tests: [/キャベツ/] },
+      { key: "hakusai", label: "白菜", quantity: "1/8", unit: "個", note: "固定ルール", tests: [/白菜/] },
+      { key: "carrot", label: "にんじん", quantity: "1/2", unit: "本", note: "固定ルール", tests: [/にんじん|人参/] },
+      { key: "mushroom", label: "きのこ類", quantity: 1, unit: "袋", note: "固定ルール", tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
+      { key: "yogurt", label: "ヨーグルト", quantity: 2, unit: "パック", note: "牧場の朝 3個パック × 2", tests: [/ヨーグルト|牧場の朝/] },
+      { key: "apple", label: "りんご", quantity: 1, unit: "個", note: "固定ルール", tests: [/りんご|リンゴ|林檎/] },
+      { key: "orange", label: "オレンジ", quantity: 2, unit: "個", note: "固定ルール", tests: [/オレンジ|みかん|蜜柑/] },
+      { key: "banana", label: "バナナ", quantity: 1, unit: "房", note: "固定ルール", tests: [/バナナ/] }
+    ];
+    const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
     const maxImageOcrSizeBytes = 25 * 1024 * 1024;
     const maxImageOcrDimension = 1500;
     const imageLoadTimeoutMs = 15000;
@@ -542,6 +585,9 @@
     const maxOcrCandidatePatterns = 3;
     const ocrTimeoutMessage = "タイムアウト：画像が重すぎるため処理を中断しました";
     let rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
+
+    menuCsvBtn.addEventListener("click", buildOrderFromMenuCsv);
+    copyTsvBtn.addEventListener("click", copyOrderTsv);
 
     addBtn.addEventListener("click", () => {
       syncRows();
@@ -567,6 +613,8 @@
       deliveryDate.value = "";
       useDate.value = "";
       checkerName.value = "";
+      orderTsv.value = "";
+      csvStatus.textContent = "";
       notice.textContent = "入力を消しました。";
       renderManualTable();
       renderOrderPreview();
@@ -1103,6 +1151,206 @@
       renderOrderPreview();
     }
 
+
+    function buildOrderFromMenuCsv() {
+      const text = menuCsvText.value || "";
+      const result = parseMenuCsv(text);
+      rows = result.rows;
+      ensureEditableRows();
+      renderManualTable();
+      renderOrderPreview();
+      updateOrderTsv();
+      csvStatus.textContent = result.rows.length
+        ? "発注書を作りました（" + result.rows.length + "件）。" + (result.skipped ? " 除外/要確認: " + result.skipped + "行。" : "")
+        : "発注書にできる食材がありませんでした。CSVの見出しと3歳未満児の分量を確認してください。";
+      notice.textContent = result.rows.length ? "献立CSVから発注書データを作成しました。" : "献立CSVから抽出できませんでした。";
+    }
+
+    async function copyOrderTsv() {
+      updateOrderTsv();
+      if (!orderTsv.value) {
+        csvStatus.textContent = "コピーする内容がありません。先に発注書を作ってください。";
+        return;
+      }
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(orderTsv.value);
+        } else {
+          orderTsv.select();
+          document.execCommand("copy");
+        }
+        csvStatus.textContent = "Excel貼り付け用テキストをコピーしました。";
+      } catch (error) {
+        orderTsv.select();
+        csvStatus.textContent = "コピーできませんでした。テキスト欄を選択してコピーしてください。";
+      }
+    }
+
+    function updateOrderTsv() {
+      orderTsv.value = buildTsv(buildExportDocument(getExportRows()));
+    }
+
+    function buildTsv(documentRows) {
+      return documentRows.map(row => row.map(cell => String(cell ?? "").replace(/\r?\n/g, " ")).join("\t")).join("\n");
+    }
+
+    function parseMenuCsv(text) {
+      const lines = String(text || "").split(/\r?\n/).filter(line => line.trim());
+      if (!lines.length || isMostlyBrokenText(text)) return { rows: [], skipped: lines.length };
+      const table = parseDelimitedRows(lines);
+      const headerIndex = findMenuHeaderIndex(table);
+      const columns = headerIndex >= 0 ? detectMenuColumns(table[headerIndex]) : null;
+      let skipped = 0;
+      let sourceRows = [];
+
+      if (columns && columns.name >= 0 && columns.quantity >= 0) {
+        for (let index = headerIndex + 1; index < table.length; index++) {
+          const row = table[index];
+          const lineText = row.join(" ");
+          if (!lineText.trim()) continue;
+          if (isGarbledText(lineText)) { skipped++; continue; }
+          const name = cleanIngredientName(row[columns.name]);
+          const quantity = normalizeQuantity(row[columns.quantity]);
+          const unit = normalizeUnit(row[columns.unit] || guessUnitNearQuantity(row, columns.quantity));
+          if (addMenuSourceRow(sourceRows, name, quantity, unit)) continue;
+          skipped++;
+        }
+      } else {
+        sourceRows = extractRowsFromPdfText(text).filter(row => addMenuSourceRow([], row.name, row.quantity, row.unit));
+        skipped = sourceRows.length ? 0 : lines.length;
+      }
+
+      return { rows: mapMenuRowsToOrderRows(sourceRows), skipped };
+    }
+
+    function parseDelimitedRows(lines) {
+      const delimiter = detectDelimiter(lines);
+      return lines.map(line => parseDelimitedLine(line, delimiter).map(cell => cell.replace(/^=+/, "").trim()));
+    }
+
+    function detectDelimiter(lines) {
+      const sample = lines.slice(0, 10).join("\n");
+      const counts = [{ mark: "\t", count: countMatches(sample, /\t/g) }, { mark: ",", count: countMatches(sample, /,/g) }, { mark: "，", count: countMatches(sample, /，/g) }, { mark: ";", count: countMatches(sample, /;/g) }];
+      counts.sort((a, b) => b.count - a.count);
+      return counts[0].count ? counts[0].mark : ",";
+    }
+
+    function parseDelimitedLine(line, delimiter) {
+      const cells = [];
+      let current = "";
+      let quoted = false;
+      for (let index = 0; index < line.length; index++) {
+        const char = line[index];
+        const next = line[index + 1];
+        if (char === '"') {
+          if (quoted && next === '"') { current += '"'; index++; }
+          else quoted = !quoted;
+        } else if (char === delimiter && !quoted) {
+          cells.push(current);
+          current = "";
+        } else {
+          current += char;
+        }
+      }
+      cells.push(current);
+      return cells;
+    }
+
+    function findMenuHeaderIndex(table) {
+      for (let index = 0; index < Math.min(table.length, 20); index++) {
+        const columns = detectMenuColumns(table[index]);
+        if (columns.name >= 0 && columns.quantity >= 0) return index;
+      }
+      return -1;
+    }
+
+    function detectMenuColumns(header) {
+      const normalized = header.map(cell => String(cell || "").replace(/\s/g, ""));
+      let name = normalized.findIndex(cell => /食材|食品|材料|品名|食料|料理名/.test(cell));
+      if (name < 0) name = 0;
+      let quantity = normalized.findIndex(cell => /(3歳未満|３歳未満|未満児|乳児|未満).*?(分量|使用量|数量|量|g|ｇ|グラム)/.test(cell));
+      if (quantity < 0) quantity = normalized.findIndex(cell => /(分量|使用量|数量|量).*(3歳未満|３歳未満|未満児|乳児|未満)/.test(cell));
+      if (quantity < 0) quantity = normalized.findIndex(cell => /(3歳未満|３歳未満|未満児|乳児)/.test(cell) && !/人数|対象|区分|年齢/.test(cell));
+      let unit = normalized.findIndex((cell, index) => index > name && /単位/.test(cell));
+      if (unit < 0 && quantity >= 0 && /単位/.test(normalized[quantity + 1] || "")) unit = quantity + 1;
+      if (unit < 0 && quantity >= 0 && isKnownUnit(header[quantity + 1])) unit = quantity + 1;
+      return { name, quantity, unit };
+    }
+
+    function guessUnitNearQuantity(row, quantityIndex) {
+      const candidates = [row[quantityIndex + 1], row[quantityIndex - 1], row[row.length - 1]];
+      return candidates.find(value => isKnownUnit(value)) || "g";
+    }
+
+    function addMenuSourceRow(target, name, quantity, unit) {
+      const cleanName = cleanIngredientName(name);
+      const cleanUnit = normalizeUnit(unit || "g");
+      const numericQuantity = numberValue(quantity);
+      if (!cleanName || !numericQuantity || !cleanUnit || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
+      target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, source: "献立CSV" });
+      return true;
+    }
+
+    function isExcludedIngredient(name) {
+      return excludedIngredientPattern.test(String(name || "").replace(/\s/g, ""));
+    }
+
+    function mapMenuRowsToOrderRows(sourceRows) {
+      const fixedKeys = new Set();
+      const aggregate = new Map();
+
+      sourceRows.forEach(row => {
+        const fixed = findFixedRule(row.name);
+        if (fixed) {
+          fixedKeys.add(fixed.key);
+          return;
+        }
+        const converted = convertMenuQuantity(row.quantity, row.unit);
+        const key = normalizeIngredientForGrouping(row.name) + "|" + converted.unit;
+        if (!aggregate.has(key)) aggregate.set(key, { name: normalizeIngredientForGrouping(row.name), quantity: 0, unit: converted.unit });
+        aggregate.get(key).quantity += converted.quantity;
+      });
+
+      const fixedRows = fixedOrderRules.filter(rule => fixedKeys.has(rule.key)).map(rule => ({
+        name: rule.label,
+        quantity: rule.quantity,
+        unit: rule.unit,
+        note: rule.note,
+        source: "献立CSV"
+      }));
+      const aggregatedRows = Array.from(aggregate.values()).map(row => finalizeMenuQuantity(row));
+      return fixedRows.concat(aggregatedRows).sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
+    }
+
+    function findFixedRule(name) {
+      return fixedOrderRules.find(rule => rule.tests.some(pattern => pattern.test(name)));
+    }
+
+    function normalizeIngredientForGrouping(name) {
+      return cleanIngredientName(name)
+        .replace(/[（(].*?[）)]/g, "")
+        .replace(/^(冷凍|国産|生|カット|千切り|皮むき)/, "")
+        .trim();
+    }
+
+    function convertMenuQuantity(quantity, unit) {
+      const amount = numberValue(quantity);
+      const normalizedUnit = normalizeUnit(unit || "g");
+      if (normalizedUnit === "kg") return { quantity: amount * 1000, unit: "g" };
+      if (normalizedUnit === "L" || normalizedUnit === "l" || normalizedUnit === "リットル") return { quantity: amount * 1000, unit: "ml" };
+      if (normalizedUnit === "グラム") return { quantity: amount, unit: "g" };
+      if (normalizedUnit === "cc") return { quantity: amount, unit: "ml" };
+      return { quantity: amount, unit: normalizedUnit };
+    }
+
+    function finalizeMenuQuantity(row) {
+      let quantity = round(row.quantity);
+      let unit = row.unit;
+      if (unit === "g" && quantity >= 1000) { quantity = round(quantity / 1000); unit = "kg"; }
+      if (unit === "ml" && quantity >= 1000) { quantity = round(quantity / 1000); unit = "L"; }
+      return { name: row.name, quantity, unit, note: "献立CSV集計", source: "献立CSV" };
+    }
+
     function createBlankRow() {
       return { name: "", quantity: "", unit: "" };
     }
@@ -1311,7 +1559,7 @@
         manualRows.innerHTML = rows.map((row, index) => {
           return "<tr>" +
             '<td data-label="材料名"><input data-index="' + index + '" data-field="name" type="text" value="' + escapeHtml(row.name) + '" placeholder="例：にんじん"></td>' +
-            '<td data-label="数量"><input data-index="' + index + '" data-field="quantity" type="number" step="0.001" min="0" value="' + escapeHtml(row.quantity) + '" placeholder="例：2"></td>' +
+            '<td data-label="数量"><input data-index="' + index + '" data-field="quantity" type="text" inputmode="decimal" value="' + escapeHtml(row.quantity) + '" placeholder="例：2"></td>' +
             '<td data-label="単位"><input data-index="' + index + '" data-field="unit" type="text" value="' + escapeHtml(row.unit) + '" placeholder="例：kg"></td>' +
             '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
           "</tr>";
@@ -1353,14 +1601,14 @@
       return rows
         .filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim())
         .map(row => {
-          const quantity = numberValue(row.quantity);
+          const quantity = exportQuantityValue(row.quantity);
           return [
             "□",
             String(row.name || "").trim(),
-            quantity || "",
+            quantity,
             String(row.unit || "").trim(),
-            "手入力",
-            quantity || "",
+            String(row.note || row.source || "手入力"),
+            quantity,
             String(row.unit || "").trim(),
             "",
             "",
@@ -1369,11 +1617,19 @@
         });
     }
 
+    function exportQuantityValue(value) {
+      const text = String(value ?? "").trim();
+      if (!text) return "";
+      return /^-?[0-9０-９]+(?:[.,．][0-9０-９]+)?$/.test(text) ? numberValue(text) : text;
+    }
+
     function renderOrderPreview() {
       const exportRows = getExportRows();
       const detailRows = paddedOrderRows(exportRows, 10);
       const dateLine = formatOrderDateLine(deliveryDate.value, useDate.value);
       const totals = calculateExportTotals(exportRows);
+
+      if (orderTsv) orderTsv.value = buildTsv(buildExportDocument(exportRows));
 
       orderPreview.innerHTML = '<table class="preview-sheet">' +
         '<tbody>' +
