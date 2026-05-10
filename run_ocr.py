@@ -92,9 +92,12 @@ HEADERS = [
     "補正方法",
     "OCRエンジン",
     "読み取り全文",
+    "抽出した食材",
+    "抽出した数量",
+    "抽出した単位",
     "抽出した日付",
     "抽出した金額",
-    "抽出した数量",
+    "OCR内の数量候補",
     "抽出した電話番号",
     "信頼度",
     "要確認フラグ",
@@ -136,6 +139,13 @@ class ExtractedFields:
     quantities: list[str]
     phones: list[str]
     postal_codes: list[str]
+
+
+@dataclass
+class IngredientRow:
+    name: str
+    quantity: str
+    unit: str
 
 
 def optional_module(name: str) -> Any | None:
@@ -450,6 +460,82 @@ def extract_fields(text: str) -> ExtractedFields:
     )
 
 
+UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
+IGNORED_LINE_PATTERN = re.compile(r"発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
+
+
+def normalize_ocr_line(value: str) -> str:
+    table = str.maketrans("０１２３４５６７８９，．ｋＫｇＧｍＭｌＬ", "0123456789,.kkggmmll")
+    text = str(value or "").translate(table)
+    text = re.sub(r"([0-9])\s*(キロ|KG)", r"\1kg", text, flags=re.IGNORECASE)
+    text = re.sub(r"([0-9])\s*(グラム|G)(?=\s|$)", r"\1g", text, flags=re.IGNORECASE)
+    text = re.sub(r"[|＿_~〜=<>《》]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def normalize_unit(value: str) -> str:
+    unit = normalize_ocr_line(value)
+    lower = unit.lower()
+    if lower in {"kg", "㎏", "キロ"}:
+        return "kg"
+    if lower in {"g", "グラム"}:
+        return "g"
+    if lower == "ml":
+        return "ml"
+    return unit
+
+
+def is_garbled_text(value: str) -> bool:
+    compact = re.sub(r"\s+", "", str(value or ""))
+    if not compact:
+        return True
+    japanese = len(re.findall(r"[ぁ-んァ-ン一-龥]", compact))
+    readable = japanese + len(re.findall(r"[A-Za-z0-9]", compact))
+    broken = len(re.findall(r"[�□■◇◆○●]", compact))
+    return broken > 0 or (len(compact) >= 12 and readable / len(compact) < 0.45)
+
+
+def clean_ingredient_name(value: str) -> str:
+    name = normalize_ocr_line(value)
+    name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
+    name = re.sub(r"[：:].*$", "", name)
+    return name.strip()
+
+
+def is_suspicious_ingredient_name(value: str) -> bool:
+    name = re.sub(r"\s+", "", str(value or ""))
+    if not name:
+        return True
+    japanese = len(re.findall(r"[ぁ-んァ-ン一-龥]", name))
+    digits = len(re.findall(r"[0-9]", name))
+    return japanese == 0 or digits > japanese or len(name) > 32 or is_garbled_text(name)
+
+
+def extract_ingredient_rows(text: str) -> list[IngredientRow]:
+    rows: list[IngredientRow] = []
+    seen: set[str] = set()
+    quantity = r"([0-9０-９]+(?:[.,．][0-9０-９]+)?)"
+    pattern = re.compile(r"([ぁ-んァ-ン一-龥A-Za-zーｰ－・/／()（）\s]{1,32}?)\s*" + quantity + r"\s*(" + UNIT_PATTERN + r")", re.IGNORECASE)
+    for raw_line in re.split(r"\r?\n|[|｜]", str(text or "")):
+        line = normalize_ocr_line(raw_line)
+        if not line or IGNORED_LINE_PATTERN.search(line) or is_garbled_text(line):
+            continue
+        for match in pattern.finditer(line):
+            name = clean_ingredient_name(match.group(1))
+            qty = normalize_value(match.group(2)).replace(",", "")
+            unit = normalize_unit(match.group(3))
+            key = f"{name}|{qty}|{unit}"
+            if key in seen or is_suspicious_ingredient_name(name):
+                continue
+            seen.add(key)
+            rows.append(IngredientRow(name, qty, unit))
+    return rows
+
+
+def format_ingredient_column(rows: list[IngredientRow], field_name: str) -> str:
+    return " / ".join(str(getattr(row, field_name)) for row in rows)
+
+
 def garbled_ratio(text: str) -> float:
     if not text:
         return 1.0
@@ -528,6 +614,9 @@ def row_for_error(path: Path, message: str) -> list[Any]:
         "",
         "",
         "",
+        "",
+        "",
+        "",
         0,
         "要確認",
         f"エラー: {message}",
@@ -575,9 +664,17 @@ def process_image_inner(path: Path) -> list[Any]:
     logging.info("処理開始: %s", path)
     source = load_image(path)
     best, candidates = collect_candidates(source)
-    fields = extract_fields(best.text)
+    raw_text = best.text.strip()
+    if not raw_text:
+        logging.error("読み取り失敗: %s OCR結果が空", path)
+        raise ValueError("OCR結果が空です。Excelは作成しません")
+    ingredient_rows = extract_ingredient_rows(raw_text)
+    fields = extract_fields(raw_text)
     reasons = confirmation_reasons(best, candidates, fields)
     notes = reasons + best.notes
+    if not ingredient_rows:
+        notes.append("読み取り失敗: 食材名・数量・単位を抽出できませんでした")
+        logging.error("抽出失敗: %s 食材名・数量・単位=0件 OCR全文=%s", path, raw_text[:500])
     if fields.postal_codes:
         notes.append("郵便番号: " + " / ".join(fields.postal_codes))
     processed_path = save_processed_image(best, path)
@@ -589,7 +686,10 @@ def process_image_inner(path: Path) -> list[Any]:
         f"{best.angle}°",
         best.method,
         engines,
-        best.text,
+        raw_text,
+        format_ingredient_column(ingredient_rows, "name"),
+        format_ingredient_column(ingredient_rows, "quantity"),
+        format_ingredient_column(ingredient_rows, "unit"),
         " / ".join(fields.dates),
         " / ".join(fields.amounts),
         " / ".join(fields.quantities),
@@ -620,16 +720,16 @@ def write_excel(rows: list[list[Any]]) -> None:
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
     for row_index in range(2, sheet.max_row + 1):
-        confidence = sheet.cell(row_index, 11).value or 0
-        needs_confirmation = sheet.cell(row_index, 12).value == "要確認"
+        confidence = sheet.cell(row_index, 14).value or 0
+        needs_confirmation = sheet.cell(row_index, 15).value == "要確認"
         fill = red_fill if float(confidence) < VERY_LOW_CONFIDENCE_THRESHOLD else yellow_fill if needs_confirmation else None
         for col_index in range(1, sheet.max_column + 1):
             cell = sheet.cell(row_index, col_index)
-            cell.alignment = Alignment(vertical="top", wrap_text=(col_index == 6 or col_index == 13))
+            cell.alignment = Alignment(vertical="top", wrap_text=(col_index == 6 or col_index == 16))
             if fill:
                 cell.fill = fill
 
-    widths = [20, 24, 12, 28, 24, 60, 26, 24, 24, 24, 12, 14, 45, 44]
+    widths = [20, 24, 12, 28, 24, 60, 30, 18, 14, 26, 24, 24, 24, 12, 14, 45, 44]
     for index, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = width
     sheet.freeze_panes = "A2"
@@ -652,7 +752,15 @@ def main() -> int:
         rows.append(process_image(path))
         percent_after = 100 if total == 0 else round((index / total) * 100)
         logging.info("進捗: %s%% (%s/%s)", percent_after, index, total)
-    write_excel(rows)
+    valid_rows = [row for row in rows if len(row) >= len(HEADERS) and str(row[5]).strip() and str(row[6]).strip()]
+    if not valid_rows:
+        logging.error("Excel作成中止: OCR結果または食材抽出結果が空です")
+        if EXCEL_PATH.exists():
+            EXCEL_PATH.unlink()
+        print("読み取り失敗: OCR結果または食材抽出結果が空のため、Excelは作成しません。")
+        print(f"ログ: {LOG_PATH}")
+        return 1
+    write_excel(valid_rows)
     logging.info("Excelを保存しました: %s", EXCEL_PATH)
     print(f"完了: {EXCEL_PATH}")
     print(f"ログ: {LOG_PATH}")
