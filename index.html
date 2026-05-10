@@ -1472,7 +1472,7 @@
       return excludedIngredientPattern.test(String(name || "").replace(/\s/g, ""));
     }
 
-    function mapMenuRowsToOrderRows(sourceRows) {
+    function mapMenuRowsToOrderRows(sourceRows, sourceLabel = "献立CSV") {
       const fixedKeys = new Set();
       const aggregate = new Map();
 
@@ -1493,9 +1493,9 @@
         quantity: rule.quantity,
         unit: rule.unit,
         note: rule.note,
-        source: "献立CSV"
+        source: sourceLabel
       }));
-      const aggregatedRows = Array.from(aggregate.values()).map(row => finalizeMenuQuantity(row));
+      const aggregatedRows = Array.from(aggregate.values()).map(row => finalizeMenuQuantity(row, sourceLabel)).filter(row => row.name && row.quantity);
       return fixedRows.concat(aggregatedRows).sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
     }
 
@@ -1517,15 +1517,17 @@
       if (normalizedUnit === "L" || normalizedUnit === "l" || normalizedUnit === "リットル") return { quantity: amount * 1000, unit: "ml" };
       if (normalizedUnit === "グラム") return { quantity: amount, unit: "g" };
       if (normalizedUnit === "cc") return { quantity: amount, unit: "ml" };
+      if (normalizedUnit === "缶") return { quantity: Math.ceil(amount), unit: "缶" };
       return { quantity: amount, unit: normalizedUnit };
     }
 
-    function finalizeMenuQuantity(row) {
+    function finalizeMenuQuantity(row, sourceLabel) {
       let quantity = round(row.quantity);
       let unit = row.unit;
       if (unit === "g" && quantity >= 1000) { quantity = round(quantity / 1000); unit = "kg"; }
       if (unit === "ml" && quantity >= 1000) { quantity = round(quantity / 1000); unit = "L"; }
-      return { name: row.name, quantity, unit, note: "献立CSV集計", source: "献立CSV" };
+      if (!quantity || quantity <= 0) return { name: "", quantity: "", unit: "", note: "", source: "" };
+      return { name: row.name, quantity, unit, note: sourceLabel === "OCR" ? "3歳未満児集計" : "献立CSV集計", source: sourceLabel };
     }
 
     function createBlankRow() {
@@ -1533,16 +1535,14 @@
     }
 
     function parseIngredients(text) {
-      return extractRowsFromPdfText(text);
+      const sourceRows = extractRowsFromPdfText(text);
+      return mapMenuRowsToOrderRows(sourceRows, "OCR");
     }
 
     function applyParsedRows(parsedRows, options = {}) {
       const append = options.append !== false;
       const statusPrefix = options.statusPrefix || "読み込み完了";
-      const importedRows = (Array.isArray(parsedRows) ? parsedRows : []).filter(row => {
-        const rowText = [row.name, row.quantity, row.unit].join(" ");
-        return !isGarbledText(rowText) && !isSuspiciousIngredientName(row.name) && isLikelyIngredientRow(row, rowText);
-      });
+      const importedRows = (Array.isArray(parsedRows) ? parsedRows : []).filter(isValidOrderRow);
       const currentRows = rows.filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim());
       rows = append ? currentRows.concat(importedRows) : importedRows;
 
@@ -1562,8 +1562,18 @@
       updateExcelButtonState();
     }
 
+    function isValidOrderRow(row) {
+      const name = String(row && row.name ? row.name : "").trim();
+      const quantity = String(row && row.quantity !== undefined ? row.quantity : "").trim();
+      const unit = String(row && row.unit ? row.unit : "").trim();
+      if (!name || !quantity || !unit || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) return false;
+      if (/^0+(?:[.,．]0+)?$/.test(quantity)) return false;
+      return /^([0-9０-９]+(?:[.,．][0-9０-９]+)?|[0-9０-９]+\/[0-9０-９]+)$/.test(quantity);
+    }
+
     function extractRowsFromPdfText(text) {
       const lines = String(text || "")
+        .replace(/OCR全文/g, "\n")
         .replace(/【[^】]+】/g, "\n")
         .replace(/[|｜]/g, "\n")
         .split(/\r?\n|(?<=\d)\s{2,}|(?<=[ｇgｍmlL個本袋パック玉束枚缶箱尾切片丁株房杯食])\s+(?=[ぁ-んァ-ヶ一-龠々])/i)
@@ -1572,24 +1582,61 @@
       const extracted = [];
       const seen = new Set();
 
+      collectUnderThreeRows(lines).forEach(row => addUniqueSourceRow(extracted, seen, row));
+
       lines.forEach(line => {
-        if (isIgnoredPdfLine(line)) return;
-        extractRowsFromLine(line).forEach(row => {
-          const key = [row.name, row.quantity, row.unit].join("|");
-          if (seen.has(key)) return;
-          seen.add(key);
-          extracted.push(row);
-        });
+        if (isIgnoredPdfLine(line) || isSentenceNoise(line)) return;
+        extractRowsFromLine(line).forEach(row => addUniqueSourceRow(extracted, seen, row));
       });
 
       return extracted;
+    }
+
+    function addUniqueSourceRow(target, seen, row) {
+      const cleanName = cleanIngredientName(row.name);
+      const cleanUnit = normalizeUnit(row.unit || "g");
+      const quantity = normalizeQuantity(row.quantity);
+      const numericQuantity = numberValue(quantity);
+      if (!cleanName || !cleanUnit || !numericQuantity || numericQuantity <= 0 || isExcludedIngredient(cleanName)) return;
+      const key = [normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
+      if (seen.has(key)) return;
+      seen.add(key);
+      target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, source: row.source || "OCR" });
+    }
+
+    function collectUnderThreeRows(lines) {
+      const rows = [];
+      const table = lines.map(line => line.split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean));
+      const headerIndex = findMenuHeaderIndex(table);
+      const columns = headerIndex >= 0 ? detectMenuColumns(table[headerIndex]) : null;
+      if (columns && columns.name >= 0 && columns.quantity >= 0) {
+        for (let index = headerIndex + 1; index < table.length; index++) {
+          const cells = table[index];
+          if (!cells.length || isIgnoredPdfLine(cells.join(" "))) continue;
+          rows.push({
+            name: cells[columns.name],
+            quantity: cells[columns.quantity],
+            unit: cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity),
+            source: "3歳未満児"
+          });
+        }
+      }
+
+      const markerPattern = /(3歳未満児?|３歳未満児?|未満児|乳児)/;
+      const unitPattern = unitNames().map(unit => escapeRegExp(unit)).join("|");
+      const inlinePattern = new RegExp("^(.{1,40}?)" + markerPattern.source + ".*?([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")", "i");
+      lines.forEach(line => {
+        const match = normalizeOcrLine(line).match(inlinePattern);
+        if (match) rows.push({ name: match[1], quantity: match[2], unit: match[3], source: "3歳未満児" });
+      });
+      return rows;
     }
 
     function extractRowsFromLine(line) {
       const escapedUnits = unitNames().map(unit => unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
       const results = [];
       const normalizedLine = normalizeOcrLine(line).replace(/,/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
-      if (!normalizedLine || isGarbledText(normalizedLine) || isIgnoredPdfLine(normalizedLine)) return results;
+      if (!normalizedLine || isGarbledText(normalizedLine) || isIgnoredPdfLine(normalizedLine) || isSentenceNoise(normalizedLine)) return results;
       const quantityText = "([0-9０-９]+(?:[.,．][0-9０-９]+)?)";
       const nameFirstPattern = new RegExp("^(.+?)\\s+" + quantityText + "\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
       const joinedNameFirstPattern = new RegExp("^(.{1,40}?)" + quantityText + "\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
@@ -1625,9 +1672,9 @@
       const name = cleanIngredientName(nameValue);
       const quantity = normalizeQuantity(quantityValue);
       const unit = normalizeUnit(unitValue);
-      if (!name || !quantity || !unit || isIgnoredPdfLine(name) || isSuspiciousIngredientName(name)) return;
+      if (!name || !quantity || !unit || isIgnoredPdfLine(name) || isSuspiciousIngredientName(name) || isExcludedIngredient(name)) return;
       if (!isLikelyIngredientRow({ name, quantity, unit }, sourceLine)) return;
-      target.push({ name, quantity, unit, source: "OCR全文" });
+      target.push({ name, quantity, unit, source: "OCR" });
     }
 
     function unitNames() {
@@ -1644,7 +1691,11 @@
     }
 
     function isIgnoredPdfLine(line) {
-      return /発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|スクルドエンジェル|たかばり|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所/.test(line);
+      return /OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|スクルドエンジェル|たかばり|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所/.test(line);
+    }
+
+    function isSentenceNoise(line) {
+      return /を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます|入れる|加える|混ぜる|焼く|煮る|炒める/.test(String(line || ""));
     }
 
     function isLikelyIngredientRow(row, sourceLine = "") {
@@ -1655,7 +1706,7 @@
       const hasFoodLikeChars = /[ぁ-んァ-ヶ一-龠々]/.test(compactName);
       const hasQuantityAndUnit = isQuantity(row.quantity) && isKnownUnit(row.unit);
       const tooLong = compactName.length > 32 || line.length > 80;
-      const looksLikeSentence = /です|ます|ください|お願い|備考|注意|以下|以上|合計|小計|税込|税抜/.test(line);
+      const looksLikeSentence = /です|ます|ください|お願い|備考|注意|以下|以上|合計|小計|税込|税抜|を塗って|しましょう|食べる|入れる|加える|混ぜる|焼く|煮る|炒める/.test(line);
       const hasTooManyDigits = countMatches(compactName, /[0-9０-９]/g) > Math.max(1, japaneseCount);
       return hasQuantityAndUnit && hasFoodLikeChars && japaneseCount >= 1 && !tooLong && !looksLikeSentence && !hasTooManyDigits && !isGarbledText(line);
     }
@@ -1711,6 +1762,10 @@
       return /�/.test(compact) || countMatches(compact, /[□■◇◆]/g) >= 2 ||
         (length >= 4 && japaneseCount === 0) || (length >= 3 && symbolCount / length > 0.28) ||
         (length >= 3 && digitCount > japaneseCount);
+    }
+
+    function escapeRegExp(value) {
+      return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     }
 
     function countMatches(value, pattern) {
@@ -1775,7 +1830,7 @@
             '<td data-label="材料名">' + escapeHtml(row.name) + '</td>' +
             '<td data-label="数量">' + escapeHtml(row.quantity) + '</td>' +
             '<td data-label="単位">' + escapeHtml(row.unit) + '</td>' +
-            '<td data-label="抽出元">' + escapeHtml(row.source || "OCR全文") + '</td>' +
+            '<td data-label="抽出元">' + escapeHtml(row.source || "OCR") + '</td>' +
           "</tr>";
         }).join("");
       }
@@ -1822,7 +1877,7 @@
             String(row.name || "").trim(),
             quantity,
             String(row.unit || "").trim(),
-            String(row.note || row.source || "OCR全文"),
+            String(row.note || row.source || ""),
             quantity,
             String(row.unit || "").trim(),
             "",
