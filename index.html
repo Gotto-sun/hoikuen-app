@@ -671,37 +671,39 @@
 
     async function recognizeBestJapaneseOcr(sourceCanvas, options = {}) {
       const rotations = [0, 90, 180, 270];
-      const results = [];
       const baseProgress = Number(options.baseProgress) || 0;
       const progressRange = Number(options.progressRange) || 60;
       const label = options.label || "画像OCR";
       const detail = options.detail ? "（" + options.detail + "）" : "";
-
-      for (let index = 0; index < rotations.length; index++) {
-        const angle = rotations[index];
+      const ocrTargets = rotations.flatMap(angle => {
         const rotatedCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
-        const targetCanvas = preprocessCanvasForOcr(rotatedCanvas);
-        const rotationStart = baseProgress + Math.round((index / rotations.length) * progressRange);
-        updateImportProgress(rotationStart, label + detail + "中です（" + angle + "度・画像補正済み）。");
-        const result = await Tesseract.recognize(targetCanvas, "jpn", {
+        return createOcrPreprocessCanvases(rotatedCanvas).map(variant => ({ angle, ...variant }));
+      });
+      const results = [];
+
+      for (let index = 0; index < ocrTargets.length; index++) {
+        const target = ocrTargets[index];
+        const targetStart = baseProgress + Math.round((index / ocrTargets.length) * progressRange);
+        updateImportProgress(targetStart, label + detail + "中です（" + target.angle + "度・" + target.label + "）。");
+        const result = await Tesseract.recognize(target.canvas, "jpn", {
           langPath: "https://tessdata.projectnaptha.com/4.0.0",
           logger: data => {
             if (data && data.status === "recognizing text") {
               const progress = Number(data.progress) || 0;
-              const totalProgress = baseProgress + Math.round(((index + progress) / rotations.length) * progressRange);
-              updateImportProgress(totalProgress, label + detail + "中です（" + angle + "度 " + Math.round(progress * 100) + "%）。");
+              const totalProgress = baseProgress + Math.round(((index + progress) / ocrTargets.length) * progressRange);
+              updateImportProgress(totalProgress, label + detail + "中です（" + target.angle + "度・" + target.label + " " + Math.round(progress * 100) + "%）。");
             }
           }
         });
         const text = result && result.data ? String(result.data.text || "").trim() : "";
-        results.push({ angle, text, japaneseCount: countJapaneseCharacters(text), garbled: isGarbledText(text) });
+        results.push(scoreOcrText({ angle: target.angle, variant: target.label, text }));
       }
 
       const readableResults = results.filter(result => result.text && !result.garbled);
-      const best = readableResults.sort((a, b) => b.japaneseCount - a.japaneseCount || a.angle - b.angle)[0] || { angle: 0, text: "", japaneseCount: 0, garbled: true };
+      const best = readableResults.sort((a, b) => b.score - a.score || b.materialRowCount - a.materialRowCount || b.japaneseCount - a.japaneseCount || a.angle - b.angle)[0] || { angle: 0, variant: "", text: "", score: 0, japaneseCount: 0, materialRowCount: 0, garbled: true };
       pdfStatus.textContent = best.garbled
         ? label + "完了。文字化けの可能性が高いため、発注書には反映しません。"
-        : label + "完了。日本語文字数が一番多い" + best.angle + "度の結果を採用しました。";
+        : label + "完了。日本語・数字・単位が一番多い" + best.angle + "度（" + best.variant + "）の結果を採用しました。";
       return best;
     }
 
@@ -739,16 +741,29 @@
       return canvas;
     }
 
-    function preprocessCanvasForOcr(sourceCanvas) {
+    function createOcrPreprocessCanvases(sourceCanvas) {
+      const baseCanvas = trimCanvasMargins(sourceCanvas);
+      const baseImage = canvasToContrastedImageData(baseCanvas, 2.25);
+      const otsu = calculateOtsuThreshold(baseImage.data);
+      const thresholds = [
+        { label: "二値化標準", threshold: otsu },
+        { label: "二値化薄字", threshold: Math.max(80, otsu - 28) },
+        { label: "二値化濃字", threshold: Math.min(245, otsu + 28) },
+        { label: "二値化強調", threshold: 190 }
+      ];
+      return thresholds.map(setting => ({
+        label: setting.label,
+        canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, setting.threshold)), 3)
+      }));
+    }
+
+    function canvasToContrastedImageData(sourceCanvas, contrast) {
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, sourceCanvas.width);
       canvas.height = Math.max(1, sourceCanvas.height);
       const context = canvas.getContext("2d", { willReadFrequently: true });
       context.drawImage(sourceCanvas, 0, 0);
-
       const image = context.getImageData(0, 0, canvas.width, canvas.height);
-      const threshold = calculateOtsuThreshold(image.data);
-      const contrast = 1.55;
 
       for (let index = 0; index < image.data.length; index += 4) {
         const red = image.data[index];
@@ -756,16 +771,30 @@
         const blue = image.data[index + 2];
         const gray = red * 0.299 + green * 0.587 + blue * 0.114;
         const contrasted = Math.max(0, Math.min(255, (gray - 128) * contrast + 128));
-        const value = contrasted < threshold ? 0 : 255;
-        image.data[index] = value;
-        image.data[index + 1] = value;
-        image.data[index + 2] = value;
+        image.data[index] = contrasted;
+        image.data[index + 1] = contrasted;
+        image.data[index + 2] = contrasted;
         image.data[index + 3] = 255;
       }
-      context.putImageData(image, 0, 0);
+      return image;
+    }
 
-      const trimmedCanvas = trimCanvasMargins(canvas);
-      return scaleCanvas(trimmedCanvas, 2);
+    function imageDataToBinaryCanvas(image, threshold) {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      const binaryImage = new ImageData(new Uint8ClampedArray(image.data), image.width, image.height);
+
+      for (let index = 0; index < binaryImage.data.length; index += 4) {
+        const value = binaryImage.data[index] < threshold ? 0 : 255;
+        binaryImage.data[index] = value;
+        binaryImage.data[index + 1] = value;
+        binaryImage.data[index + 2] = value;
+        binaryImage.data[index + 3] = 255;
+      }
+      context.putImageData(binaryImage, 0, 0);
+      return canvas;
     }
 
     function calculateOtsuThreshold(data) {
@@ -1005,14 +1034,15 @@
       const results = [];
       const normalizedLine = String(line || "").replace(/,/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
       const nameFirstPattern = new RegExp("^(.+?)\\s+([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
+      const joinedNameFirstPattern = new RegExp("^(.{1,40}?)([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
       const quantityFirstPattern = new RegExp("^([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")\\s+(.+)$", "i");
-      const nameFirstMatch = normalizedLine.match(nameFirstPattern);
+      const nameFirstMatch = normalizedLine.match(nameFirstPattern) || normalizedLine.match(joinedNameFirstPattern);
       const quantityFirstMatch = normalizedLine.match(quantityFirstPattern);
 
       if (nameFirstMatch) {
-        addExtractedRow(results, nameFirstMatch[1], nameFirstMatch[2], nameFirstMatch[3]);
+        addExtractedRow(results, nameFirstMatch[1], nameFirstMatch[2], nameFirstMatch[3], line);
       } else if (quantityFirstMatch) {
-        addExtractedRow(results, quantityFirstMatch[3], quantityFirstMatch[1], quantityFirstMatch[2]);
+        addExtractedRow(results, quantityFirstMatch[3], quantityFirstMatch[1], quantityFirstMatch[2], line);
       }
 
       const cells = String(line || "").split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
@@ -1021,18 +1051,19 @@
           const name = cells[index];
           const quantity = cells[index + 1];
           const unit = cells[index + 2];
-          if (isQuantity(quantity) && isKnownUnit(unit)) addExtractedRow(results, name, quantity, unit);
+          if (isQuantity(quantity) && isKnownUnit(unit)) addExtractedRow(results, name, quantity, unit, line);
         }
       }
 
       return results;
     }
 
-    function addExtractedRow(target, nameValue, quantityValue, unitValue) {
+    function addExtractedRow(target, nameValue, quantityValue, unitValue, sourceLine = "") {
       const name = cleanIngredientName(nameValue);
       const quantity = normalizeQuantity(quantityValue);
       const unit = normalizeUnit(unitValue);
       if (!name || !quantity || !unit || isIgnoredPdfLine(name) || isSuspiciousIngredientName(name)) return;
+      if (!isLikelyIngredientRow({ name, quantity, unit }, sourceLine)) return;
       target.push({ name, quantity, unit });
     }
 
@@ -1050,7 +1081,35 @@
     }
 
     function isIgnoredPdfLine(line) {
-      return /発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|スクルドエンジェル|たかばり/.test(line);
+      return /発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|スクルドエンジェル|たかばり|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所/.test(line);
+    }
+
+    function isLikelyIngredientRow(row, sourceLine = "") {
+      const name = String(row && row.name ? row.name : "").trim();
+      const line = String(sourceLine || name).trim();
+      const compactName = name.replace(/\s/g, "");
+      const japaneseCount = countJapaneseCharacters(compactName);
+      const hasFoodLikeChars = /[ぁ-んァ-ヶ一-龠々]/.test(compactName);
+      const hasQuantityAndUnit = isQuantity(row.quantity) && isKnownUnit(row.unit);
+      const tooLong = compactName.length > 32 || line.length > 80;
+      const looksLikeSentence = /です|ます|ください|お願い|備考|注意|以下|以上/.test(line);
+      return hasQuantityAndUnit && hasFoodLikeChars && japaneseCount >= 1 && !tooLong && !looksLikeSentence && !isGarbledText(line);
+    }
+
+    function scoreOcrText(result) {
+      const text = String(result.text || "").trim();
+      const japaneseCount = countJapaneseCharacters(text);
+      const digitCount = countMatches(text, /[0-9０-９]/g);
+      const unitCount = countUnitMentions(text);
+      const materialRowCount = parseIngredients(text).length;
+      const garbled = isGarbledText(text);
+      const score = garbled ? -100000 : (japaneseCount * 3) + (digitCount * 2) + (unitCount * 8) + (materialRowCount * 30);
+      return { ...result, text, japaneseCount, digitCount, unitCount, materialRowCount, garbled, score };
+    }
+
+    function countUnitMentions(value) {
+      const escapedUnits = unitNames().map(unit => unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+      return countMatches(value, new RegExp("(" + escapedUnits + ")", "gi"));
     }
 
     function isGarbledText(value) {
