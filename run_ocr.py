@@ -464,7 +464,17 @@ def extract_fields(text: str) -> ExtractedFields:
 
 
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
-IGNORED_LINE_PATTERN = re.compile(r"発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
+IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
+SENTENCE_NOISE_PATTERN = re.compile(r"を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます|入れる|加える|混ぜる|焼く|煮る|炒める")
+EXCLUDED_INGREDIENT_PATTERN = re.compile(r"米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
+FIXED_ORDER_RULES = [
+    ("牛乳", "2", "本", "450ml × 2本", re.compile(r"牛乳|ミルク")),
+    ("キャベツ", "1/4", "個", "固定ルール", re.compile(r"キャベツ")),
+    ("白菜", "1/8", "個", "固定ルール", re.compile(r"白菜")),
+    ("にんじん", "1/2", "本", "固定ルール", re.compile(r"にんじん|人参")),
+    ("きのこ類", "1", "袋", "固定ルール", re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
+    ("ヨーグルト", "2", "パック", "3個パック × 2", re.compile(r"ヨーグルト|牧場の朝")),
+]
 
 
 def normalize_ocr_line(value: str) -> str:
@@ -500,6 +510,7 @@ def is_garbled_text(value: str) -> bool:
 
 def clean_ingredient_name(value: str) -> str:
     name = normalize_ocr_line(value)
+    name = re.sub(r"OCR全文", " ", name)
     name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
     name = re.sub(r"[：:].*$", "", name)
     return name.strip()
@@ -511,7 +522,7 @@ def is_suspicious_ingredient_name(value: str) -> bool:
         return True
     japanese = len(re.findall(r"[ぁ-んァ-ン一-龥]", name))
     digits = len(re.findall(r"[0-9]", name))
-    return japanese == 0 or digits > japanese or len(name) > 32 or is_garbled_text(name)
+    return japanese == 0 or digits > japanese or len(name) > 32 or is_garbled_text(name) or bool(SENTENCE_NOISE_PATTERN.search(name))
 
 
 def extract_ingredient_rows(text: str) -> list[IngredientRow]:
@@ -519,21 +530,99 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
     seen: set[str] = set()
     quantity = r"([0-9０-９]+(?:[.,．][0-9０-９]+)?)"
     pattern = re.compile(r"([ぁ-んァ-ン一-龥A-Za-zーｰ－・/／()（）\s]{1,32}?)\s*" + quantity + r"\s*(" + UNIT_PATTERN + r")", re.IGNORECASE)
-    for raw_line in re.split(r"\r?\n|[|｜]", str(text or "")):
+    for raw_line in re.split(r"\r?\n|[|｜]", str(text or "").replace("OCR全文", "\n")):
         line = normalize_ocr_line(raw_line)
-        if not line or IGNORED_LINE_PATTERN.search(line) or is_garbled_text(line):
+        if not line or IGNORED_LINE_PATTERN.search(line) or SENTENCE_NOISE_PATTERN.search(line) or is_garbled_text(line):
+            continue
+        under_three_match = re.search(r"^(.{1,40}?)(?:3歳未満児?|３歳未満児?|未満児|乳児).*?" + quantity + r"\s*(" + UNIT_PATTERN + r")", line, re.IGNORECASE)
+        if under_three_match:
+            add_ingredient_row(rows, seen, under_three_match.group(1), under_three_match.group(2), under_three_match.group(3))
             continue
         for match in pattern.finditer(line):
-            name = clean_ingredient_name(match.group(1))
-            qty = normalize_value(match.group(2)).replace(",", "")
-            unit = normalize_unit(match.group(3))
-            key = f"{name}|{qty}|{unit}"
-            if key in seen or is_suspicious_ingredient_name(name):
-                continue
-            seen.add(key)
-            rows.append(IngredientRow(name, qty, unit))
+            add_ingredient_row(rows, seen, match.group(1), match.group(2), match.group(3))
     return rows
 
+
+def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: str, quantity_value: str, unit_value: str) -> None:
+    name = clean_ingredient_name(name_value)
+    qty = normalize_value(quantity_value).replace(",", "")
+    unit = normalize_unit(unit_value)
+    try:
+        numeric_qty = float(qty)
+    except ValueError:
+        return
+    key = f"{normalize_ingredient_for_grouping(name)}|{qty}|{unit}"
+    if key in seen or numeric_qty <= 0 or is_suspicious_ingredient_name(name) or is_excluded_ingredient(name):
+        return
+    seen.add(key)
+    rows.append(IngredientRow(name, qty, unit))
+
+
+def is_excluded_ingredient(name: str) -> bool:
+    return bool(EXCLUDED_INGREDIENT_PATTERN.search(re.sub(r"\s+", "", str(name or ""))))
+
+
+def normalize_ingredient_for_grouping(name: str) -> str:
+    return re.sub(r"^(冷凍|国産|生|カット|千切り|皮むき)", "", re.sub(r"[（(].*?[）)]", "", clean_ingredient_name(name))).strip()
+
+
+def fixed_order_row(name: str) -> IngredientRow | None:
+    for label, quantity, unit, _note, pattern in FIXED_ORDER_RULES:
+        if pattern.search(name):
+            return IngredientRow(label, quantity, unit)
+    return None
+
+
+def convert_order_quantity(quantity: str, unit: str) -> tuple[float, str]:
+    amount = float(normalize_value(str(quantity)).replace(",", ""))
+    normalized_unit = normalize_unit(unit)
+    if normalized_unit == "kg":
+        return amount * 1000, "g"
+    if normalized_unit in {"L", "l", "リットル"}:
+        return amount * 1000, "ml"
+    if normalized_unit == "グラム":
+        return amount, "g"
+    if normalized_unit == "cc":
+        return amount, "ml"
+    if normalized_unit == "缶":
+        return float(int(amount + 0.999999)), "缶"
+    return amount, normalized_unit
+
+
+def format_order_quantity(quantity: float, unit: str) -> tuple[str, str]:
+    if unit == "g" and quantity >= 1000:
+        quantity, unit = quantity / 1000, "kg"
+    if unit == "ml" and quantity >= 1000:
+        quantity, unit = quantity / 1000, "L"
+    if abs(quantity - round(quantity)) < 0.000001:
+        return str(int(round(quantity))), unit
+    return (f"{quantity:.2f}".rstrip("0").rstrip("."), unit)
+
+
+def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
+    fixed: dict[str, IngredientRow] = {}
+    aggregate: dict[tuple[str, str], float] = {}
+    for row in source_rows:
+        if is_excluded_ingredient(row.name):
+            continue
+        fixed_row = fixed_order_row(row.name)
+        if fixed_row:
+            fixed[fixed_row.name] = fixed_row
+            continue
+        try:
+            quantity, unit = convert_order_quantity(row.quantity, row.unit)
+        except ValueError:
+            continue
+        if quantity <= 0:
+            continue
+        name = normalize_ingredient_for_grouping(row.name)
+        aggregate[(name, unit)] = aggregate.get((name, unit), 0.0) + quantity
+    order_rows = list(fixed.values())
+    for (name, unit), quantity in aggregate.items():
+        formatted_quantity, formatted_unit = format_order_quantity(quantity, unit)
+        if name and formatted_quantity != "0":
+            order_rows.append(IngredientRow(name, formatted_quantity, formatted_unit))
+    return sorted(order_rows, key=lambda row: row.name)
 
 def format_ingredient_column(rows: list[IngredientRow], field_name: str) -> str:
     return " / ".join(str(getattr(row, field_name)) for row in rows)
@@ -671,7 +760,7 @@ def process_image_inner(path: Path) -> list[Any]:
     if not raw_text:
         logging.error("読み取り失敗: %s OCR結果が空", path)
         raise ValueError("OCR結果が空です。Excelは作成しません")
-    ingredient_rows = extract_ingredient_rows(raw_text)
+    ingredient_rows = build_order_rows(extract_ingredient_rows(raw_text))
     fields = extract_fields(raw_text)
     reasons = confirmation_reasons(best, candidates, fields)
     notes = reasons + best.notes
