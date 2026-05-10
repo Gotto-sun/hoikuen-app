@@ -466,7 +466,7 @@ def extract_fields(text: str) -> ExtractedFields:
 
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
-SENTENCE_NOISE_PATTERN = re.compile(r"を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます|入れる|加える|混ぜる|焼く|煮る|炒める")
+SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます")
 EXCLUDED_INGREDIENT_PATTERN = re.compile(r"米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
 FIXED_ORDER_RULES = [
@@ -484,10 +484,10 @@ ROUNDING_ORDER_RULES = [
 def normalize_ocr_line(value: str) -> str:
     table = str.maketrans("０１２３４５６７８９，．ｋＫｇＧｍＭｌＬ", "0123456789,.kkggmmll")
     text = str(value or "").translate(table)
-    text = re.sub(r"([0-9])\s*(キロ|KG)", r"\1kg", text, flags=re.IGNORECASE)
-    text = re.sub(r"([0-9])\s*(グラム|G)(?=\s|$)", r"\1g", text, flags=re.IGNORECASE)
+    text = re.sub(r"([0-9])[ \f\v]*(キロ|KG)", r"\1kg", text, flags=re.IGNORECASE)
+    text = re.sub(r"([0-9])[ \f\v]*(グラム|G)(?=\s|$)", r"\1g", text, flags=re.IGNORECASE)
     text = re.sub(r"[|＿_~〜=<>《》]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"[ \f\v\r\n]+", " ", text).strip()
 
 
 def normalize_unit(value: str) -> str:
@@ -549,6 +549,7 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
     unit_pattern = r"(" + UNIT_PATTERN + r")"
     marker = r"(?:3歳未満児?|３歳未満児?|未満児|乳児)"
     current_weekday = ""
+    table_columns: dict[str, int] | None = None
     for raw_line in re.split(r"\r?\n|[|｜]", str(text or "").replace("OCR全文", "\n")):
         line = normalize_ocr_line(raw_line)
         if not line or IGNORED_LINE_PATTERN.search(line) or SENTENCE_NOISE_PATTERN.search(line) or is_garbled_text(line):
@@ -556,11 +557,28 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
         weekday = detect_weekday(line)
         if weekday:
             current_weekday = weekday
+        cells = [cell.strip() for cell in re.split(r"\t|,|，", line) if cell.strip()]
+        detected_columns = detect_under_three_table_columns(cells)
+        if detected_columns:
+            table_columns = detected_columns
+            continue
+        if table_columns and cells:
+            name_index = table_columns.get("name", 0)
+            quantity_index = table_columns.get("quantity", -1)
+            unit_index = table_columns.get("unit", -1)
+            day_index = table_columns.get("day", -1)
+            value = cells[quantity_index] if 0 <= quantity_index < len(cells) else ""
+            unit = cells[unit_index] if 0 <= unit_index < len(cells) else guess_unit_near_quantity(cells, quantity_index)
+            table_weekday = detect_weekday(cells[day_index]) if 0 <= day_index < len(cells) else ""
+            if table_weekday:
+                current_weekday = table_weekday
+            if 0 <= name_index < len(cells) and re.fullmatch(quantity, value) and re.search(unit_pattern, unit, re.IGNORECASE):
+                add_ingredient_row(rows, seen, cells[name_index], value, unit, table_weekday or weekday or current_weekday)
+                continue
         under_three_match = re.search(r"^(.{1,80}?)" + marker + r".*?" + quantity + r"\s*" + unit_pattern, line, re.IGNORECASE)
         if under_three_match:
             add_ingredient_row(rows, seen, strip_non_ingredient_prefix(under_three_match.group(1)), under_three_match.group(2), under_three_match.group(3), weekday or current_weekday)
             continue
-        cells = [cell.strip() for cell in re.split(r"\t|,|，", line) if cell.strip()]
         if len(cells) >= 4 and any(re.search(marker, cell, re.IGNORECASE) for cell in cells):
             for index, cell in enumerate(cells):
                 if re.search(marker, cell, re.IGNORECASE):
@@ -571,6 +589,31 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
                         add_ingredient_row(rows, seen, name, value, unit, weekday or detect_weekday(" ".join(cells)) or current_weekday)
     return rows
 
+
+def detect_under_three_table_columns(cells: list[str]) -> dict[str, int] | None:
+    if len(cells) < 2 or not any(re.search(r"3歳未満|３歳未満|未満児|乳児", cell) for cell in cells):
+        return None
+    normalized = [re.sub(r"\s+", "", cell) for cell in cells]
+    quantity_index = next((index for index, cell in enumerate(normalized) if re.search(r"(3歳未満|３歳未満|未満児|乳児)", cell) and not re.search(r"人数|対象|区分|年齢", cell)), -1)
+    if quantity_index < 0:
+        return None
+    name_index = next((index for index, cell in enumerate(normalized) if re.search(r"食材|食品|材料|品名|食料", cell)), 0)
+    unit_index = next((index for index, cell in enumerate(normalized) if index > name_index and re.search(r"単位", cell)), -1)
+    if unit_index < 0 and quantity_index + 1 < len(cells) and re.search(r"単位", normalized[quantity_index + 1]):
+        unit_index = quantity_index + 1
+    day_index = next((index for index, cell in enumerate(normalized) if re.search(r"曜日|使用日|日付|献立日", cell)), -1)
+    return {"name": name_index, "quantity": quantity_index, "unit": unit_index, "day": day_index}
+
+
+def guess_unit_near_quantity(cells: list[str], quantity_index: int) -> str:
+    candidates = []
+    if quantity_index + 1 < len(cells):
+        candidates.append(cells[quantity_index + 1])
+    if quantity_index > 0:
+        candidates.append(cells[quantity_index - 1])
+    if cells:
+        candidates.append(cells[-1])
+    return next((value for value in candidates if re.search(r"^(?:" + UNIT_PATTERN + r")$", value, re.IGNORECASE)), "g")
 
 def detect_weekday(value: str) -> str:
     match = re.search(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?", normalize_ocr_line(value))
