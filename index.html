@@ -568,7 +568,7 @@
     const orderSheetDetailRows = 30;
     const weekdayPeople = { 月: 5, 火: 7, 水: 7, 木: 7, 金: 7 };
     const fixedOrderRules = [
-      { key: "milk", label: "牛乳", unit: "本", note: "450ml単位（人数計算後に切り上げ）", tests: [/牛乳/, /ミルク/] },
+      { key: "milk", label: "牛乳", quantity: 2, unit: "本", note: "450ml × 2本", tests: [/牛乳/, /ミルク/] },
       { key: "yogurt", label: "ヨーグルト", quantity: 2, unit: "パック", note: "3個パック × 2", tests: [/ヨーグルト|牧場の朝/] }
     ];
     const roundingOrderRules = [
@@ -1479,22 +1479,17 @@
       const aggregate = new Map();
 
       sourceRows.forEach(row => {
+        if (isExcludedIngredient(row.name)) return;
         const people = peopleForWeekday(row.weekday);
         if (!people) return;
         const fixed = findFixedRule(row.name);
-        if (fixed && fixed.key === "yogurt") {
+        if (fixed && (fixed.key === "milk" || fixed.key === "yogurt")) {
           fixedKeys.add(fixed.key);
           return;
         }
         const converted = convertMenuQuantity(row.quantity, row.unit);
         const weightedQuantity = converted.quantity * people;
         if (!weightedQuantity || weightedQuantity <= 0) return;
-
-        if (fixed && fixed.key === "milk") {
-          const milkMl = converted.unit === "ml" ? weightedQuantity : converted.unit === "L" ? weightedQuantity * 1000 : 450 * weightedQuantity;
-          addAggregateQuantity(aggregate, "牛乳", milkMl, "ml");
-          return;
-        }
 
         const rounding = findRoundingRule(row.name);
         if (rounding) {
@@ -1571,11 +1566,7 @@
       let quantity = round(row.quantity);
       let unit = row.unit;
       let note = sourceLabel === "OCR" ? "3歳未満児×人数集計" : "3歳未満児×人数集計";
-      if (row.name === "牛乳" && unit === "ml") {
-        quantity = Math.max(2, Math.ceil(quantity / 450));
-        unit = "本";
-        note = "450ml単位";
-      } else if (row.step) {
+      if (row.step) {
         quantity = round(Math.ceil(quantity / row.step) * row.step);
         note = "端数切り上げ";
       } else if (unit === "缶") {
