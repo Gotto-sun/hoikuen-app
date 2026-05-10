@@ -567,18 +567,33 @@
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetDetailRows = 30;
     const weekdayPeople = { 月: 5, 火: 7, 水: 7, 木: 7, 金: 7 };
-    const fixedOrderRules = [
-      { key: "milk", label: "牛乳", quantity: 2, unit: "本", note: "450ml × 2本", tests: [/牛乳/, /ミルク/] },
-      { key: "yogurt", label: "ヨーグルト", quantity: 2, unit: "パック", note: "3個パック × 2", tests: [/ヨーグルト|牧場の朝/] }
-    ];
+    const fixedOrderRules = [];
     const roundingOrderRules = [
+      { label: "牛乳", unit: "本", step: 1, base: { ml: 450, g: 450 }, tests: [/牛乳|ミルク/] },
       { label: "キャベツ", unit: "個", step: 0.25, base: { g: 1200 }, tests: [/キャベツ/] },
       { label: "白菜", unit: "個", step: 0.125, base: { g: 2000 }, tests: [/白菜/] },
       { label: "にんじん", unit: "本", step: 0.5, base: { g: 150 }, tests: [/にんじん|人参/] },
-      { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] }
+      { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
+      { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] }
     ];
-    const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
-    const recipeInstructionPattern = /(作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す)/;
+    const canonicalIngredientPatterns = [
+      { label: "しょうせんべい", tests: [/しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい/] },
+      { label: "牛乳", tests: [/牛乳|ミルク/] },
+      { label: "ひじき", tests: [/ひじき/] },
+      { label: "豚ひき肉", tests: [/豚\s*(?:ひき|挽き|挽)\s*肉|豚ミンチ/] },
+      { label: "木綿豆腐", tests: [/木綿\s*豆腐/] },
+      { label: "たまねぎ", tests: [/たまねぎ|玉ねぎ|玉葱/] },
+      { label: "片栗粉", tests: [/片栗粉/] },
+      { label: "もやし", tests: [/もやし/] },
+      { label: "きゅうり", tests: [/きゅうり|胡瓜/] },
+      { label: "カットわかめ", tests: [/カット\s*わかめ|わかめ|若布/] },
+      { label: "じゃがいも", tests: [/じゃがいも|馬鈴薯/] },
+      { label: "にんじん", tests: [/にんじん|人参/] },
+      { label: "食パン", tests: [/食パン/] },
+      { label: "いちごジャム", tests: [/いちご\s*ジャム|苺\s*ジャム/] }
+    ];
+    const excludedIngredientPattern = /(スチコン|オーブン|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
+    const recipeInstructionPattern = /(作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
     const mealSectionHeadingPattern = /(午前中?おやつ|午前おやつ|昼食|午後おやつ)/;
     const mealSectionStopPattern = /(作り方|つくり方|手順|調理方法|下処理|備考|ポイント|メモ|栄養|給与栄養目標量|予定献立|献立名|料理名のみ)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
@@ -1482,18 +1497,12 @@
     }
 
     function mapMenuRowsToOrderRows(sourceRows, sourceLabel = "献立CSV") {
-      const fixedKeys = new Set();
       const aggregate = new Map();
 
       sourceRows.forEach(row => {
         if (isExcludedIngredient(row.name)) return;
         const people = peopleForWeekday(row.weekday);
         if (!people) return;
-        const fixed = findFixedRule(row.name);
-        if (fixed && (fixed.key === "milk" || fixed.key === "yogurt")) {
-          fixedKeys.add(fixed.key);
-          return;
-        }
         const converted = convertMenuQuantity(row.quantity, row.unit);
         const weightedQuantity = converted.quantity * people;
         if (!weightedQuantity || weightedQuantity <= 0) return;
@@ -1508,15 +1517,8 @@
         addAggregateQuantity(aggregate, normalizeIngredientForGrouping(row.name), weightedQuantity, converted.unit);
       });
 
-      const fixedRows = fixedOrderRules.filter(rule => fixedKeys.has(rule.key)).map(rule => ({
-        name: rule.label,
-        quantity: rule.quantity,
-        unit: rule.unit,
-        note: rule.note,
-        source: sourceLabel
-      }));
       const aggregatedRows = Array.from(aggregate.values()).map(row => finalizeMenuQuantity(row, sourceLabel)).filter(row => row.name && row.quantity);
-      return fixedRows.concat(aggregatedRows).sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
+      return aggregatedRows.sort((a, b) => String(a.name).localeCompare(String(b.name), "ja"));
     }
 
     function addAggregateQuantity(aggregate, name, quantity, unit, step = null) {
@@ -1548,14 +1550,14 @@
 
     function detectWeekday(value) {
       const text = normalizeOcrLine(value);
-      const match = text.match(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/);
-      return match ? match[0].charAt(0) : "";
+      const match = text.match(/月曜日|火曜日|水曜日|木曜日|金曜日|(?:^|[\s,，])([月火水木金])(?:曜)?(?:[\s,，]|$)/);
+      return match ? (match[1] || match[0]).charAt(0) : "";
     }
 
     function normalizeIngredientForGrouping(name) {
       return cleanIngredientName(name)
         .replace(/[（(].*?[）)]/g, "")
-        .replace(/^(冷凍|国産|生|カット|千切り|皮むき)/, "")
+        .replace(/^(冷凍|国産|生|千切り|皮むき)/, "")
         .trim();
     }
 
@@ -1701,7 +1703,7 @@
       const numericQuantity = numberValue(quantity);
       const weekday = row.weekday || detectWeekday(row.sourceLine || "");
       if (!cleanName || !cleanUnit || !numericQuantity || numericQuantity <= 0 || !peopleForWeekday(weekday) || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
-      const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
+      const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit, normalizeOcrLine(row.sourceLine || "")].join("|");
       if (seen.has(key)) return;
       seen.add(key);
       target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: row.source || "3歳未満児" });
@@ -1733,6 +1735,7 @@
           return;
         }
 
+        if (columns && cells.length <= Math.max(columns.name, columns.quantity)) return;
         const row = columns ? rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText) : rowFromSimpleMealTable(cells, currentWeekday, rowText);
         if (row) rows.push(row);
       });
@@ -1757,6 +1760,12 @@
     function rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText) {
       const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
       const weekday = detectedWeekday || currentWeekday;
+      const directName = cells[columns.name] || "";
+      const directQuantity = cells[columns.quantity];
+      const directUnit = cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity);
+      if (directName && isQuantity(directQuantity) && isKnownUnit(directUnit)) {
+        return { name: directName, quantity: directQuantity, unit: directUnit, weekday, sourceLine: rowText, source: "3歳未満児" };
+      }
       const markerRow = parseMarkerNumericRow(cells.join("\t"), columns.quantity, cells[columns.quantity] || "");
       const name = cells[columns.name] || (markerRow && markerRow.name) || "";
       const quantity = markerRow ? markerRow.quantity : cells[columns.quantity];
@@ -1792,6 +1801,7 @@
           if (!cells.length || isIgnoredPdfLine(rowText) || isSentenceNoise(rowText)) continue;
           const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
           if (detectedWeekday) currentWeekday = detectedWeekday;
+          if (cells.length <= Math.max(columns.name, columns.quantity)) continue;
           const markerRow = parseMarkerNumericRow(cells.join("\t"), columns.quantity, cells[columns.quantity] || "");
           rows.push({
             name: cells[columns.name] || (markerRow && markerRow.name) || "",
@@ -1980,23 +1990,33 @@
     }
 
     function cleanIngredientName(value) {
-      return stripNonIngredientPrefix(value)
+      const cleaned = stripNonIngredientPrefix(value)
         .replace(/OCR全文/g, " ")
-        .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, " ")
+        .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金]曜/g, " ")
+        .replace(/^[月火水木金]\s+/, "")
         .replace(/^[0-9０-９]+[.)）．、\s]+/, "")
         .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
         .replace(/[：:].*$/, "")
         .replace(/\s+/g, " ")
         .trim();
+      return correctIngredientName(cleaned);
+    }
+
+    function correctIngredientName(name) {
+      const compact = String(name || "").replace(/\s/g, "");
+      if (!compact || isSentenceNoise(compact) || isExcludedIngredient(compact)) return String(name || "").trim();
+      const matched = canonicalIngredientPatterns.find(rule => rule.tests.some(pattern => pattern.test(compact)));
+      return matched ? matched.label : String(name || "").trim();
     }
 
     function stripNonIngredientPrefix(value) {
       return normalizeOcrLine(value)
         .replace(/OCR全文/g, " ")
-        .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, " ")
+        .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金]曜/g, " ")
         .replace(/(?:3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量)\s*[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)?/gi, " ")
         .replace(/[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)(?=.*(?:3歳未満児?|３歳未満児?|未満児|乳児))/gi, " ")
         .replace(/(?:3歳未満児?|３歳未満児?|未満児|乳児).*$/gi, " ")
+        .replace(/^[月火水木金]\s+/, "")
         .replace(/^[0-9０-９]+[.)）．、\s]+/, "")
         .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
         .replace(/\s+/g, " ")

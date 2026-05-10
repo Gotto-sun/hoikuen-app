@@ -573,20 +573,35 @@ def extract_fields(text: str) -> ExtractedFields:
 
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
-SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます")
+SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
 MEAL_SECTION_HEADING_PATTERN = re.compile(r"午前中?おやつ|午前おやつ|昼食|午後おやつ")
 MEAL_SECTION_STOP_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|備考|ポイント|メモ|栄養|給与栄養目標量|予定献立|献立名|料理名のみ")
-EXCLUDED_INGREDIENT_PATTERN = re.compile(r"米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
+EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
-FIXED_ORDER_RULES = [
-    ("牛乳", "milk", re.compile(r"牛乳|ミルク")),
-    ("ヨーグルト", "yogurt", re.compile(r"ヨーグルト|牧場の朝")),
-]
+FIXED_ORDER_RULES = []
 ROUNDING_ORDER_RULES = [
+    ("牛乳", "本", 1.0, {"ml": 450.0, "g": 450.0}, re.compile(r"牛乳|ミルク")),
     ("キャベツ", "個", 0.25, {"g": 1200.0}, re.compile(r"キャベツ")),
     ("白菜", "個", 0.125, {"g": 2000.0}, re.compile(r"白菜")),
     ("にんじん", "本", 0.5, {"g": 150.0}, re.compile(r"にんじん|人参")),
     ("きのこ類", "袋", 1.0, {"g": 100.0}, re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
+    ("ヨーグルト", "パック", 1.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
+]
+CANONICAL_INGREDIENT_PATTERNS = [
+    ("しょうせんべい", re.compile(r"しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい")),
+    ("牛乳", re.compile(r"牛乳|ミルク")),
+    ("ひじき", re.compile(r"ひじき")),
+    ("豚ひき肉", re.compile(r"豚\s*(?:ひき|挽き|挽)\s*肉|豚ミンチ")),
+    ("木綿豆腐", re.compile(r"木綿\s*豆腐")),
+    ("たまねぎ", re.compile(r"たまねぎ|玉ねぎ|玉葱")),
+    ("片栗粉", re.compile(r"片栗粉")),
+    ("もやし", re.compile(r"もやし")),
+    ("きゅうり", re.compile(r"きゅうり|胡瓜")),
+    ("カットわかめ", re.compile(r"カット\s*わかめ|わかめ|若布")),
+    ("じゃがいも", re.compile(r"じゃがいも|馬鈴薯")),
+    ("にんじん", re.compile(r"にんじん|人参")),
+    ("食パン", re.compile(r"食パン")),
+    ("いちごジャム", re.compile(r"いちご\s*ジャム|苺\s*ジャム")),
 ]
 
 
@@ -624,21 +639,33 @@ def is_garbled_text(value: str) -> bool:
 def clean_ingredient_name(value: str) -> str:
     name = strip_non_ingredient_prefix(value)
     name = re.sub(r"OCR全文", " ", name)
-    name = re.sub(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?", " ", name)
+    name = re.sub(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金]曜", " ", name)
+    name = re.sub(r"^[月火水木金]\s+", "", name)
     name = re.sub(r"^[0-9０-９]+[.)）．、\s]+", "", name)
     name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
     name = re.sub(r"[：:].*$", "", name)
-    return re.sub(r"\s+", " ", name).strip()
+    return correct_ingredient_name(re.sub(r"\s+", " ", name).strip())
+
+
+def correct_ingredient_name(name: str) -> str:
+    compact = re.sub(r"\s+", "", str(name or ""))
+    if not compact or SENTENCE_NOISE_PATTERN.search(compact) or is_excluded_ingredient(compact):
+        return str(name or "").strip()
+    for canonical, pattern in CANONICAL_INGREDIENT_PATTERNS:
+        if pattern.search(compact):
+            return canonical
+    return str(name or "").strip()
 
 
 def strip_non_ingredient_prefix(value: str) -> str:
     name = normalize_ocr_line(value)
     unit = UNIT_PATTERN
     name = re.sub(r"OCR全文", " ", name)
-    name = re.sub(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?", " ", name)
+    name = re.sub(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金]曜", " ", name)
     name = re.sub(r"(?:3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量)\s*[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:" + unit + r")?", " ", name, flags=re.IGNORECASE)
     name = re.sub(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:" + unit + r")(?=.*(?:3歳未満児?|３歳未満児?|未満児|乳児))", " ", name, flags=re.IGNORECASE)
     name = re.sub(r"(?:3歳未満児?|３歳未満児?|未満児|乳児).*$", " ", name, flags=re.IGNORECASE)
+    name = re.sub(r"^[月火水木金]\s+", "", name)
     name = re.sub(r"^[0-9０-９]+[.)）．、\s]+", "", name)
     name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
     return re.sub(r"\s+", " ", name).strip()
@@ -679,6 +706,8 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
             table_columns = detected_columns
             continue
         if table_columns and cells:
+            if len(cells) <= max(table_columns.get("name", 0), table_columns.get("quantity", -1)):
+                continue
             table_weekday = detect_weekday(cells[table_columns.get("day", -1)]) if 0 <= table_columns.get("day", -1) < len(cells) else ""
             if table_weekday:
                 current_weekday = table_weekday
@@ -733,6 +762,8 @@ def collect_meal_section_rows(lines: list[str]) -> list[IngredientRow]:
             continue
 
         if table_columns:
+            if len(cells) <= max(table_columns.get("name", 0), table_columns.get("quantity", -1)):
+                continue
             table_weekday = detect_weekday(cells[table_columns.get("day", -1)]) if 0 <= table_columns.get("day", -1) < len(cells) else ""
             add_row_from_detected_columns(rows, seen, cells, table_columns, table_weekday or weekday or current_weekday)
             continue
@@ -776,7 +807,7 @@ def split_ocr_rows_for_ingredients(text: str) -> list[str]:
 
 
 def split_ocr_cells(line: str) -> list[str]:
-    protected = re.sub(r"(?<=\d),(?=\d{3}(?:\D|$))", "", normalize_ocr_line(line))
+    protected = normalize_ocr_line(line)
     cells = [cell.strip() for cell in re.split(r"\t|,|，", protected) if cell.strip()]
     if len(cells) > 1:
         return cells
@@ -793,14 +824,14 @@ def add_row_from_detected_columns(rows: list[IngredientRow], seen: set[str], cel
     unit_index = columns.get("unit", -1)
     if not (0 <= name_index < len(cells)):
         return False
-    marker_parse = parse_marker_numeric_row("\t".join(cells), preferred_numeric_index=quantity_index, preferred_numeric_value=(cells[quantity_index] if 0 <= quantity_index < len(cells) else ""))
-    if marker_parse:
-        add_ingredient_row(rows, seen, cells[name_index] or marker_parse["name"], marker_parse["quantity"], marker_parse["unit"], weekday)
-        return True
     value = cells[quantity_index] if 0 <= quantity_index < len(cells) else ""
     unit = cells[unit_index] if 0 <= unit_index < len(cells) else guess_unit_near_quantity(cells, quantity_index)
     if re.fullmatch(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?", value) and re.search(r"^(?:" + UNIT_PATTERN + r")$", unit, re.IGNORECASE):
         add_ingredient_row(rows, seen, cells[name_index], value, unit, weekday)
+        return True
+    marker_parse = parse_marker_numeric_row("\t".join(cells), preferred_numeric_index=quantity_index, preferred_numeric_value=(cells[quantity_index] if 0 <= quantity_index < len(cells) else ""))
+    if marker_parse:
+        add_ingredient_row(rows, seen, cells[name_index] or marker_parse["name"], marker_parse["quantity"], marker_parse["unit"], weekday)
         return True
     return False
 
@@ -882,8 +913,11 @@ def guess_unit_near_quantity(cells: list[str], quantity_index: int) -> str:
     return next((value for value in candidates if re.search(r"^(?:" + UNIT_PATTERN + r")$", value, re.IGNORECASE)), "g")
 
 def detect_weekday(value: str) -> str:
-    match = re.search(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?", normalize_ocr_line(value))
-    return match.group(0)[0] if match else ""
+    text = normalize_ocr_line(value)
+    match = re.search(r"月曜日|火曜日|水曜日|木曜日|金曜日|(?:^|[\s,，])([月火水木金])(?:曜)?(?:[\s,，]|$)", text)
+    if not match:
+        return ""
+    return (match.group(1) or match.group(0))[0]
 
 
 def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: str, quantity_value: str, unit_value: str, weekday: str) -> None:
@@ -894,10 +928,8 @@ def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: st
         numeric_qty = float(qty)
     except ValueError:
         return
-    key = f"{weekday}|{normalize_ingredient_for_grouping(name)}|{qty}|{unit}"
-    if key in seen or numeric_qty <= 0 or weekday not in WEEKDAY_PEOPLE or is_suspicious_ingredient_name(name) or is_excluded_ingredient(name):
+    if numeric_qty <= 0 or weekday not in WEEKDAY_PEOPLE or is_suspicious_ingredient_name(name) or is_excluded_ingredient(name):
         return
-    seen.add(key)
     rows.append(IngredientRow(name, qty, unit, weekday))
 
 
@@ -906,7 +938,7 @@ def is_excluded_ingredient(name: str) -> bool:
 
 
 def normalize_ingredient_for_grouping(name: str) -> str:
-    return re.sub(r"^(冷凍|国産|生|カット|千切り|皮むき)", "", re.sub(r"[（(].*?[）)]", "", clean_ingredient_name(name))).strip()
+    return re.sub(r"^(冷凍|国産|生|千切り|皮むき)", "", re.sub(r"[（(].*?[）)]", "", clean_ingredient_name(name))).strip()
 
 
 def fixed_order_key(name: str) -> str | None:
@@ -963,20 +995,11 @@ def format_order_quantity(quantity: float, unit: str) -> tuple[str, str]:
 
 
 def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
-    fixed_milk = False
-    fixed_yogurt = False
     aggregate: dict[tuple[str, str], dict[str, Any]] = {}
     for row in source_rows:
         if is_excluded_ingredient(row.name) or row.weekday not in WEEKDAY_PEOPLE:
             continue
         people = WEEKDAY_PEOPLE[row.weekday]
-        fixed_key = fixed_order_key(row.name)
-        if fixed_key == "milk":
-            fixed_milk = True
-            continue
-        if fixed_key == "yogurt":
-            fixed_yogurt = True
-            continue
         try:
             quantity, unit = convert_order_quantity(row.quantity, row.unit)
         except ValueError:
@@ -997,10 +1020,6 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
             aggregate[key]["step"] = step
 
     order_rows: list[IngredientRow] = []
-    if fixed_milk:
-        order_rows.append(IngredientRow("牛乳", "2", "本"))
-    if fixed_yogurt:
-        order_rows.append(IngredientRow("ヨーグルト", "2", "パック"))
     for (name, unit), info in aggregate.items():
         quantity = float(info["quantity"])
         if info.get("step"):
