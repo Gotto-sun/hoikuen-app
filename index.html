@@ -572,10 +572,10 @@
       { key: "yogurt", label: "ヨーグルト", quantity: 2, unit: "パック", note: "3個パック × 2", tests: [/ヨーグルト|牧場の朝/] }
     ];
     const roundingOrderRules = [
-      { label: "キャベツ", unit: "個", step: 0.25, tests: [/キャベツ/] },
-      { label: "白菜", unit: "個", step: 0.125, tests: [/白菜/] },
-      { label: "にんじん", unit: "本", step: 0.5, tests: [/にんじん|人参/] },
-      { label: "きのこ類", unit: "袋", step: 1, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] }
+      { label: "キャベツ", unit: "個", step: 0.25, base: { g: 1200 }, tests: [/キャベツ/] },
+      { label: "白菜", unit: "個", step: 0.125, base: { g: 2000 }, tests: [/白菜/] },
+      { label: "にんじん", unit: "本", step: 0.5, base: { g: 150 }, tests: [/にんじん|人参/] },
+      { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] }
     ];
     const excludedIngredientPattern = /(米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ|醤油|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
@@ -1497,7 +1497,8 @@
 
         const rounding = findRoundingRule(row.name);
         if (rounding) {
-          addAggregateQuantity(aggregate, rounding.label, weightedQuantity, rounding.unit, rounding.step);
+          const purchaseQuantity = convertToPurchaseUnit(weightedQuantity, converted.unit, rounding);
+          addAggregateQuantity(aggregate, rounding.label, purchaseQuantity, rounding.unit, rounding.step);
           return;
         }
 
@@ -1529,6 +1530,13 @@
 
     function findRoundingRule(name) {
       return roundingOrderRules.find(rule => rule.tests.some(pattern => pattern.test(name)));
+    }
+
+    function convertToPurchaseUnit(quantity, unit, rule) {
+      if (unit === rule.unit) return quantity;
+      const base = rule.base && rule.base[unit];
+      if (base && base > 0) return quantity / base;
+      return quantity;
     }
 
     function peopleForWeekday(weekday) {
@@ -1673,15 +1681,18 @@
 
       const markerPattern = /(3歳未満児?|３歳未満児?|未満児|乳児)/;
       const unitPattern = unitNames().map(unit => escapeRegExp(unit)).join("|");
-      const inlinePattern = new RegExp("^(.{1,50}?)" + markerPattern.source + ".*?([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")", "i");
+      const inlinePattern = new RegExp("^(.{1,80}?)" + markerPattern.source + ".*?([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")", "i");
+      let currentWeekday = "";
       lines.forEach(line => {
         const normalized = normalizeOcrLine(line);
+        const detectedWeekday = detectWeekday(normalized);
+        if (detectedWeekday) currentWeekday = detectedWeekday;
         const match = normalized.match(inlinePattern);
         if (match) rows.push({
-          name: match[1].replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, ""),
+          name: stripNonIngredientPrefix(match[1]),
           quantity: match[2],
           unit: match[3],
-          weekday: detectWeekday(normalized),
+          weekday: detectedWeekday || currentWeekday,
           sourceLine: normalized,
           source: "3歳未満児"
         });
@@ -1835,11 +1846,23 @@
     }
 
     function cleanIngredientName(value) {
-      return normalizeOcrLine(value)
+      return stripNonIngredientPrefix(value)
         .replace(/OCR全文/g, " ")
         .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, " ")
         .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
         .replace(/[：:].*$/, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function stripNonIngredientPrefix(value) {
+      return normalizeOcrLine(value)
+        .replace(/OCR全文/g, " ")
+        .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, " ")
+        .replace(/(?:3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量)\s*[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)?/gi, " ")
+        .replace(/[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)(?=.*(?:3歳未満児?|３歳未満児?|未満児|乳児))/gi, " ")
+        .replace(/(?:3歳未満児?|３歳未満児?|未満児|乳児).*$/gi, " ")
+        .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
         .replace(/\s+/g, " ")
         .trim();
     }
