@@ -472,7 +472,7 @@
 <body>
   <header>
     <h1>発注書Excel作成</h1>
-    <p>取り込んだファイルや手入力の材料名・数量・単位を、発注書レイアウトに反映してExcel出力します。</p>
+    <p>ファイルを読み取り、抽出した材料名・数量・単位だけを発注書Excelに反映します。</p>
   </header>
 
   <main>
@@ -480,14 +480,16 @@
 
       <h2>1. ファイル読み込み（OCR確認）</h2>
       <div class="pdf-box">
-        <p class="note">ファイルを選ぶと、OCR結果を下の確認テーブルへ表示します。読めない行や文字化けした行は反映しません。</p>
+        <p class="note">ファイルを選ぶと、読み取った全文を必ず下に表示します。材料名・数量・単位を抽出できた時だけExcel出力できます。</p>
         <input id="pdfFile" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,.webp,.bmp,.gif,image/*,.xlsx,.xls,.csv,text/csv,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.txt,text/plain" aria-label="読み込みファイル">
         <div id="importProgress" class="import-progress" aria-label="読み込み率" aria-live="polite">
           <div class="progress-track"><div id="importProgressBar" class="progress-bar"></div></div>
           <span id="importProgressPercent" class="progress-percent">0%</span>
         </div>
-        <textarea id="pdfText" class="pdf-textarea" placeholder="抽出テキスト欄：ファイルから読み込んだ文字を必ずここに表示します。抽出0件の場合は、ここに内容を貼り付けてください。"></textarea>
+        <textarea id="pdfText" class="pdf-textarea" readonly placeholder="抽出テキスト欄：ファイルから読み込んだ文字を必ずここに表示します。"></textarea>
         <p id="pdfStatus" class="status"></p>
+        <label for="ocrLog">ログ</label>
+        <textarea id="ocrLog" class="copy-textarea" readonly placeholder="OCR結果・抽出結果・失敗理由をここに表示します。"></textarea>
       </div>
 
       <div hidden aria-hidden="true">
@@ -498,8 +500,8 @@
         <textarea id="orderTsv" class="copy-textarea" readonly disabled></textarea>
       </div>
 
-      <h2>2. 確認・手入力テーブル</h2>
-      <p class="note">材料名・数量・単位を確認してください。ファイル読み込みに失敗しても、手入力とExcel出力は常に使えます。</p>
+      <h2>2. 自動抽出結果</h2>
+      <p class="note">OCR全文から抽出できた材料名・数量・単位だけを表示します。抽出できない場合、Excelは作成しません。</p>
 
       <div class="document-fields" aria-label="発注書情報">
         <label for="deliveryDate">納品日</label>
@@ -511,13 +513,13 @@
       </div>
 
       <div class="table-wrap">
-        <table class="manual-table" aria-label="確認・手入力テーブル">
+        <table class="manual-table" aria-label="自動抽出結果テーブル">
           <thead>
             <tr>
               <th>材料名</th>
               <th>数量</th>
               <th>単位</th>
-              <th>操作</th>
+              <th>抽出元</th>
             </tr>
           </thead>
           <tbody id="manualRows"></tbody>
@@ -525,8 +527,8 @@
       </div>
 
       <div class="buttons">
-        <button class="gray" type="button" id="addBtn">＋ 行を追加</button>
-        <button class="green" type="button" id="excelBtn">Excel出力</button>
+        <button class="gray" type="button" id="addBtn" hidden>＋ 行を追加</button>
+        <button class="green" type="button" id="excelBtn" disabled>Excel出力</button>
         <button class="red" type="button" id="clearBtn">入力を消す</button>
       </div>
       <p id="notice" class="status"></p>
@@ -534,7 +536,7 @@
 
     <section>
       <h2>3. 発注書レイアウト</h2>
-      <p class="note">入力内容は下の発注書レイアウトに自動反映されます。</p>
+      <p class="note">抽出できた内容だけを下の発注書レイアウトに自動反映します。</p>
       <div class="table-wrap" id="orderPreview"></div>
     </section>
   </main>
@@ -560,6 +562,7 @@
     const copyTsvBtn = document.getElementById("copyTsvBtn");
     const orderTsv = document.getElementById("orderTsv");
     const csvStatus = document.getElementById("csvStatus");
+    const ocrLog = document.getElementById("ocrLog");
 
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetDetailRows = 30;
@@ -582,7 +585,7 @@
     const ocrTimeoutMs = 45000;
     const maxOcrCandidatePatterns = 8;
     const ocrTimeoutMessage = "タイムアウト：画像が重すぎるため処理を中断しました";
-    let rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
+    let rows = [];
 
     menuCsvBtn.addEventListener("click", event => {
       event.preventDefault();
@@ -593,12 +596,9 @@
       csvStatus.textContent = "献立CSVからの発注書作成は現在停止中です。";
     });
 
-    addBtn.addEventListener("click", () => {
-      syncRows();
-      rows.push(createBlankRow());
-      renderManualTable();
-      renderOrderPreview();
-      focusLastNameInput();
+    addBtn.addEventListener("click", event => {
+      event.preventDefault();
+      notice.textContent = "手入力機能は停止中です。ファイル読み取りを使ってください。";
     });
 
     excelBtn.addEventListener("click", downloadExcel);
@@ -608,12 +608,11 @@
     });
 
     pdfText.addEventListener("input", () => {
-      const parsedRows = parseIngredients(pdfText.value);
-      applyParsedRows(parsedRows, { append: false, statusPrefix: "貼り付け欄" });
+      notice.textContent = "手入力機能は停止中です。ファイル読み取りを使ってください。";
     });
 
     clearBtn.addEventListener("click", () => {
-      rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
+      rows = [];
       deliveryDate.value = "";
       useDate.value = "";
       checkerName.value = "";
@@ -647,15 +646,23 @@
         updateImportProgress(10, "ファイルを読み込み中です。");
         const text = await readFileText(file);
         const extractedText = String(text || "").trim();
-        pdfText.value = extractedText;
+        pdfText.value = extractedText || "【読み取り失敗】OCR結果が空です。Excelは作成しません。";
+        logOcrStep("OCR結果", extractedText ? extractedText : "空");
+        if (!extractedText) {
+          markFileImportFailed("読み取り失敗：OCR結果が空です。Excelは作成しません。", { keepText: true });
+          return;
+        }
         updateImportProgress(75, "材料を抽出中です。");
         const parsedRows = parseIngredients(extractedText);
+        logOcrStep("抽出結果", parsedRows.length ? parsedRows.map(row => row.name + " " + row.quantity + row.unit).join(" / ") : "0件");
         updateImportProgress(100, "読み込み完了");
-        applyParsedRows(parsedRows, { append: true, statusPrefix: file.name + " の読み込み完了" });
+        applyParsedRows(parsedRows, { append: false, statusPrefix: file.name + " の読み込み完了" });
       } catch (error) {
-        console.error("file import error", { fileName: file.name, reason: error && error.message ? error.message : error });
-        pdfText.value = "";
-        markFileImportFailed("読み込み失敗。抽出テキスト欄に内容を貼り付けてください。");
+        const reason = error && error.message ? error.message : String(error || "不明なエラー");
+        console.error("file import error", { fileName: file.name, reason });
+        pdfText.value = "【読み取り失敗】" + reason;
+        logOcrStep("失敗理由", reason);
+        markFileImportFailed("読み取り失敗：" + reason + "。Excelは作成しません。", { keepText: true });
       } finally {
         pdfFile.disabled = false;
         pdfFile.value = "";
@@ -1281,19 +1288,24 @@
       if (message) pdfStatus.textContent = message;
     }
 
-    function markFileImportFailed(message) {
+    function markFileImportFailed(message, options = {}) {
       updateImportProgress(100, "読み込み失敗");
-      pdfText.value = "";
-      pdfText.placeholder = "内容をここに貼り付けてください。";
-      pdfText.focus();
+      if (!options.keepText) pdfText.value = "【読み取り失敗】" + message;
+      rows = [];
+      logOcrStep("失敗理由", message);
       notice.textContent = message;
       pdfStatus.textContent = message;
-      syncRows();
-      ensureEditableRows();
       renderManualTable();
       renderOrderPreview();
+      updateExcelButtonState();
     }
 
+    function logOcrStep(label, value) {
+      const message = "[" + new Date().toLocaleString("ja-JP") + "] " + label + "\n" + String(value || "").trim();
+      ocrLog.value = ocrLog.value ? ocrLog.value + "\n\n" + message : message;
+      ocrLog.scrollTop = ocrLog.scrollHeight;
+      console.info("ocr log", { label, value });
+    }
 
     function buildOrderFromMenuCsv() {
       const text = menuCsvText.value || "";
@@ -1509,23 +1521,23 @@
         const rowText = [row.name, row.quantity, row.unit].join(" ");
         return !isGarbledText(rowText) && !isSuspiciousIngredientName(row.name) && isLikelyIngredientRow(row, rowText);
       });
-      syncRows();
       const currentRows = rows.filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim());
       rows = append ? currentRows.concat(importedRows) : importedRows;
-      ensureEditableRows();
 
       notice.textContent = importedRows.length
-        ? "抽出できた行を発注書データに追加しました。必要なら修正してください。"
-        : "抽出できませんでした。貼り付け欄か手入力を使ってください。";
+        ? "抽出できた行だけを発注書データに反映しました。"
+        : "読み取り失敗：材料名・数量・単位を抽出できませんでした。Excelは作成しません。";
       pdfStatus.textContent = importedRows.length
-        ? statusPrefix + "。抽出結果を確認テーブルへ表示しました（" + importedRows.length + "件）。"
-        : statusPrefix + "。抽出0件です。貼り付け欄を表示しています。";
+        ? statusPrefix + "。抽出結果を表示しました（" + importedRows.length + "件）。"
+        : statusPrefix + "。抽出0件です。読み取り失敗です。";
+      if (!importedRows.length) logOcrStep("失敗理由", "材料名・数量・単位を抽出できませんでした。");
       renderManualTable();
       renderOrderPreview();
+      updateExcelButtonState();
     }
 
     function ensureEditableRows() {
-      if (rows.length === 0) rows = [createBlankRow()];
+      updateExcelButtonState();
     }
 
     function extractRowsFromPdfText(text) {
@@ -1556,9 +1568,11 @@
       const results = [];
       const normalizedLine = normalizeOcrLine(line).replace(/,/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
       if (!normalizedLine || isGarbledText(normalizedLine) || isIgnoredPdfLine(normalizedLine)) return results;
-      const nameFirstPattern = new RegExp("^(.+?)\\s+([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
-      const joinedNameFirstPattern = new RegExp("^(.{1,40}?)([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
-      const quantityFirstPattern = new RegExp("^([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + escapedUnits + ")\\s+(.+)$", "i");
+      const quantityText = "([0-9０-９]+(?:[.,．][0-9０-９]+)?)";
+      const nameFirstPattern = new RegExp("^(.+?)\\s+" + quantityText + "\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
+      const joinedNameFirstPattern = new RegExp("^(.{1,40}?)" + quantityText + "\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
+      const quantityFirstPattern = new RegExp("^" + quantityText + "\\s*(" + escapedUnits + ")\\s+(.+)$", "i");
+      const inlinePattern = new RegExp("([ぁ-んァ-ヶ一-龠々A-Za-zーｰ－・/／()（）\\s]{1,32}?)\\s*" + quantityText + "\\s*(" + escapedUnits + ")", "gi");
       const nameFirstMatch = normalizedLine.match(nameFirstPattern) || normalizedLine.match(joinedNameFirstPattern);
       const quantityFirstMatch = normalizedLine.match(quantityFirstPattern);
 
@@ -1566,6 +1580,10 @@
         addExtractedRow(results, nameFirstMatch[1], nameFirstMatch[2], nameFirstMatch[3], line);
       } else if (quantityFirstMatch) {
         addExtractedRow(results, quantityFirstMatch[3], quantityFirstMatch[1], quantityFirstMatch[2], line);
+      }
+
+      for (const match of normalizedLine.matchAll(inlinePattern)) {
+        addExtractedRow(results, match[1], match[2], match[3], line);
       }
 
       const cells = String(line || "").split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
@@ -1587,7 +1605,7 @@
       const unit = normalizeUnit(unitValue);
       if (!name || !quantity || !unit || isIgnoredPdfLine(name) || isSuspiciousIngredientName(name)) return;
       if (!isLikelyIngredientRow({ name, quantity, unit }, sourceLine)) return;
-      target.push({ name, quantity, unit });
+      target.push({ name, quantity, unit, source: "OCR全文" });
     }
 
     function unitNames() {
@@ -1728,23 +1746,26 @@
 
     function renderManualTable() {
       if (rows.length === 0) {
-        manualRows.innerHTML = '<tr><td colspan="4">抽出できませんでした</td></tr>';
+        manualRows.innerHTML = '<tr><td colspan="4">読み取り失敗：抽出結果がありません</td></tr>';
       } else {
-        manualRows.innerHTML = rows.map((row, index) => {
+        manualRows.innerHTML = rows.map(row => {
           return "<tr>" +
-            '<td data-label="材料名"><input data-index="' + index + '" data-field="name" type="text" value="' + escapeHtml(row.name) + '" placeholder="例：にんじん"></td>' +
-            '<td data-label="数量"><input data-index="' + index + '" data-field="quantity" type="text" inputmode="decimal" value="' + escapeHtml(row.quantity) + '" placeholder="例：2"></td>' +
-            '<td data-label="単位"><input data-index="' + index + '" data-field="unit" type="text" value="' + escapeHtml(row.unit) + '" placeholder="例：kg"></td>' +
-            '<td data-label="操作"><button class="red" type="button" data-delete="' + index + '">削除</button></td>' +
+            '<td data-label="材料名">' + escapeHtml(row.name) + '</td>' +
+            '<td data-label="数量">' + escapeHtml(row.quantity) + '</td>' +
+            '<td data-label="単位">' + escapeHtml(row.unit) + '</td>' +
+            '<td data-label="抽出元">' + escapeHtml(row.source || "OCR全文") + '</td>' +
           "</tr>";
         }).join("");
       }
+      updateExcelButtonState();
+    }
 
-      manualRows.querySelectorAll("input").forEach(input => input.addEventListener("input", () => {
-        syncRows();
-        renderOrderPreview();
-      }));
-      manualRows.querySelectorAll("[data-delete]").forEach(button => button.addEventListener("click", () => deleteRow(Number(button.dataset.delete))));
+    function updateExcelButtonState() {
+      if (excelBtn) excelBtn.disabled = getFilledRows().length === 0;
+    }
+
+    function getFilledRows() {
+      return rows.filter(row => String(row.name || "").trim() && String(row.quantity || "").trim() && String(row.unit || "").trim());
     }
 
     function focusLastNameInput() {
@@ -1755,7 +1776,7 @@
     function deleteRow(index) {
       syncRows();
       rows.splice(index, 1);
-      if (rows.length === 0) rows.push(createBlankRow());
+      
       renderManualTable();
       renderOrderPreview();
     }
@@ -1771,9 +1792,7 @@
     }
 
     function getExportRows() {
-      syncRows();
-      return rows
-        .filter(row => String(row.name || "").trim() || String(row.quantity || "").trim() || String(row.unit || "").trim())
+      return getFilledRows()
         .map(row => {
           const quantity = exportQuantityValue(row.quantity);
           return [
@@ -1781,7 +1800,7 @@
             String(row.name || "").trim(),
             quantity,
             String(row.unit || "").trim(),
-            String(row.note || row.source || "手入力"),
+            String(row.note || row.source || "OCR全文"),
             quantity,
             String(row.unit || "").trim(),
             "",
@@ -1826,6 +1845,11 @@
 
     function downloadExcel() {
       const exportRows = getExportRows();
+      if (!exportRows.length) {
+        notice.textContent = "読み取り失敗：抽出結果が空のため、Excelは作成しません。";
+        logOcrStep("失敗理由", "空欄Excel防止：抽出結果が0件のためExcel作成を中止しました。");
+        return;
+      }
       if (!isXlsxReady()) {
         notice.textContent = "Excel作成ライブラリを読み込めませんでした。ネット接続を確認してから、もう一度押してください。";
         return;
@@ -1838,7 +1862,8 @@
         const workbook = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, "発注書");
         XLSX.writeFile(workbook, makeExportFileName("xlsx"), { bookType: "xlsx", type: "binary" });
-        notice.textContent = exportRows.length ? "Excelを出力しました。" : "空の発注書Excelを出力しました。";
+        notice.textContent = "Excelを出力しました。";
+        logOcrStep("Excel出力", exportRows.length + "件をExcelへ反映しました。");
       } catch (error) {
         notice.textContent = "Excelの作成に失敗しました。もう一度押してください。";
         console.error("Excel作成エラー", error);
