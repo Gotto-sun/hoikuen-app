@@ -1389,11 +1389,12 @@
           const name = cleanIngredientName(row[columns.name]);
           const quantity = normalizeQuantity(row[columns.quantity]);
           const unit = normalizeUnit(row[columns.unit] || guessUnitNearQuantity(row, columns.quantity));
-          if (addMenuSourceRow(sourceRows, name, quantity, unit)) continue;
+          const weekday = detectWeekday(row[columns.day] || row.join(" "));
+          if (addMenuSourceRow(sourceRows, name, quantity, unit, weekday)) continue;
           skipped++;
         }
       } else {
-        sourceRows = extractRowsFromPdfText(text).filter(row => addMenuSourceRow([], row.name, row.quantity, row.unit));
+        sourceRows = extractUnderThreeSourceRows(text);
         skipped = sourceRows.length ? 0 : lines.length;
       }
 
@@ -1460,12 +1461,12 @@
       return candidates.find(value => isKnownUnit(value)) || "g";
     }
 
-    function addMenuSourceRow(target, name, quantity, unit) {
+    function addMenuSourceRow(target, name, quantity, unit, weekday) {
       const cleanName = cleanIngredientName(name);
       const cleanUnit = normalizeUnit(unit || "g");
       const numericQuantity = numberValue(quantity);
-      if (!cleanName || !numericQuantity || !cleanUnit || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
-      target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, source: "献立CSV" });
+      if (!cleanName || !numericQuantity || !cleanUnit || !peopleForWeekday(weekday) || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
+      target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: "献立CSV" });
       return true;
     }
 
