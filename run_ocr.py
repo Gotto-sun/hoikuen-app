@@ -474,10 +474,10 @@ FIXED_ORDER_RULES = [
     ("ヨーグルト", "yogurt", re.compile(r"ヨーグルト|牧場の朝")),
 ]
 ROUNDING_ORDER_RULES = [
-    ("キャベツ", "個", 0.25, re.compile(r"キャベツ")),
-    ("白菜", "個", 0.125, re.compile(r"白菜")),
-    ("にんじん", "本", 0.5, re.compile(r"にんじん|人参")),
-    ("きのこ類", "袋", 1.0, re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
+    ("キャベツ", "個", 0.25, {"g": 1200.0}, re.compile(r"キャベツ")),
+    ("白菜", "個", 0.125, {"g": 2000.0}, re.compile(r"白菜")),
+    ("にんじん", "本", 0.5, {"g": 150.0}, re.compile(r"にんじん|人参")),
+    ("きのこ類", "袋", 1.0, {"g": 100.0}, re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
 ]
 
 
@@ -513,12 +513,24 @@ def is_garbled_text(value: str) -> bool:
 
 
 def clean_ingredient_name(value: str) -> str:
-    name = normalize_ocr_line(value)
+    name = strip_non_ingredient_prefix(value)
     name = re.sub(r"OCR全文", " ", name)
     name = re.sub(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?", " ", name)
     name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
     name = re.sub(r"[：:].*$", "", name)
-    return name.strip()
+    return re.sub(r"\s+", " ", name).strip()
+
+
+def strip_non_ingredient_prefix(value: str) -> str:
+    name = normalize_ocr_line(value)
+    unit = UNIT_PATTERN
+    name = re.sub(r"OCR全文", " ", name)
+    name = re.sub(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?", " ", name)
+    name = re.sub(r"(?:3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量)\s*[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:" + unit + r")?", " ", name, flags=re.IGNORECASE)
+    name = re.sub(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:" + unit + r")(?=.*(?:3歳未満児?|３歳未満児?|未満児|乳児))", " ", name, flags=re.IGNORECASE)
+    name = re.sub(r"(?:3歳未満児?|３歳未満児?|未満児|乳児).*$", " ", name, flags=re.IGNORECASE)
+    name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
+    return re.sub(r"\s+", " ", name).strip()
 
 
 def is_suspicious_ingredient_name(value: str) -> bool:
@@ -536,14 +548,17 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
     quantity = r"([0-9０-９]+(?:[.,．][0-9０-９]+)?)"
     unit_pattern = r"(" + UNIT_PATTERN + r")"
     marker = r"(?:3歳未満児?|３歳未満児?|未満児|乳児)"
+    current_weekday = ""
     for raw_line in re.split(r"\r?\n|[|｜]", str(text or "").replace("OCR全文", "\n")):
         line = normalize_ocr_line(raw_line)
         if not line or IGNORED_LINE_PATTERN.search(line) or SENTENCE_NOISE_PATTERN.search(line) or is_garbled_text(line):
             continue
         weekday = detect_weekday(line)
-        under_three_match = re.search(r"^(.{1,50}?)" + marker + r".*?" + quantity + r"\s*" + unit_pattern, line, re.IGNORECASE)
+        if weekday:
+            current_weekday = weekday
+        under_three_match = re.search(r"^(.{1,80}?)" + marker + r".*?" + quantity + r"\s*" + unit_pattern, line, re.IGNORECASE)
         if under_three_match:
-            add_ingredient_row(rows, seen, under_three_match.group(1), under_three_match.group(2), under_three_match.group(3), weekday)
+            add_ingredient_row(rows, seen, strip_non_ingredient_prefix(under_three_match.group(1)), under_three_match.group(2), under_three_match.group(3), weekday or current_weekday)
             continue
         cells = [cell.strip() for cell in re.split(r"\t|,|，", line) if cell.strip()]
         if len(cells) >= 4 and any(re.search(marker, cell, re.IGNORECASE) for cell in cells):
@@ -553,7 +568,7 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
                     value = cells[index + 1] if index + 1 < len(cells) else ""
                     unit = cells[index + 2] if index + 2 < len(cells) else "g"
                     if re.fullmatch(quantity, value) and re.search(unit_pattern, unit, re.IGNORECASE):
-                        add_ingredient_row(rows, seen, name, value, unit, weekday or detect_weekday(" ".join(cells)))
+                        add_ingredient_row(rows, seen, name, value, unit, weekday or detect_weekday(" ".join(cells)) or current_weekday)
     return rows
 
 
@@ -592,10 +607,10 @@ def fixed_order_key(name: str) -> str | None:
     return None
 
 
-def rounding_order_rule(name: str) -> tuple[str, str, float] | None:
-    for label, unit, step, pattern in ROUNDING_ORDER_RULES:
+def rounding_order_rule(name: str) -> tuple[str, str, float, dict[str, float]] | None:
+    for label, unit, step, base, pattern in ROUNDING_ORDER_RULES:
         if pattern.search(name):
-            return label, unit, step
+            return label, unit, step, base
     return None
 
 
@@ -611,6 +626,15 @@ def convert_order_quantity(quantity: str, unit: str) -> tuple[float, str]:
     if normalized_unit == "cc":
         return amount, "ml"
     return amount, normalized_unit
+
+
+def convert_to_purchase_unit(quantity: float, unit: str, rule: tuple[str, str, float, dict[str, float]]) -> float:
+    if unit == rule[1]:
+        return quantity
+    base = rule[3].get(unit)
+    if base and base > 0:
+        return quantity / base
+    return quantity
 
 
 def ceil_to_step(quantity: float, step: float) -> float:
@@ -651,6 +675,7 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
             quantity = quantity if unit == "ml" else quantity * 1000 if unit in {"L", "l", "リットル"} else quantity * 450
             name, unit, step = "牛乳", "ml", None
         elif rule := rounding_order_rule(row.name):
+            quantity = convert_to_purchase_unit(quantity, unit, rule)
             name, unit, step = rule[0], rule[1], rule[2]
         else:
             name, step = normalize_ingredient_for_grouping(row.name), None
