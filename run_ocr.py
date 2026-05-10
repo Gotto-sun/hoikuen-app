@@ -13,10 +13,11 @@ import datetime as dt
 import importlib
 import importlib.util
 import logging
+import multiprocessing as mp
+import queue
 import re
 import statistics
 import sys
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -76,11 +77,13 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 ORIENTATIONS = (0, 90, 180, 270)
 LOW_CONFIDENCE_THRESHOLD = 70.0
 VERY_LOW_CONFIDENCE_THRESHOLD = 45.0
-MAX_IMAGE_WIDTH = 2000
+MAX_IMAGE_WIDTH = 1500
 MAX_IMAGE_HEIGHT = 2000
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
-OCR_TIMEOUT_SECONDS = 120
-TESSERACT_CALL_TIMEOUT_SECONDS = 25
+OCR_TIMEOUT_SECONDS = 30
+TESSERACT_CALL_TIMEOUT_SECONDS = 8
+OCR_CANDIDATE_LIMIT = 3
+TIMEOUT_MESSAGE = "タイムアウト：画像が重すぎるため処理を中断しました"
 
 HEADERS = [
     "処理日時",
@@ -177,8 +180,9 @@ def load_image(path: Path) -> Image.Image:
             raise ValueError("読み込み失敗: 画像の解像度を確認できませんでした")
         image = ImageOps.exif_transpose(opened).convert("RGB")
 
-    if image.width > MAX_IMAGE_WIDTH or image.height > MAX_IMAGE_HEIGHT:
-        image.thumbnail((MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT), Image.Resampling.LANCZOS)
+    if image.width > MAX_IMAGE_WIDTH:
+        ratio = MAX_IMAGE_WIDTH / image.width
+        image = image.resize((MAX_IMAGE_WIDTH, max(1, round(image.height * ratio))), Image.Resampling.LANCZOS)
         logging.info("OCR前縮小: %s resized=%sx%s", path, image.width, image.height)
     return image
 
@@ -200,12 +204,10 @@ def trim_margin(image: Image.Image) -> Image.Image:
     return image.crop((left, top, right, bottom))
 
 
-def upscale(image: Image.Image, min_width: int = 1800) -> Image.Image:
+def upscale(image: Image.Image, min_width: int = 1500) -> Image.Image:
     if image.width >= min_width:
         return image
-    ratio = min(min_width / max(1, image.width), MAX_IMAGE_HEIGHT / max(1, image.height))
-    if ratio <= 1:
-        return image
+    ratio = min_width / max(1, image.width)
     new_size = (int(image.width * ratio), int(image.height * ratio))
     return image.resize(new_size, Image.Resampling.LANCZOS)
 
@@ -258,8 +260,7 @@ def pil_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]
         ("二値化", binary),
         ("Otsu threshold", otsu),
     ]
-    variants.extend(opencv_preprocess_variants(scaled))
-    return variants
+    return variants[:OCR_CANDIDATE_LIMIT]
 
 
 def opencv_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
@@ -309,7 +310,7 @@ def tesseract_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
     if pytesseract is None:
         return OcrCandidate("Tesseract", angle=angle, method=method, notes=["pytesseractが未インストールです"])
 
-    configs = ["--oem 3 --psm 6", "--oem 3 --psm 11"]
+    configs = ["--oem 3 --psm 6"]
     lang = "jpn+eng"
     best = OcrCandidate("Tesseract", angle=angle, method=method, image=image)
     for config in configs:
@@ -350,9 +351,14 @@ def run_tesseract_data(pytesseract: Any, image: Image.Image, lang: str, config: 
 
 def best_tesseract_orientation(source: Image.Image) -> OcrCandidate:
     best = OcrCandidate("Tesseract", notes=[])
+    pattern_count = 0
     for angle in ORIENTATIONS:
         rotated = source.rotate(angle, expand=True)
         for method, processed in pil_preprocess_variants(rotated):
+            if pattern_count >= OCR_CANDIDATE_LIMIT:
+                logging.info("OCR候補上限に到達: limit=%s", OCR_CANDIDATE_LIMIT)
+                return best
+            pattern_count += 1
             candidate = tesseract_candidate(processed, angle, method)
             if candidate.score > best.score:
                 best = candidate
@@ -401,11 +407,6 @@ def paddleocr_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
 def collect_candidates(source: Image.Image) -> tuple[OcrCandidate, list[OcrCandidate]]:
     tesseract = best_tesseract_orientation(source)
     candidates = [tesseract]
-    if tesseract.confidence < LOW_CONFIDENCE_THRESHOLD:
-        for fallback in (easyocr_candidate, paddleocr_candidate):
-            candidate = fallback(tesseract.image or source, tesseract.angle, tesseract.method)
-            if candidate is not None:
-                candidates.append(candidate)
     best = max(candidates, key=lambda item: item.score)
     return best, candidates
 
@@ -535,29 +536,39 @@ def row_for_error(path: Path, message: str) -> list[Any]:
 
 
 def process_image(path: Path) -> list[Any]:
+    result_queue: mp.Queue = mp.Queue(maxsize=1)
+    process = mp.Process(target=process_image_worker, args=(path, result_queue), daemon=True)
+    process.start()
+    process.join(OCR_TIMEOUT_SECONDS)
+    if process.is_alive():
+        process.terminate()
+        process.join(3)
+        if process.is_alive():
+            process.kill()
+            process.join(1)
+        logging.error("%s: %s", TIMEOUT_MESSAGE, path)
+        return row_for_error(path, TIMEOUT_MESSAGE)
     try:
-        return run_with_timeout(lambda: process_image_inner(path), OCR_TIMEOUT_SECONDS, path)
-    except TimeoutError:
-        message = f"読み込み失敗: OCR処理が{OCR_TIMEOUT_SECONDS}秒を超えました"
-        logging.error("%s: %s", message, path)
+        ok, payload = result_queue.get_nowait()
+    except queue.Empty:
+        message = "読み込み失敗: OCR結果を受け取れませんでした"
+        logging.error("%s path=%s exitcode=%s", message, path, process.exitcode)
         return row_for_error(path, message)
+    if ok:
+        return payload
+    logging.error("読み込み失敗: %s reason=%s", path, payload)
+    return row_for_error(path, f"読み込み失敗: {payload}")
+
+
+def process_image_worker(path: Path, result_queue: mp.Queue) -> None:
+    try:
+        if Image is None:
+            load_required_dependencies()
+            setup()
+        result_queue.put((True, process_image_inner(path)))
     except Exception as exc:
         logging.exception("読み込み失敗: %s reason=%s", path, exc)
-        return row_for_error(path, f"読み込み失敗: {exc}")
-
-
-def run_with_timeout(func: Any, timeout_seconds: int, path: Path) -> Any:
-    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"ocr-{path.stem[:16]}")
-    future = executor.submit(func)
-    try:
-        return future.result(timeout=timeout_seconds)
-    except TimeoutError:
-        future.cancel()
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-    finally:
-        if future.done():
-            executor.shutdown(wait=False, cancel_futures=True)
+        result_queue.put((False, str(exc)))
 
 
 def process_image_inner(path: Path) -> list[Any]:
@@ -634,8 +645,13 @@ def main() -> int:
     images = supported_images()
     if not images:
         logging.info("input_images内に対応画像がありません")
-    for path in images:
+    total = len(images)
+    for index, path in enumerate(images, start=1):
+        percent_before = 0 if total == 0 else round(((index - 1) / total) * 100)
+        logging.info("進捗: %s%% (%s/%s)", percent_before, index - 1, total)
         rows.append(process_image(path))
+        percent_after = 100 if total == 0 else round((index / total) * 100)
+        logging.info("進捗: %s%% (%s/%s)", percent_after, index, total)
     write_excel(rows)
     logging.info("Excelを保存しました: %s", EXCEL_PATH)
     print(f"完了: {EXCEL_PATH}")

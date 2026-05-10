@@ -535,10 +535,12 @@
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetDetailRows = 30;
     const maxImageOcrSizeBytes = 25 * 1024 * 1024;
-    const maxImageOcrDimension = 2000;
+    const maxImageOcrDimension = 1500;
     const imageLoadTimeoutMs = 15000;
-    const ocrTargetTimeoutMs = 15000;
-    const ocrTimeoutMs = 45000;
+    const ocrTargetTimeoutMs = 10000;
+    const ocrTimeoutMs = 30000;
+    const maxOcrCandidatePatterns = 3;
+    const ocrTimeoutMessage = "タイムアウト：画像が重すぎるため処理を中断しました";
     let rows = [createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow(), createBlankRow()];
 
     addBtn.addEventListener("click", () => {
@@ -669,14 +671,17 @@
         const sourceCanvas = await fileToCanvas(file);
         const ocrResult = await withTimeout(recognizeBestJapaneseOcr(sourceCanvas, {
           baseProgress: 20,
-          progressRange: 55,
-          label: "画像OCR",
-          detail: "4方向"
-        }), ocrTimeoutMs, "画像OCRがタイムアウトしました。");
+          progressRange: 75,
+          label: "軽量画像OCR",
+          detail: "最大3パターン"
+        }), ocrTimeoutMs, ocrTimeoutMessage);
+        updateImportProgress(100, "画像OCR完了");
         return ocrResult.text;
       } catch (error) {
-        console.error("image ocr failed", { fileName: file.name, reason: error && error.message ? error.message : error });
-        throw new Error("読み込み失敗: " + (error && error.message ? error.message : "画像OCRに失敗しました。"));
+        const reason = error && error.message ? error.message : "画像OCRに失敗しました。";
+        console.error("image ocr failed", { fileName: file.name, reason });
+        updateImportProgress(100, reason === ocrTimeoutMessage ? ocrTimeoutMessage : "画像OCRに失敗しました。");
+        throw new Error(reason === ocrTimeoutMessage ? ocrTimeoutMessage : "読み込み失敗: " + reason);
       }
     }
 
@@ -688,7 +693,7 @@
     }
 
     async function recognizeBestJapaneseOcr(sourceCanvas, options = {}) {
-      const rotations = [0, 90, 180, 270];
+      const rotations = [0];
       const baseProgress = Number(options.baseProgress) || 0;
       const progressRange = Number(options.progressRange) || 60;
       const label = options.label || "画像OCR";
@@ -696,7 +701,8 @@
       const ocrTargets = rotations.flatMap(angle => {
         const rotatedCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
         return createOcrPreprocessCanvases(rotatedCanvas).map(variant => ({ angle, ...variant }));
-      });
+      }).slice(0, maxOcrCandidatePatterns);
+      console.info("ocr lightweight mode", { maxSeconds: ocrTimeoutMs / 1000, maxWidth: maxImageOcrDimension, candidatePatterns: ocrTargets.length });
       const results = [];
 
       for (let index = 0; index < ocrTargets.length; index++) {
@@ -704,30 +710,79 @@
         const targetStart = baseProgress + Math.round((index / ocrTargets.length) * progressRange);
         updateImportProgress(targetStart, label + detail + "中です（" + target.angle + "度・" + target.label + "）。");
         try {
-          const result = await withTimeout(Tesseract.recognize(target.canvas, "jpn", {
-            langPath: "https://tessdata.projectnaptha.com/4.0.0",
-            logger: data => {
-              if (data && data.status === "recognizing text") {
-                const progress = Number(data.progress) || 0;
-                const totalProgress = baseProgress + Math.round(((index + progress) / ocrTargets.length) * progressRange);
-                updateImportProgress(totalProgress, label + detail + "中です（" + target.angle + "度・" + target.label + " " + Math.round(progress * 100) + "%）。");
-              }
+          const result = await recognizeWithManagedTesseract(target.canvas, data => {
+            if (data && data.status === "recognizing text") {
+              const progress = Number(data.progress) || 0;
+              const totalProgress = baseProgress + Math.round(((index + progress) / ocrTargets.length) * progressRange);
+              updateImportProgress(totalProgress, label + detail + "中です（" + target.angle + "度・" + target.label + " " + Math.round(progress * 100) + "%）。");
             }
-          }), ocrTargetTimeoutMs, label + "がタイムアウトしました。");
+          }, ocrTargetTimeoutMs, ocrTimeoutMessage);
           const text = result && result.data ? String(result.data.text || "").trim() : "";
           results.push(scoreOcrText({ angle: target.angle, variant: target.label, text }));
         } catch (error) {
           console.error("ocr target failed", { angle: target.angle, variant: target.label, reason: error && error.message ? error.message : error });
+          if (error && error.message === ocrTimeoutMessage) throw error;
           results.push(scoreOcrText({ angle: target.angle, variant: target.label, text: "" }));
         }
       }
 
       const readableResults = results.filter(result => result.text && !result.garbled);
       const best = readableResults.sort((a, b) => b.score - a.score || b.materialRowCount - a.materialRowCount || b.japaneseCount - a.japaneseCount || a.angle - b.angle)[0] || { angle: 0, variant: "", text: "", score: 0, japaneseCount: 0, materialRowCount: 0, garbled: true };
-      pdfStatus.textContent = best.garbled
+      updateImportProgress(100, best.garbled
         ? label + "完了。文字化けの可能性が高いため、発注書には反映しません。"
-        : label + "完了。日本語・数字・単位が一番多い" + best.angle + "度（" + best.variant + "）の結果を採用しました。";
+        : label + "完了。日本語・数字・単位が一番多い" + best.angle + "度（" + best.variant + "）の結果を採用しました。");
       return best;
+    }
+
+
+    async function recognizeWithManagedTesseract(canvas, logger, timeoutMs, timeoutMessage) {
+      let worker = null;
+      let timedOut = false;
+      let timerId = null;
+
+      const terminateWorker = async () => {
+        if (worker && typeof worker.terminate === "function") {
+          try {
+            await worker.terminate();
+          } catch (error) {
+            console.warn("ocr worker terminate failed", error);
+          }
+        }
+      };
+
+      const timeoutPromise = new Promise((_, reject) => {
+        timerId = setTimeout(async () => {
+          timedOut = true;
+          console.error("operation timeout", { timeoutMs, reason: timeoutMessage });
+          await terminateWorker();
+          reject(new Error(timeoutMessage));
+        }, timeoutMs);
+      });
+
+      const ocrPromise = (async () => {
+        try {
+          if (typeof Tesseract.createWorker === "function") {
+            worker = await Tesseract.createWorker("jpn", 1, {
+              langPath: "https://tessdata.projectnaptha.com/4.0.0",
+              logger
+            });
+            if (timedOut) {
+              await terminateWorker();
+              throw new Error(timeoutMessage);
+            }
+            return await worker.recognize(canvas);
+          }
+          return await Tesseract.recognize(canvas, "jpn", {
+            langPath: "https://tessdata.projectnaptha.com/4.0.0",
+            logger
+          });
+        } finally {
+          if (timerId) clearTimeout(timerId);
+          await terminateWorker();
+        }
+      })();
+
+      return Promise.race([ocrPromise, timeoutPromise]);
     }
 
     function fileToCanvas(file) {
@@ -747,7 +802,7 @@
             if (!originalWidth || !originalHeight) {
               throw new Error("画像の解像度を確認できませんでした。");
             }
-            const scale = Math.min(1, maxImageOcrDimension / Math.max(originalWidth, originalHeight));
+            const scale = Math.min(1, maxImageOcrDimension / originalWidth);
             const width = Math.max(1, Math.round(originalWidth * scale));
             const height = Math.max(1, Math.round(originalHeight * scale));
             console.info("image resolution check", { fileName: file.name, originalWidth, originalHeight, width, height });
@@ -772,7 +827,10 @@
 
     function withTimeout(promise, timeoutMs, message) {
       return new Promise((resolve, reject) => {
-        const timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+        const timeoutId = setTimeout(() => {
+          console.error("operation timeout", { timeoutMs, reason: message });
+          reject(new Error(message));
+        }, timeoutMs);
         promise.then(
           value => {
             clearTimeout(timeoutId);
@@ -800,19 +858,34 @@
     }
 
     function createOcrPreprocessCanvases(sourceCanvas) {
-      const baseCanvas = trimCanvasMargins(sourceCanvas);
-      const baseImage = canvasToContrastedImageData(baseCanvas, 2.25);
+      const resizedCanvas = resizeCanvasToMaxWidth(sourceCanvas, maxImageOcrDimension);
+      const baseCanvas = trimCanvasMargins(resizedCanvas);
+      const baseImage = canvasToContrastedImageData(baseCanvas, 2.0);
       const otsu = calculateOtsuThreshold(baseImage.data);
       const thresholds = [
         { label: "二値化標準", threshold: otsu },
-        { label: "二値化薄字", threshold: Math.max(80, otsu - 28) },
-        { label: "二値化濃字", threshold: Math.min(245, otsu + 28) },
-        { label: "二値化強調", threshold: 190 }
+        { label: "二値化薄字", threshold: Math.max(80, otsu - 24) },
+        { label: "二値化濃字", threshold: Math.min(245, otsu + 24) }
       ];
       return thresholds.map(setting => ({
         label: setting.label,
-        canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, setting.threshold)), 3)
+        canvas: scaleCanvas(trimCanvasMargins(imageDataToBinaryCanvas(baseImage, setting.threshold)), 1.6)
       }));
+    }
+
+
+    function resizeCanvasToMaxWidth(sourceCanvas, maxWidth) {
+      if (sourceCanvas.width <= maxWidth) return sourceCanvas;
+      const scale = maxWidth / sourceCanvas.width;
+      const canvas = document.createElement("canvas");
+      canvas.width = maxWidth;
+      canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
+      context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+      console.info("ocr canvas resized", { originalWidth: sourceCanvas.width, originalHeight: sourceCanvas.height, width: canvas.width, height: canvas.height });
+      return canvas;
     }
 
     function canvasToContrastedImageData(sourceCanvas, contrast) {
@@ -1018,7 +1091,7 @@
     }
 
     function markFileImportFailed(message) {
-      updateImportProgress(0, "読み込み失敗");
+      updateImportProgress(100, "読み込み失敗");
       pdfText.value = "";
       pdfText.placeholder = "内容をここに貼り付けてください。";
       pdfText.focus();
