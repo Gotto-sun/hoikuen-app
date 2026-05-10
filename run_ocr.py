@@ -16,6 +16,7 @@ import logging
 import re
 import statistics
 import sys
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -75,6 +76,11 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 ORIENTATIONS = (0, 90, 180, 270)
 LOW_CONFIDENCE_THRESHOLD = 70.0
 VERY_LOW_CONFIDENCE_THRESHOLD = 45.0
+MAX_IMAGE_WIDTH = 2000
+MAX_IMAGE_HEIGHT = 2000
+MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024
+OCR_TIMEOUT_SECONDS = 120
+TESSERACT_CALL_TIMEOUT_SECONDS = 25
 
 HEADERS = [
     "処理日時",
@@ -154,9 +160,27 @@ def supported_images() -> list[Path]:
 
 
 def load_image(path: Path) -> Image.Image:
-    image = Image.open(path)
-    image = ImageOps.exif_transpose(image)
-    return image.convert("RGB")
+    file_size = path.stat().st_size
+    if file_size > MAX_FILE_SIZE_BYTES:
+        raise ValueError(f"読み込み失敗: ファイルサイズが大きすぎます ({file_size / 1024 / 1024:.1f}MB)")
+
+    with Image.open(path) as opened:
+        width, height = opened.size
+        logging.info(
+            "画像確認: %s size=%.1fMB resolution=%sx%s",
+            path,
+            file_size / 1024 / 1024,
+            width,
+            height,
+        )
+        if width <= 0 or height <= 0:
+            raise ValueError("読み込み失敗: 画像の解像度を確認できませんでした")
+        image = ImageOps.exif_transpose(opened).convert("RGB")
+
+    if image.width > MAX_IMAGE_WIDTH or image.height > MAX_IMAGE_HEIGHT:
+        image.thumbnail((MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT), Image.Resampling.LANCZOS)
+        logging.info("OCR前縮小: %s resized=%sx%s", path, image.width, image.height)
+    return image
 
 
 def trim_margin(image: Image.Image) -> Image.Image:
@@ -179,7 +203,9 @@ def trim_margin(image: Image.Image) -> Image.Image:
 def upscale(image: Image.Image, min_width: int = 1800) -> Image.Image:
     if image.width >= min_width:
         return image
-    ratio = min_width / max(1, image.width)
+    ratio = min(min_width / max(1, image.width), MAX_IMAGE_HEIGHT / max(1, image.height))
+    if ratio <= 1:
+        return image
     new_size = (int(image.width * ratio), int(image.height * ratio))
     return image.resize(new_size, Image.Resampling.LANCZOS)
 
@@ -316,7 +342,7 @@ def tesseract_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
 
 def run_tesseract_data(pytesseract: Any, image: Image.Image, lang: str, config: str) -> dict[str, Any] | None:
     try:
-        return pytesseract.image_to_data(image, lang=lang, config=config, output_type=pytesseract.Output.DICT)
+        return pytesseract.image_to_data(image, lang=lang, config=config, output_type=pytesseract.Output.DICT, timeout=TESSERACT_CALL_TIMEOUT_SECONDS)
     except Exception as exc:
         logging.info("Tesseract失敗 lang=%s config=%s: %s", lang, config, exc)
         return None
@@ -509,6 +535,32 @@ def row_for_error(path: Path, message: str) -> list[Any]:
 
 
 def process_image(path: Path) -> list[Any]:
+    try:
+        return run_with_timeout(lambda: process_image_inner(path), OCR_TIMEOUT_SECONDS, path)
+    except TimeoutError:
+        message = f"読み込み失敗: OCR処理が{OCR_TIMEOUT_SECONDS}秒を超えました"
+        logging.error("%s: %s", message, path)
+        return row_for_error(path, message)
+    except Exception as exc:
+        logging.exception("読み込み失敗: %s reason=%s", path, exc)
+        return row_for_error(path, f"読み込み失敗: {exc}")
+
+
+def run_with_timeout(func: Any, timeout_seconds: int, path: Path) -> Any:
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"ocr-{path.stem[:16]}")
+    future = executor.submit(func)
+    try:
+        return future.result(timeout=timeout_seconds)
+    except TimeoutError:
+        future.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        if future.done():
+            executor.shutdown(wait=False, cancel_futures=True)
+
+
+def process_image_inner(path: Path) -> list[Any]:
     logging.info("処理開始: %s", path)
     source = load_image(path)
     best, candidates = collect_candidates(source)
@@ -583,11 +635,7 @@ def main() -> int:
     if not images:
         logging.info("input_images内に対応画像がありません")
     for path in images:
-        try:
-            rows.append(process_image(path))
-        except Exception as exc:
-            logging.exception("画像処理エラー: %s", path)
-            rows.append(row_for_error(path, str(exc)))
+        rows.append(process_image(path))
     write_excel(rows)
     logging.info("Excelを保存しました: %s", EXCEL_PATH)
     print(f"完了: {EXCEL_PATH}")
