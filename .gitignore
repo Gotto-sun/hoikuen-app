@@ -1,0 +1,13 @@
+# OCR input/output data may contain private documents.
+input_images/*
+!input_images/.gitkeep
+output/*
+!output/.gitkeep
+!output/processed_images/
+output/processed_images/*
+!output/processed_images/.gitkeep
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
