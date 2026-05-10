@@ -333,19 +333,15 @@ def tesseract_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
             data = run_tesseract_data(pytesseract, image, "eng", config)
         if data is None:
             continue
-        text_parts = []
         confidences = []
-        for raw_text, raw_conf in zip(data.get("text", []), data.get("conf", [])):
-            text = str(raw_text).strip()
-            if text:
-                text_parts.append(text)
+        for raw_conf in data.get("conf", []):
             try:
                 conf = float(raw_conf)
             except ValueError:
                 continue
             if conf >= 0:
                 confidences.append(conf)
-        text = "\n".join(text_parts)
+        text = reconstruct_ocr_rows(data, image)
         confidence = statistics.mean(confidences) if confidences else 0.0
         candidate = OcrCandidate("Tesseract", text, confidence, angle, method, image)
         if candidate.score > best.score:
@@ -353,6 +349,117 @@ def tesseract_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
     if not best.text:
         best.notes.append("Tesseractで文字を読み取れませんでした")
     return best
+
+
+def reconstruct_ocr_rows(data: dict[str, Any], image: Image.Image | None = None) -> str:
+    words = []
+    for index, raw_text in enumerate(data.get("text", [])):
+        text = normalize_ocr_line(str(raw_text).strip())
+        if not text:
+            continue
+        try:
+            left = int(float(data.get("left", [0])[index]))
+            top = int(float(data.get("top", [0])[index]))
+            width = int(float(data.get("width", [0])[index]))
+            height = int(float(data.get("height", [0])[index]))
+            block = int(float(data.get("block_num", [0])[index]))
+            par = int(float(data.get("par_num", [0])[index]))
+            line = int(float(data.get("line_num", [0])[index]))
+        except (ValueError, TypeError, IndexError):
+            continue
+        if width <= 0 or height <= 0:
+            continue
+        words.append({"text": text, "left": left, "top": top, "right": left + width, "bottom": top + height, "height": height, "line_key": (block, par, line)})
+    if not words:
+        return ""
+
+    rule_bands = detect_horizontal_rule_bands(image) if image is not None else []
+    if rule_bands:
+        grouped = group_words_by_rule_bands(words, rule_bands)
+    else:
+        grouped = group_words_by_tesseract_lines(words)
+    rows = [join_positioned_words(row) for row in grouped]
+    return "\n".join(row for row in rows if row)
+
+
+def detect_horizontal_rule_bands(image: Image.Image | None) -> list[tuple[int, int]]:
+    cv2 = optional_module("cv2")
+    np = optional_module("numpy")
+    if image is None or cv2 is None or np is None:
+        return []
+    try:
+        gray = np.array(ImageOps.grayscale(image))
+        binary = cv2.threshold(gray, 190, 255, cv2.THRESH_BINARY_INV)[1]
+        kernel_width = max(30, image.width // 3)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (kernel_width, 1))
+        horizontal = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel)
+        row_hits = np.where(horizontal.sum(axis=1) > 255 * image.width * 0.35)[0]
+    except Exception as exc:
+        logging.info("横罫線検出をスキップ: %s", exc)
+        return []
+    bands: list[tuple[int, int]] = []
+    for y in row_hits.tolist():
+        if not bands or y > bands[-1][1] + 2:
+            bands.append((y, y))
+        else:
+            bands[-1] = (bands[-1][0], y)
+    return bands
+
+
+def group_words_by_rule_bands(words: list[dict[str, Any]], bands: list[tuple[int, int]]) -> list[list[dict[str, Any]]]:
+    separators = [int((start + end) / 2) for start, end in bands]
+    rows_by_band: dict[int, list[dict[str, Any]]] = {}
+    for word in words:
+        center_y = int((word["top"] + word["bottom"]) / 2)
+        row_index = sum(1 for y in separators if y < center_y)
+        rows_by_band.setdefault(row_index, []).append(word)
+    rows = [row for _index, row in sorted(rows_by_band.items()) if row]
+    return split_tall_rule_rows(rows)
+
+
+def split_tall_rule_rows(rows: list[list[dict[str, Any]]]) -> list[list[dict[str, Any]]]:
+    split_rows: list[list[dict[str, Any]]] = []
+    for row in rows:
+        heights = [word["height"] for word in row]
+        median_height = statistics.median(heights) if heights else 12
+        row.sort(key=lambda item: (item["top"], item["left"]))
+        buckets: list[list[dict[str, Any]]] = []
+        for word in row:
+            center_y = (word["top"] + word["bottom"]) / 2
+            for bucket in buckets:
+                bucket_center = statistics.mean((item["top"] + item["bottom"]) / 2 for item in bucket)
+                if abs(center_y - bucket_center) <= max(8, median_height * 0.7):
+                    bucket.append(word)
+                    break
+            else:
+                buckets.append([word])
+        split_rows.extend(buckets)
+    return split_rows
+
+
+def group_words_by_tesseract_lines(words: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    grouped: dict[tuple[int, int, int], list[dict[str, Any]]] = {}
+    for word in words:
+        grouped.setdefault(word["line_key"], []).append(word)
+    rows = list(grouped.values())
+    rows.sort(key=lambda row: (statistics.mean(item["top"] for item in row), min(item["left"] for item in row)))
+    return rows
+
+
+def join_positioned_words(words: list[dict[str, Any]]) -> str:
+    words = sorted(words, key=lambda item: item["left"])
+    if not words:
+        return ""
+    heights = [word["height"] for word in words]
+    median_height = statistics.median(heights) if heights else 12
+    parts = [words[0]["text"]]
+    prev = words[0]
+    for word in words[1:]:
+        gap = word["left"] - prev["right"]
+        separator = "\t" if gap > max(18, median_height * 1.4) else " "
+        parts.append(separator + word["text"])
+        prev = word
+    return normalize_ocr_line("".join(parts))
 
 
 def run_tesseract_data(pytesseract: Any, image: Image.Image, lang: str, config: str) -> dict[str, Any] | None:
@@ -516,6 +623,7 @@ def clean_ingredient_name(value: str) -> str:
     name = strip_non_ingredient_prefix(value)
     name = re.sub(r"OCR全文", " ", name)
     name = re.sub(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?", " ", name)
+    name = re.sub(r"^[0-9０-９]+[.)）．、\s]+", "", name)
     name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
     name = re.sub(r"[：:].*$", "", name)
     return re.sub(r"\s+", " ", name).strip()
@@ -529,6 +637,7 @@ def strip_non_ingredient_prefix(value: str) -> str:
     name = re.sub(r"(?:3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量)\s*[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:" + unit + r")?", " ", name, flags=re.IGNORECASE)
     name = re.sub(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:" + unit + r")(?=.*(?:3歳未満児?|３歳未満児?|未満児|乳児))", " ", name, flags=re.IGNORECASE)
     name = re.sub(r"(?:3歳未満児?|３歳未満児?|未満児|乳児).*$", " ", name, flags=re.IGNORECASE)
+    name = re.sub(r"^[0-9０-９]+[.)）．、\s]+", "", name)
     name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
     return re.sub(r"\s+", " ", name).strip()
 
@@ -550,31 +659,28 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
     marker = r"(?:3歳未満児?|３歳未満児?|未満児|乳児)"
     current_weekday = ""
     table_columns: dict[str, int] | None = None
-    for raw_line in re.split(r"\r?\n|[|｜]", str(text or "").replace("OCR全文", "\n")):
+    for raw_line in split_ocr_rows_for_ingredients(text):
         line = normalize_ocr_line(raw_line)
         if not line or IGNORED_LINE_PATTERN.search(line) or SENTENCE_NOISE_PATTERN.search(line) or is_garbled_text(line):
             continue
         weekday = detect_weekday(line)
         if weekday:
             current_weekday = weekday
-        cells = [cell.strip() for cell in re.split(r"\t|,|，", line) if cell.strip()]
+        cells = split_ocr_cells(line)
         detected_columns = detect_under_three_table_columns(cells)
         if detected_columns:
             table_columns = detected_columns
             continue
         if table_columns and cells:
-            name_index = table_columns.get("name", 0)
-            quantity_index = table_columns.get("quantity", -1)
-            unit_index = table_columns.get("unit", -1)
-            day_index = table_columns.get("day", -1)
-            value = cells[quantity_index] if 0 <= quantity_index < len(cells) else ""
-            unit = cells[unit_index] if 0 <= unit_index < len(cells) else guess_unit_near_quantity(cells, quantity_index)
-            table_weekday = detect_weekday(cells[day_index]) if 0 <= day_index < len(cells) else ""
+            table_weekday = detect_weekday(cells[table_columns.get("day", -1)]) if 0 <= table_columns.get("day", -1) < len(cells) else ""
             if table_weekday:
                 current_weekday = table_weekday
-            if 0 <= name_index < len(cells) and re.fullmatch(quantity, value) and re.search(unit_pattern, unit, re.IGNORECASE):
-                add_ingredient_row(rows, seen, cells[name_index], value, unit, table_weekday or weekday or current_weekday)
+            if add_row_from_detected_columns(rows, seen, cells, table_columns, table_weekday or weekday or current_weekday):
                 continue
+        marker_row = parse_marker_numeric_row(line)
+        if marker_row:
+            add_ingredient_row(rows, seen, marker_row["name"], marker_row["quantity"], marker_row["unit"], weekday or current_weekday)
+            continue
         under_three_match = re.search(r"^(.{1,80}?)" + marker + r".*?" + quantity + r"\s*" + unit_pattern, line, re.IGNORECASE)
         if under_three_match:
             add_ingredient_row(rows, seen, strip_non_ingredient_prefix(under_three_match.group(1)), under_three_match.group(2), under_three_match.group(3), weekday or current_weekday)
@@ -588,6 +694,100 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
                     if re.fullmatch(quantity, value) and re.search(unit_pattern, unit, re.IGNORECASE):
                         add_ingredient_row(rows, seen, name, value, unit, weekday or detect_weekday(" ".join(cells)) or current_weekday)
     return rows
+
+
+def split_ocr_rows_for_ingredients(text: str) -> list[str]:
+    normalized_text = str(text or "").replace("OCR全文", "\n")
+    rough_rows = re.split(r"\r?\n|[|｜]", normalized_text)
+    rows: list[str] = []
+    for raw_row in rough_rows:
+        row = normalize_ocr_line(raw_row)
+        if not row:
+            continue
+        pieces = re.split(r"\s{2,}(?=[月火水木金]?[ぁ-んァ-ヶ一-龥々])", row, flags=re.IGNORECASE)
+        rows.extend(piece for piece in pieces if piece.strip())
+    return rows
+
+
+def split_ocr_cells(line: str) -> list[str]:
+    protected = re.sub(r"(?<=\d),(?=\d{3}(?:\D|$))", "", normalize_ocr_line(line))
+    cells = [cell.strip() for cell in re.split(r"\t|,|，", protected) if cell.strip()]
+    if len(cells) > 1:
+        return cells
+    return split_marker_tokens(protected)
+
+
+def split_marker_tokens(line: str) -> list[str]:
+    return [token for token in re.split(r"\s+", normalize_ocr_line(line)) if token]
+
+
+def add_row_from_detected_columns(rows: list[IngredientRow], seen: set[str], cells: list[str], columns: dict[str, int], weekday: str) -> bool:
+    name_index = columns.get("name", 0)
+    quantity_index = columns.get("quantity", -1)
+    unit_index = columns.get("unit", -1)
+    if not (0 <= name_index < len(cells)):
+        return False
+    marker_parse = parse_marker_numeric_row("\t".join(cells), preferred_numeric_index=quantity_index, preferred_numeric_value=(cells[quantity_index] if 0 <= quantity_index < len(cells) else ""))
+    if marker_parse:
+        add_ingredient_row(rows, seen, cells[name_index] or marker_parse["name"], marker_parse["quantity"], marker_parse["unit"], weekday)
+        return True
+    value = cells[quantity_index] if 0 <= quantity_index < len(cells) else ""
+    unit = cells[unit_index] if 0 <= unit_index < len(cells) else guess_unit_near_quantity(cells, quantity_index)
+    if re.fullmatch(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?", value) and re.search(r"^(?:" + UNIT_PATTERN + r")$", unit, re.IGNORECASE):
+        add_ingredient_row(rows, seen, cells[name_index], value, unit, weekday)
+        return True
+    return False
+
+
+def parse_marker_numeric_row(line: str, preferred_numeric_index: int | None = None, preferred_numeric_value: str = "") -> dict[str, str] | None:
+    normalized = re.sub(r"^[0-9０-９]+[.)）．、\s]+", "", normalize_ocr_line(line))
+    if not normalized or SENTENCE_NOISE_PATTERN.search(normalized) or IGNORED_LINE_PATTERN.search(normalized):
+        return None
+    token_pattern = re.compile(r"(?P<number>[0-9０-９]+(?:[.,．][0-9０-９]+)?)(?:\s*(?P<unit>" + UNIT_PATTERN + r"))?", re.IGNORECASE)
+    matches = list(token_pattern.finditer(normalized))
+    if len(matches) < 2:
+        return None
+    first_number = matches[0]
+    name = clean_ingredient_name(normalized[: first_number.start()])
+    if not name:
+        return None
+    numeric_values: list[tuple[int, str, str, bool]] = []
+    row_unit = ""
+    for position, match in enumerate(matches):
+        value = normalize_value(match.group("number")).replace(",", "")
+        unit = normalize_unit(match.group("unit") or "")
+        if unit and not row_unit:
+            row_unit = unit
+        try:
+            numeric = float(value)
+        except ValueError:
+            continue
+        if numeric <= 0:
+            continue
+        numeric_values.append((position, value, unit or row_unit or "g", bool(unit)))
+    if not numeric_values:
+        return None
+    preferred_value = normalize_value(preferred_numeric_value).replace(",", "") if preferred_numeric_value else ""
+    if preferred_value:
+        for _position, value, unit, _has_unit in numeric_values:
+            if value == preferred_value:
+                return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
+    if preferred_numeric_index is not None and preferred_numeric_index >= 0:
+        numeric_position = preferred_numeric_index - 1 if re.search(r"^.*?" + UNIT_PATTERN + r"$", normalized[: matches[0].end()], re.IGNORECASE) else preferred_numeric_index
+        for position, value, unit, _has_unit in numeric_values:
+            if position == numeric_position:
+                return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
+    # マーカー部では「0g 20.0 14.0 24.0」のように、単位付き0の直後が3歳未満量になりやすい。
+    for index, (position, value, unit, _has_unit) in enumerate(numeric_values):
+        original_match = matches[position]
+        previous_has_unit = position > 0 and bool(matches[position - 1].group("unit"))
+        previous_is_zero = position > 0 and float(normalize_value(matches[position - 1].group("number")).replace(",", "")) == 0
+        if previous_has_unit and previous_is_zero:
+            return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
+        if not original_match.group("unit"):
+            return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
+    position, value, unit, _has_unit = numeric_values[0]
+    return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
 
 
 def detect_under_three_table_columns(cells: list[str]) -> dict[str, int] | None:

@@ -1630,17 +1630,64 @@
     }
 
     function extractUnderThreeSourceRows(text) {
-      const lines = String(text || "")
-        .replace(/OCR全文/g, "\n")
-        .replace(/【[^】]+】/g, "\n")
-        .replace(/[|｜]/g, "\n")
-        .split(/\r?\n|(?<=\d)\s{2,}|(?<=[ｇgｍmlL個本袋パック玉束枚缶箱尾切片丁株房杯食])\s+(?=[月火水木金]?[ぁ-んァ-ヶ一-龠々])/i)
-        .map(line => normalizeOcrLine(line))
-        .filter(Boolean);
+      const lines = splitOcrRowsForIngredients(text);
       const extracted = [];
       const seen = new Set();
       collectUnderThreeRows(lines).forEach(row => addUniqueSourceRow(extracted, seen, row));
       return extracted;
+    }
+
+    function splitOcrRowsForIngredients(text) {
+      return String(text || "")
+        .replace(/OCR全文/g, "\n")
+        .replace(/【[^】]+】/g, "\n")
+        .replace(/[|｜]/g, "\n")
+        .split(/\r?\n|(?<=\d)\s{2,}|\s{2,}(?=[月火水木金]?[ぁ-んァ-ヶ一-龠々])/i)
+        .map(line => normalizeOcrLine(line))
+        .filter(Boolean);
+    }
+
+    function parseMarkerNumericRow(line, preferredNumericIndex = -1, preferredNumericValue = "") {
+      const normalized = normalizeOcrLine(line).replace(/^[0-9０-９]+[.)）．、\s]+/, "");
+      if (!normalized || isIgnoredPdfLine(normalized) || isSentenceNoise(normalized)) return null;
+      const unitPattern = unitNames().map(unit => escapeRegExp(unit)).join("|");
+      const tokenPattern = new RegExp("([0-9０-９]+(?:[.,．][0-9０-９]+)?)(?:\\s*(" + unitPattern + "))?", "gi");
+      const matches = Array.from(normalized.matchAll(tokenPattern));
+      if (matches.length < 2) return null;
+      const firstIndex = matches[0].index || 0;
+      const name = cleanIngredientName(normalized.slice(0, firstIndex));
+      if (!name) return null;
+      let rowUnit = "";
+      const numericValues = [];
+      matches.forEach((match, position) => {
+        const value = normalizeQuantity(match[1]);
+        const unit = normalizeUnit(match[2] || "");
+        if (unit && !rowUnit) rowUnit = unit;
+        const numeric = numberValue(value);
+        if (numeric > 0) numericValues.push({ position, value, unit: unit || rowUnit || "g" });
+      });
+      if (!numericValues.length) return null;
+      const preferredValue = preferredNumericValue ? normalizeQuantity(preferredNumericValue) : "";
+      if (preferredValue) {
+        const preferred = numericValues.find(item => item.value === preferredValue);
+        if (preferred) return { name, quantity: preferred.value, unit: preferred.unit || rowUnit || "g" };
+      }
+      if (preferredNumericIndex >= 0) {
+        const firstNumberEnd = (matches[0].index || 0) + matches[0][0].length;
+        const beforeFirstNumber = normalized.slice(0, firstNumberEnd);
+        const numericPosition = /(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)$/i.test(beforeFirstNumber) ? preferredNumericIndex - 1 : preferredNumericIndex;
+        const preferred = numericValues.find(item => item.position === numericPosition);
+        if (preferred) return { name, quantity: preferred.value, unit: preferred.unit || rowUnit || "g" };
+      }
+      for (const item of numericValues) {
+        const previous = matches[item.position - 1];
+        const previousHasUnit = previous && Boolean(previous[2]);
+        const previousIsZero = previous && numberValue(normalizeQuantity(previous[1])) === 0;
+        if (previousHasUnit && previousIsZero) return { name, quantity: item.value, unit: item.unit || rowUnit || "g" };
+        if (!matches[item.position][2]) return { name, quantity: item.value, unit: item.unit || rowUnit || "g" };
+      }
+      const first = numericValues[0];
+      return { name, quantity: first.value, unit: first.unit || rowUnit || "g" };
     }
 
     function addUniqueSourceRow(target, seen, row) {
@@ -1669,10 +1716,11 @@
           if (!cells.length || isIgnoredPdfLine(rowText) || isSentenceNoise(rowText)) continue;
           const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
           if (detectedWeekday) currentWeekday = detectedWeekday;
+          const markerRow = parseMarkerNumericRow(cells.join("\t"), columns.quantity, cells[columns.quantity] || "");
           rows.push({
-            name: cells[columns.name],
-            quantity: cells[columns.quantity],
-            unit: cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity),
+            name: cells[columns.name] || (markerRow && markerRow.name) || "",
+            quantity: markerRow ? markerRow.quantity : cells[columns.quantity],
+            unit: markerRow ? markerRow.unit : cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity),
             weekday: detectedWeekday || currentWeekday,
             sourceLine: cells.join(" "),
             source: "3歳未満児"
@@ -1687,6 +1735,16 @@
         const normalized = normalizeOcrLine(line);
         const detectedWeekday = detectWeekday(normalized);
         if (detectedWeekday) currentWeekday = detectedWeekday;
+        const markerRow = parseMarkerNumericRow(normalized);
+        if (markerRow) {
+          rows.push({
+            ...markerRow,
+            weekday: detectedWeekday || currentWeekday,
+            sourceLine: normalized,
+            source: "3歳未満児"
+          });
+          return;
+        }
         const match = normalized.match(inlinePattern);
         if (match) rows.push({
           name: stripNonIngredientPrefix(match[1]),
@@ -1849,6 +1907,7 @@
       return stripNonIngredientPrefix(value)
         .replace(/OCR全文/g, " ")
         .replace(/月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?/g, " ")
+        .replace(/^[0-9０-９]+[.)）．、\s]+/, "")
         .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
         .replace(/[：:].*$/, "")
         .replace(/\s+/g, " ")
@@ -1862,6 +1921,7 @@
         .replace(/(?:3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量)\s*[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)?/gi, " ")
         .replace(/[0-9０-９]+(?:[.,．][0-9０-９]+)?\s*(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)(?=.*(?:3歳未満児?|３歳未満児?|未満児|乳児))/gi, " ")
         .replace(/(?:3歳未満児?|３歳未満児?|未満児|乳児).*$/gi, " ")
+        .replace(/^[0-9０-９]+[.)）．、\s]+/, "")
         .replace(/^[□■◇◆☑✓・*\-－—\s]+/, "")
         .replace(/\s+/g, " ")
         .trim();
