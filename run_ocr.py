@@ -31,6 +31,7 @@ Image = None
 ImageEnhance = None
 ImageFilter = None
 ImageOps = None
+ImageStat = None
 
 INPUT_DIR = Path("input_images")
 OUTPUT_DIR = Path("output")
@@ -55,7 +56,7 @@ def load_required_dependencies() -> None:
         raise SystemExit(1)
 
     global Workbook, Alignment, Font, PatternFill, get_column_letter
-    global Image, ImageEnhance, ImageFilter, ImageOps
+    global Image, ImageEnhance, ImageFilter, ImageOps, ImageStat
 
     openpyxl_module = importlib.import_module("openpyxl")
     openpyxl_styles = importlib.import_module("openpyxl.styles")
@@ -70,6 +71,7 @@ def load_required_dependencies() -> None:
     ImageEnhance = importlib.import_module("PIL.ImageEnhance")
     ImageFilter = importlib.import_module("PIL.ImageFilter")
     ImageOps = importlib.import_module("PIL.ImageOps")
+    ImageStat = importlib.import_module("PIL.ImageStat")
 
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
@@ -80,9 +82,11 @@ MAX_IMAGE_WIDTH = 800
 MAX_IMAGE_HEIGHT = 1200
 MAX_FILE_SIZE_BYTES = 60 * 1024 * 1024
 JPEG_QUALITY = 55
+MAX_OCR_IMAGE_EDGE = 30000
+MAX_OCR_IMAGE_PIXELS = 250_000_000
 OCR_TIMEOUT_SECONDS = 20
 TESSERACT_CALL_TIMEOUT_SECONDS = 18
-OCR_CANDIDATE_LIMIT = 1
+OCR_CANDIDATE_LIMIT = 2
 OCR_DPI = 300
 TIMEOUT_MESSAGE = "タイムアウト：画像が重すぎるため処理を中断しました"
 
@@ -178,30 +182,61 @@ def setup() -> None:
 def supported_images() -> list[Path]:
     return sorted(path for path in INPUT_DIR.iterdir() if path.suffix.lower() in SUPPORTED_EXTENSIONS and path.is_file())
 
+def validate_ocr_image(image: Image.Image, context: str) -> None:
+    width, height = image.size
+    logging.info("OCR前画像サイズ: context=%s mode=%s width=%s height=%s", context, image.mode, width, height)
+    if width <= 0 or height <= 0:
+        raise ValueError(f"OCR停止: 画像サイズが異常です（{context}: {width}x{height}）")
+    if width > MAX_OCR_IMAGE_EDGE or height > MAX_OCR_IMAGE_EDGE or width * height > MAX_OCR_IMAGE_PIXELS:
+        raise ValueError(f"OCR停止: 画像サイズが大きすぎます（{context}: {width}x{height}）")
+
+
+def log_image_blankness(image: Image.Image, context: str) -> None:
+    gray = ImageOps.grayscale(image)
+    stat = ImageStat.Stat(gray)
+    mean = stat.mean[0]
+    stddev = stat.stddev[0]
+    min_value, max_value = gray.getextrema()
+    logging.info(
+        "OCR前画像状態: context=%s width=%s height=%s mean=%.1f stddev=%.1f min=%s max=%s",
+        context,
+        gray.width,
+        gray.height,
+        mean,
+        stddev,
+        min_value,
+        max_value,
+    )
+    if stddev < 1.0 or min_value == max_value:
+        logging.warning("OCR前画像が空白の可能性があります: %s", context)
+    elif mean > 252 and stddev < 8:
+        logging.warning("OCR前画像が白飛びの可能性があります: %s", context)
+    elif mean < 3 and stddev < 8:
+        logging.warning("OCR前画像が真っ黒の可能性があります: %s", context)
+
+
 def load_image(path: Path) -> Image.Image:
     file_size = path.stat().st_size
     if file_size > MAX_FILE_SIZE_BYTES:
         logging.warning(
-            "画像ファイルが大きいため、読み込み後に軽量モードでOCRします: %s size=%.1fMB",
+            "画像ファイルが大きいため、異常サイズ判定後にOCRします: %s size=%.1fMB",
             path,
             file_size / 1024 / 1024,
         )
 
     with Image.open(path) as opened:
-        opened.draft("L", (MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT))
-        width, height = opened.size
-        logging.info(
-            "画像確認: %s size=%.1fMB resolution=%sx%s",
-            path,
-            file_size / 1024 / 1024,
-            width,
-            height,
-        )
-        if width <= 0 or height <= 0:
-            raise ValueError("読み込み失敗: 画像の解像度を確認できませんでした")
-        image = ImageOps.exif_transpose(opened).convert("L")
+        image = ImageOps.exif_transpose(opened).convert("RGB")
 
-    return lighten_image_for_ocr(image, path)
+    logging.info(
+        "画像確認: %s size=%.1fMB resolution=%sx%s",
+        path,
+        file_size / 1024 / 1024,
+        image.width,
+        image.height,
+    )
+    validate_ocr_image(image, f"読み込み後原画像 {path.name}")
+    log_image_blankness(image, f"読み込み後原画像 {path.name}")
+    return image
 
 def lighten_image_for_ocr(image: Image.Image, path: Path) -> Image.Image:
     image = image.convert("L")
@@ -270,8 +305,12 @@ def otsu_threshold(gray: Image.Image) -> Image.Image:
     return gray.point(lambda p: 255 if p > threshold else 0)
 
 def pil_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
-    gray = ImageOps.grayscale(trim_margin(image))
-    return [("軽量グレースケール", gray)]
+    validate_ocr_image(image, "原画像そのままOCR")
+    log_image_blankness(image, "原画像そのままOCR")
+    gray = ImageOps.grayscale(image)
+    validate_ocr_image(gray, "グレースケールOCR")
+    log_image_blankness(gray, "グレースケールOCR")
+    return [("原画像RGBそのまま", image), ("グレースケールのみ", gray)]
 
 def opencv_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
     cv2 = optional_module("cv2")
@@ -282,21 +321,7 @@ def opencv_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Imag
     arr = np.array(image)
     gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
     gray = deskew_cv2(gray, cv2, np)
-    denoised = cv2.fastNlMeansDenoising(gray, None, 18, 7, 21)
-    adaptive = cv2.adaptiveThreshold(
-        denoised,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        31,
-        9,
-    )
-    _, otsu = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return [
-        ("傾き補正+ノイズ除去", Image.fromarray(denoised)),
-        ("傾き補正+adaptive threshold", Image.fromarray(adaptive)),
-        ("傾き補正+Otsu threshold", Image.fromarray(otsu)),
-    ]
+    return [("傾き補正+グレースケール", Image.fromarray(gray))]
 
 def deskew_cv2(gray: Any, cv2: Any, np: Any) -> Any:
     coords = np.column_stack(np.where(gray < 245))
