@@ -111,11 +111,11 @@ def _image_blankness_message(image: Image.Image, context: str) -> str:
 
 
 def _preprocess_for_ocr(image: Image.Image, context: str) -> Image.Image:
-    """OCR前処理を実行し、処理後画像もサイズ確認します。"""
+    """前処理は一旦OFFにし、RGB化した原画像をOCRへ渡します。"""
 
     processed = _preprocess_image(image)
-    _assert_valid_ocr_image(processed, f"{context}（前処理後）")
-    _image_blankness_message(processed, f"{context}（前処理後）")
+    _assert_valid_ocr_image(processed, f"{context}（前処理OFF）")
+    _image_blankness_message(processed, f"{context}（前処理OFF）")
     return processed
 
 
@@ -123,7 +123,7 @@ def _preprocess_image(image: Image.Image) -> Image.Image:
     try:
         from modules.preprocess import preprocess_image
     except Exception:  # noqa: BLE001 - デバッグ表示は前処理なしでも動かします。
-        return ImageOps.grayscale(image)
+        return ImageOps.exif_transpose(image).convert("RGB")
     return preprocess_image(image)
 
 
@@ -379,9 +379,7 @@ def _fixed_column_box(table_box: tuple[int, int, int, int], column_name: str) ->
 
 
 def _ocr_fixed_cell(image: Image.Image, lang: str) -> tuple[str, float]:
-    cell = ImageOps.grayscale(image)
-    cell = cell.resize((max(1, cell.width * 3), max(1, cell.height * 3)), Image.Resampling.LANCZOS)
-    processed = _preprocess_for_ocr(cell, "固定セルOCR")
+    processed = _preprocess_for_ocr(image, "固定セルOCR")
     config = f"--oem 3 --psm 7 --dpi {FIXED_OCR_DPI}"
     text = pytesseract.image_to_string(processed, lang=lang, config=config)
     data = pytesseract.image_to_data(
@@ -459,9 +457,8 @@ def _find_heading_boxes(image: Image.Image) -> dict[str, tuple[int, int, int, in
     """ページ内の3見出し位置だけを探します。食材本文の全文OCRには使いません。"""
 
     _assert_valid_ocr_image(image, "見出し検出入力")
-    processed = _preprocess_for_ocr(image, "見出し検出")
     data = pytesseract.image_to_data(
-        processed,
+        image,
         lang="jpn+eng",
         config="--oem 3 --psm 6",
         output_type=pytesseract.Output.DICT,
@@ -589,11 +586,8 @@ def _ocr_debug_crop(image: Image.Image, label: str) -> tuple[str, float, Image.I
     try:
         _assert_valid_ocr_image(image, f"切り出しOCR {label} 原画像")
         diagnostics.append(_image_blankness_message(image, f"切り出しOCR {label} 原画像"))
-        gray = ImageOps.grayscale(image)
-        scale = 2 if max(gray.size) >= 1200 else 3
-        enlarged = gray.resize((max(1, gray.width * scale), max(1, gray.height * scale)), Image.Resampling.LANCZOS)
-        processed = _preprocess_for_ocr(enlarged, f"切り出しOCR {label}")
-        diagnostics.append(_image_blankness_message(processed, f"切り出しOCR {label} 前処理後"))
+        processed = _preprocess_for_ocr(image, f"切り出しOCR {label}")
+        diagnostics.append(_image_blankness_message(processed, f"切り出しOCR {label} 前処理OFF"))
     except Exception as exc:  # noqa: BLE001 - デバッグ画面にOCR失敗を表示します。
         fallback = Image.new("L", (1, 1), 255)
         return f"OCRエラー: {exc}", 0.0, fallback, diagnostics
@@ -641,8 +635,6 @@ def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverla
     base = ImageOps.exif_transpose(image).convert("RGB")
     _assert_valid_ocr_image(base, f"{page_number}ページ目 原画像")
     diagnostics = [_image_blankness_message(base, f"{page_number}ページ目 原画像")]
-    preprocessed = _preprocess_for_ocr(base, f"{page_number}ページ目 全体")
-    diagnostics.append(_image_blankness_message(preprocessed, f"{page_number}ページ目 前処理後"))
     try:
         original_ocr = run_raw_pillow_rgb_ocr(base)
         original_ocr_text = original_ocr.text
@@ -651,6 +643,9 @@ def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverla
         logger.exception("原画像そのままOCR失敗: page=%s", page_number)
         original_ocr_text = f"OCRエラー: {exc}"
         original_ocr_confidence = 0.0
+
+    preprocessed = base.copy()
+    diagnostics.append(_image_blankness_message(preprocessed, f"{page_number}ページ目 前処理OFF"))
 
     overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
@@ -785,61 +780,26 @@ def pdf_to_images(pdf_bytes: bytes) -> list[Image.Image]:
         ) from exc
 
 
-def _image_from_upload_bytes(file_bytes: bytes) -> Image.Image:
-    """アップロード画像をPillowで読み込み、OCRへ渡せるRGB画像にします。"""
+def _images_from_upload_bytes(file_bytes: bytes, context: str = "Pillow読み込み後画像") -> list[Image.Image]:
+    """PNG/JPEG/TIFFなどのアップロード画像をPillow + BytesIOで統一して読み込みます。"""
 
     try:
         with Image.open(BytesIO(file_bytes)) as image:
-            image.seek(0)
-            rgb = image.convert("RGB")
-            _assert_valid_ocr_image(rgb, "Pillow読み込み後画像")
-            _image_blankness_message(rgb, "Pillow読み込み後画像")
-            return rgb
-    except Exception as exc:  # noqa: BLE001 - 利用者向けに読み込み失敗理由を固定します。
-        raise RuntimeError("画像を読み込めませんでした。") from exc
-
-
-def _is_tiff_upload(suffix: str, mime_type: str | None) -> bool:
-    """拡張子またはMIMEタイプでTIFFアップロードか判定します。"""
-
-    normalized_mime_type = (mime_type or "").lower()
-    return suffix in {".tif", ".tiff"} or normalized_mime_type in {"image/tif", "image/tiff"}
-
-
-def _tiff_image_from_upload_bytes(
-    file_bytes: bytes,
-    suffix: str,
-    mime_type: str | None,
-) -> Image.Image:
-    """TIFFをPillow + BytesIO + ImageSequenceで読み込み、1ページ目をRGB画像にします。"""
-
-    try:
-        with Image.open(BytesIO(file_bytes)) as image:
-            frames = []
+            frames: list[Image.Image] = []
             for frame_index, frame in enumerate(ImageSequence.Iterator(image), start=1):
                 rgb = frame.convert("RGB")
-                _assert_valid_ocr_image(rgb, f"TIFF読み込み後画像 {frame_index}ページ目")
-                _image_blankness_message(rgb, f"TIFF読み込み後画像 {frame_index}ページ目")
-                frames.append(rgb)
-    except Exception as exc:  # noqa: BLE001 - Pillowの詳細エラーをログへ残します。
-        logger.exception(
-            "TIFF読み込み失敗: extension=%s mime_type=%s pillow_error=%s",
-            suffix or "(none)",
-            mime_type or "(unknown)",
-            exc,
-        )
-        raise RuntimeError("TIFF画像を読み込めませんでした。") from exc
+                _assert_valid_ocr_image(rgb, f"{context} {frame_index}ページ目")
+                _image_blankness_message(rgb, f"{context} {frame_index}ページ目")
+                frames.append(rgb.copy())
+    except Exception as exc:  # noqa: BLE001 - 利用者向けに読み込み失敗理由を固定します。
+        logger.exception("Pillow画像読み込み失敗: context=%s pillow_error=%s", context, exc)
+        raise RuntimeError("画像を読み込めませんでした。") from exc
 
     if not frames:
-        logger.error(
-            "TIFF読み込み失敗: extension=%s mime_type=%s pillow_error=%s",
-            suffix or "(none)",
-            mime_type or "(unknown)",
-            "no frames",
-        )
-        raise RuntimeError("TIFF画像を読み込めませんでした。")
+        logger.error("Pillow画像読み込み失敗: context=%s pillow_error=no frames", context)
+        raise RuntimeError("画像を読み込めませんでした。")
 
-    return frames[0]
+    return frames
 
 
 def images_from_upload(
@@ -859,10 +819,7 @@ def images_from_upload(
             images.append(rgb)
         return images
 
-    if _is_tiff_upload(suffix, mime_type):
-        return [_tiff_image_from_upload_bytes(file_bytes, suffix, mime_type)]
-
-    return [_image_from_upload_bytes(file_bytes)]
+    return _images_from_upload_bytes(file_bytes)
 
 
 def run_ocr_for_upload(
