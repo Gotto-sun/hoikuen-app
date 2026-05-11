@@ -558,8 +558,13 @@ def extract_fields(text: str) -> ExtractedFields:
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
 SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
-EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉")
+EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
+FIXED_MENU_TABLE_AREAS = [
+    ("午前おやつ", 0.04, 0.18, 0.92, 0.16),
+    ("昼食", 0.04, 0.34, 0.92, 0.36),
+    ("午後おやつ", 0.04, 0.70, 0.92, 0.18),
+]
 FIXED_ORDER_RULES = []
 ROUNDING_ORDER_RULES = [
     ("牛乳", "本", 1.0, {"ml": 450.0, "g": 450.0}, re.compile(r"牛乳|ミルク")),
@@ -663,6 +668,107 @@ def is_suspicious_ingredient_name(value: str) -> bool:
     japanese = len(re.findall(r"[ぁ-んァ-ン一-龥]", name))
     digits = len(re.findall(r"[0-9]", name))
     return japanese == 0 or digits > japanese or len(name) > 32 or is_garbled_text(name) or bool(SENTENCE_NOISE_PATTERN.search(name))
+
+
+def extract_fixed_layout_ingredient_rows(image: Image.Image) -> tuple[list[IngredientRow], str]:
+    """固定レイアウトの表エリアだけを座標で切り出して食材行を読む。"""
+    rows: list[IngredientRow] = []
+    seen: set[str] = set()
+    fixed_text_lines: list[str] = []
+    pytesseract = optional_module("pytesseract")
+    if pytesseract is None:
+        logging.warning("固定表OCRをスキップ: pytesseractが未インストールです")
+        return rows, ""
+
+    source = ImageOps.grayscale(image)
+    for area_label, x_ratio, y_ratio, width_ratio, height_ratio in FIXED_MENU_TABLE_AREAS:
+        box = ratio_crop_box(source, x_ratio, y_ratio, width_ratio, height_ratio)
+        table = source.crop(box)
+        for top, bottom in detect_table_row_ranges(table):
+            row_top = box[1] + top
+            row_bottom = box[1] + bottom
+            row_height = max(2, row_bottom - row_top)
+            table_width = box[2] - box[0]
+            name_box = (
+                box[0] + round(table_width * 0.02),
+                row_top,
+                box[0] + round(table_width * 0.50),
+                row_top + row_height,
+            )
+            numbers_x = box[0] + round(table_width * 0.52)
+            number_width = round(table_width * 0.12)
+            under_three_box = (
+                numbers_x + number_width * 2,
+                row_top,
+                numbers_x + number_width * 3,
+                row_top + row_height,
+            )
+            name_text = ocr_fixed_cell(pytesseract, source.crop(name_box), "jpn+eng")
+            quantity_text = ocr_fixed_cell(pytesseract, source.crop(under_three_box), "eng")
+            name = clean_ingredient_name(name_text)
+            quantity = normalize_value(quantity_text).replace(",", "")
+            if not name or not is_numeric_cell(quantity):
+                continue
+            if is_excluded_ingredient(name) or is_suspicious_ingredient_name(name):
+                continue
+            fixed_text_lines.append(f"固定表行\t{area_label}\t{name}\t{quantity}\tg")
+            add_ingredient_row(rows, seen, name, quantity, "g", "月")
+    return rows, "\n".join(fixed_text_lines)
+
+
+def ratio_crop_box(image: Image.Image, x: float, y: float, width: float, height: float) -> tuple[int, int, int, int]:
+    left = round(image.width * x)
+    top = round(image.height * y)
+    right = round(image.width * (x + width))
+    bottom = round(image.height * (y + height))
+    return max(0, left), max(0, top), min(image.width, right), min(image.height, bottom)
+
+
+def detect_table_row_ranges(table: Image.Image) -> list[tuple[int, int]]:
+    gray = ImageOps.grayscale(table)
+    pixels = gray.load()
+    line_positions: list[int] = []
+    for y in range(gray.height):
+        dark = 0
+        for x in range(gray.width):
+            if pixels[x, y] < 105:
+                dark += 1
+        if dark / max(1, gray.width) > 0.32:
+            line_positions.append(y)
+    grouped = group_line_positions(line_positions)
+    ranges: list[tuple[int, int]] = []
+    for start, end in zip(grouped, grouped[1:]):
+        top = start + 2
+        bottom = end - 2
+        if bottom - top >= max(10, int(gray.height * 0.035)):
+            ranges.append((top, bottom))
+    if ranges:
+        return ranges
+    fallback_count = max(1, round(gray.height / 38))
+    return [(round(gray.height * index / fallback_count), round(gray.height * (index + 1) / fallback_count)) for index in range(fallback_count)]
+
+
+def group_line_positions(values: list[int]) -> list[int]:
+    groups: list[list[int]] = []
+    for value in values:
+        if not groups or value - groups[-1][-1] > 2:
+            groups.append([value])
+        else:
+            groups[-1].append(value)
+    return [round(sum(group) / len(group)) for group in groups]
+
+
+def ocr_fixed_cell(pytesseract: Any, image: Image.Image, lang: str) -> str:
+    cell = ImageOps.grayscale(image)
+    scale = 3
+    cell = cell.resize((max(1, cell.width * scale), max(1, cell.height * scale)), Image.Resampling.LANCZOS)
+    try:
+        text = pytesseract.image_to_string(cell, lang=lang, config=f"--oem 3 --psm 7 --dpi {OCR_DPI}")
+    except Exception as exc:
+        logging.info("固定表セルOCR失敗: %s", exc)
+        return ""
+    return normalize_ocr_line(text)
+
 
 def extract_ingredient_rows(text: str) -> list[IngredientRow]:
     lines = split_ocr_rows_for_ingredients(text)
@@ -1200,15 +1306,16 @@ def process_image_worker(path: Path, result_queue: mp.Queue) -> None:
 def process_image_inner(path: Path) -> list[Any]:
     logging.info("処理開始: %s", path)
     source = load_image(path)
-    best, candidates = collect_candidates(source)
-    raw_text = best.text.strip()
-    logging.info("OCR全文: %s\n%s", path, raw_text if raw_text else "空")
-    print(f"OCR全文 ({path.name}):")
+    fixed_rows, raw_text = extract_fixed_layout_ingredient_rows(source)
+    best = OcrCandidate("Tesseract", raw_text, 100.0, 0, "固定表エリア座標OCR", source)
+    candidates = [best]
+    logging.info("固定表OCR結果: %s\n%s", path, raw_text if raw_text else "空")
+    print(f"固定表OCR結果 ({path.name}):")
     print(raw_text if raw_text else "空")
     if not raw_text:
-        logging.error("読み取り失敗: %s OCR結果が空", path)
-        return row_for_error(path, "OCR結果が空です。軽量モードでも文字を読み取れませんでした")
-    ingredient_rows = build_order_rows(extract_ingredient_rows(raw_text))
+        logging.error("読み取り失敗: %s 固定表OCR結果が空", path)
+        return row_for_error(path, "固定表エリアから食材名・3歳未満量を読み取れませんでした")
+    ingredient_rows = build_order_rows(fixed_rows)
     fields = extract_fields(raw_text)
     reasons = confirmation_reasons(best, candidates, fields)
     notes = reasons + best.notes
