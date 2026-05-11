@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
 import re
 from importlib import import_module, util
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile
 
 import pytesseract
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -599,18 +600,25 @@ def pdf_to_images(pdf_bytes: bytes) -> list[Image.Image]:
         ) from exc
 
 
+def _image_from_upload_bytes(file_bytes: bytes) -> Image.Image:
+    """アップロード画像をPillowで読み込み、OCRへ渡せるRGB画像にします。"""
+
+    try:
+        with Image.open(BytesIO(file_bytes)) as image:
+            image.seek(0)
+            return image.convert("RGB")
+    except Exception as exc:  # noqa: BLE001 - 利用者向けに読み込み失敗理由を固定します。
+        raise RuntimeError("画像を読み込めませんでした。") from exc
+
+
 def images_from_upload(file_name: str, file_bytes: bytes) -> list[Image.Image]:
     """アップロードされた画像/PDFをPIL画像の一覧にします。"""
 
     suffix = Path(file_name).suffix.lower()
     if suffix == ".pdf":
-        return pdf_to_images(file_bytes)
+        return [image.convert("RGB") for image in pdf_to_images(file_bytes)]
 
-    with TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir) / file_name
-        temp_path.write_bytes(file_bytes)
-        with Image.open(temp_path) as image:
-            return [image.copy()]
+    return [_image_from_upload_bytes(file_bytes)]
 
 
 def run_ocr_for_upload(file_name: str, file_bytes: bytes) -> OCRResult:

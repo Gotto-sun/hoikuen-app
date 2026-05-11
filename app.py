@@ -23,12 +23,12 @@ with st.sidebar:
     st.write("- 午後おやつ：紫")
     st.divider()
     st.write("対応ファイル")
-    st.write("- 画像: jpg / jpeg / png")
+    st.write("- 画像: jpg / jpeg / png / tif / tiff")
     st.write("- PDF")
 
 uploaded_file = st.file_uploader(
     "献立表ファイルをアップロードしてください",
-    type=["jpg", "jpeg", "png", "pdf"],
+    type=["jpg", "jpeg", "png", "tif", "tiff", "pdf"],
 )
 
 if uploaded_file is None:
