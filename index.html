@@ -593,23 +593,23 @@
       { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
       { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] }
     ];
-    const priorityFoodPattern = /にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|コンソメ|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
+    const priorityFoodPattern = /にんじん|にんん|にんヒじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯|カットわかめ|わかめ|若布|ひじき|ひじ|牛乳|ミルク|キャベツ|白菜|きゅうり|胡瓜|もやし|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|コンソメ|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
     const canonicalIngredientPatterns = [
-      { label: "しょうゆせんべい", tests: [/しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい|せんい/] },
-      { label: "牛乳", tests: [/牛乳|ミルク/] },
-      { label: "ひじき", tests: [/ひじき/] },
-      { label: "豚ひき肉", tests: [/豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ヶ一-龠々])ひき\s*内|豚ミンチ/] },
-      { label: "木綿豆腐", tests: [/木綿\s*豆腐|震記一一意|豆\s*(?:褒|腐)/] },
-      { label: "たまねぎ", tests: [/たまねぎ|玉ねぎ|玉葱/] },
-      { label: "片栗粉", tests: [/片栗粉|片\s*(?:困|栗)\s*粉/] },
-      { label: "もやし", tests: [/もやし/] },
-      { label: "きゅうり", tests: [/きゅうり|きゆうり|胡瓜/] },
-      { label: "カットわかめ", tests: [/カット\s*わかめ|わかめ|若布/] },
-      { label: "じゃがいも", tests: [/じゃがいも|とゃがいも|馬鈴薯/] },
-      { label: "にんじん", tests: [/にんじん|にんん|人参/] },
-      { label: "食パン", tests: [/食パン/] },
-      { label: "いちごジャム", tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] },
-      { label: "コンソメ", tests: [/コンソメ|ョヨンツメ/] }
+      { label: "しょうゆせんべい", aliases: ["しょうゆせんべい", "醤油せんべい", "せんい"], tests: [/しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい|せんい/] },
+      { label: "牛乳", aliases: ["牛乳", "乳", "ぎゅうにゅう", "ミルク"], tests: [/牛乳|ミルク|^乳$/] },
+      { label: "ひじき", aliases: ["ひじき", "ひじ", "ヒジキ"], tests: [/ひじき|^ひじ.*$/] },
+      { label: "豚ひき肉", aliases: ["豚ひき肉", "豚挽き肉", "豚ひき内", "豚ミンチ"], tests: [/豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ヶ一-龠々])ひき\s*内|豚ミンチ/] },
+      { label: "木綿豆腐", aliases: ["木綿豆腐"], tests: [/木綿\s*豆腐|震記一一意|豆\s*(?:褒|腐)/] },
+      { label: "たまねぎ", aliases: ["たまねぎ", "玉ねぎ", "玉葱", "タマネギ", "玉ネギ"], tests: [/たまねぎ|玉ねぎ|玉葱/] },
+      { label: "片栗粉", aliases: ["片栗粉"], tests: [/片栗粉|片\s*(?:困|栗)\s*粉/] },
+      { label: "もやし", aliases: ["もやし"], tests: [/もやし/] },
+      { label: "きゅうり", aliases: ["きゅうり", "きゆうり", "胡瓜"], tests: [/きゅうり|きゆうり|胡瓜/] },
+      { label: "カットわかめ", aliases: ["カットわかめ", "わかめ", "若布", "カット若布"], tests: [/カット\s*わかめ|わかめ|若布/] },
+      { label: "じゃがいも", aliases: ["じゃがいも", "ジャガイモ", "じゃが芋", "とゃがいも", "馬鈴薯"], tests: [/じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯/] },
+      { label: "にんじん", aliases: ["にんじん", "にんん", "にんヒじん", "人参", "ニンジン"], tests: [/にんじん|にんん|にんヒじん|人参/] },
+      { label: "食パン", aliases: ["食パン"], tests: [/食パン/] },
+      { label: "いちごジャム", aliases: ["いちごジャム", "でちこジャ", "苺ジャム"], tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] },
+      { label: "コンソメ", aliases: ["コンソメ", "ョヨンツメ"], tests: [/コンソメ|ョヨンツメ/] }
     ];
     const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
     const recipeInstructionPattern = /(作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
@@ -1776,9 +1776,12 @@
       String(text || "").split(/\r?\n/).forEach(line => {
         const cells = line.split("\t").map(cell => cell.trim());
         if (cells[0] !== fixedMenuRowMarker || cells.length < 5) return;
+        const correctedName = correctIngredientName(cells[2]);
+        const quantity = isNumericCell(cells[3]) ? cells[3] : "数量要確認";
+        if (!correctedName && quantity !== "数量要確認") return;
         addUniqueSourceRow(rows, seen, {
-          name: cells[2],
-          quantity: cells[3],
+          name: correctedName || cells[2],
+          quantity,
           unit: cells[4] || "g",
           weekday: "月",
           sourceLine: line,
@@ -1874,8 +1877,8 @@
       const text = normalizeOcrLine(line);
       const compact = text.replace(/\s/g, "");
       if (isIgnoredSourceRow(compact) || /^[月火水木金](?:曜日|曜)?$/.test(compact)) return false;
-      if (countJapaneseCharacters(compact) < 2) return false;
       if (correctedIngredientFromText(text)) return true;
+      if (countJapaneseCharacters(compact) < 2) return false;
       if (priorityFoodPattern.test(compact)) return true;
       return /[ぁ-んァ-ヶ一-龠々]{2,}/.test(compact);
     }
@@ -2213,7 +2216,56 @@
       const compact = normalizeOcrLine(value).replace(/\s/g, "");
       if (!compact || isSentenceNoise(compact)) return "";
       const matched = canonicalIngredientPatterns.find(rule => rule.tests.some(pattern => pattern.test(compact)));
-      return matched ? matched.label : "";
+      if (matched) return matched.label;
+      const partial = canonicalIngredientPatterns.find(rule => (rule.aliases || []).some(alias => {
+        const aliasKey = ingredientSimilarityKey(alias);
+        const compactKey = ingredientSimilarityKey(compact);
+        return aliasKey.length >= 2 && compactKey.length >= 2 && (compactKey.includes(aliasKey) || aliasKey.includes(compactKey));
+      }));
+      if (partial) return partial.label;
+      const similar = mostSimilarCanonicalIngredient(compact);
+      return similar ? similar.label : "";
+    }
+
+    function ingredientSimilarityKey(value) {
+      return normalizeOcrLine(value)
+        .replace(/[ァ-ヶ]/g, char => String.fromCharCode(char.charCodeAt(0) - 0x60))
+        .replace(/[^ぁ-ん一-龠々]/g, "");
+    }
+
+    function mostSimilarCanonicalIngredient(value) {
+      const compactKey = ingredientSimilarityKey(value);
+      if (compactKey.length < 2 || compactKey.length > 10) return null;
+      let best = null;
+      canonicalIngredientPatterns.forEach(rule => {
+        (rule.aliases || [rule.label]).forEach(alias => {
+          const aliasKey = ingredientSimilarityKey(alias);
+          if (aliasKey.length < 2) return;
+          const distance = levenshteinDistance(compactKey, aliasKey);
+          const maxAllowed = Math.min(2, Math.max(1, Math.floor(aliasKey.length / 3)));
+          if (distance <= maxAllowed && (!best || distance < best.distance)) best = { label: rule.label, distance };
+        });
+      });
+      return best;
+    }
+
+    function levenshteinDistance(left, right) {
+      if (left === right) return 0;
+      if (!left) return right.length;
+      if (!right) return left.length;
+      let previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+      for (let leftIndex = 0; leftIndex < left.length; leftIndex++) {
+        const current = [leftIndex + 1];
+        for (let rightIndex = 0; rightIndex < right.length; rightIndex++) {
+          current.push(Math.min(
+            current[rightIndex] + 1,
+            previous[rightIndex + 1] + 1,
+            previous[rightIndex] + (left[leftIndex] === right[rightIndex] ? 0 : 1)
+          ));
+        }
+        previous = current;
+      }
+      return previous[previous.length - 1];
     }
 
     function stripNonIngredientPrefix(value) {
