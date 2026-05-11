@@ -569,6 +569,9 @@ ROUNDING_ORDER_RULES = [
     ("きのこ類", "袋", 1.0, {"g": 100.0}, re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
     ("ヨーグルト", "パック", 1.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
 ]
+
+PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
+LOOSE_NUMBER_PATTERN = re.compile(r"(?<![0-9])([0-9]+(?:\.[0-9]+)?)(?:\s*(" + UNIT_PATTERN + r"))?", re.IGNORECASE)
 CANONICAL_INGREDIENT_PATTERNS = [
     ("しょうせんべい", re.compile(r"しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい")),
     ("牛乳", re.compile(r"牛乳|ミルク")),
@@ -655,16 +658,81 @@ def is_suspicious_ingredient_name(value: str) -> bool:
     return japanese == 0 or digits > japanese or len(name) > 32 or is_garbled_text(name) or bool(SENTENCE_NOISE_PATTERN.search(name))
 
 def extract_ingredient_rows(text: str) -> list[IngredientRow]:
-    source_rows = collect_source_ingredient_rows(split_ocr_rows_for_ingredients(text))
+    lines = split_ocr_rows_for_ingredients(text)
     rows: list[IngredientRow] = []
     seen: set[str] = set()
-    for source_row in source_rows:
-        extracted = extract_under_three_from_source_row(source_row)
-        if not extracted:
+    candidates_for_log: list[str] = []
+    current_weekday = ""
+
+    for index, line in enumerate(lines):
+        weekday = detect_weekday(line)
+        if weekday:
+            current_weekday = weekday
+
+        if not is_loose_ingredient_candidate(line):
             continue
-        name, quantity, unit = extracted
-        add_ingredient_row(rows, seen, name, quantity, unit, source_row.weekday)
+
+        candidates_for_log.append(line)
+        number_source = nearest_number_source(lines, index)
+        if not number_source:
+            continue
+
+        quantity, unit = number_source
+        name = loose_ingredient_name(line)
+        add_ingredient_row(rows, seen, name, quantity, unit, weekday or current_weekday)
+
+    if not rows and candidates_for_log:
+        logging.info("食材候補のみ抽出: %s", " / ".join(candidates_for_log[:30]))
     return rows
+
+
+def is_loose_ingredient_candidate(line: str) -> bool:
+    text = normalize_ocr_line(line)
+    compact = re.sub(r"\s+", "", text)
+    if is_ignored_source_row(compact) or re.fullmatch(r"[月火水木金](?:曜日|曜)?", compact):
+        return False
+    japanese = len(re.findall(r"[ぁ-んァ-ン一-龥]", compact))
+    if japanese < 2:
+        return False
+    if PRIORITY_FOOD_PATTERN.search(compact):
+        return True
+    if any(pattern.search(compact) for _canonical, pattern in CANONICAL_INGREDIENT_PATTERNS):
+        return True
+    return bool(re.search(r"[ぁ-んァ-ン一-龥]{2,}", compact))
+
+
+def nearest_number_source(lines: list[str], index: int) -> tuple[str, str] | None:
+    search_indexes = [index]
+    for offset in (1, 2):
+        search_indexes.extend([index + offset, index - offset])
+    for row_index in search_indexes:
+        if 0 <= row_index < len(lines):
+            found = last_quantity_in_line(lines[row_index])
+            if found:
+                return found
+    return None
+
+
+def last_quantity_in_line(line: str) -> tuple[str, str] | None:
+    matches = list(LOOSE_NUMBER_PATTERN.finditer(normalize_ocr_line(line)))
+    valid: list[tuple[str, str]] = []
+    for match in matches:
+        quantity = normalize_value(match.group(1)).replace(",", "")
+        try:
+            if float(quantity) > 0:
+                valid.append((quantity, normalize_unit(match.group(2) or "g")))
+        except ValueError:
+            continue
+    return valid[-1] if valid else None
+
+
+def loose_ingredient_name(line: str) -> str:
+    name = normalize_ocr_line(line)
+    name = re.sub(r"(?:" + UNIT_PATTERN + r")", " ", name, flags=re.IGNORECASE)
+    name = re.sub(r"[0-9]+(?:\.[0-9]+)?", " ", name)
+    name = re.sub(r"3歳未満児?|３歳未満児?|未満児|乳児|3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量", " ", name)
+    name = re.sub(r"日付|曜日|献立日|使用日|単位|食材|食品|材料|品名|食料|料理名", " ", name)
+    return clean_ingredient_name(name)
 
 
 def collect_source_ingredient_rows(lines: list[str]) -> list[SourceIngredientRow]:
@@ -714,11 +782,7 @@ def choose_under_three_quantity_index(cells: list[str], under_three_column: int)
     numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
     if not numeric_indexes:
         return -1
-    if under_three_column >= 0:
-        left_or_exact = [index for index in numeric_indexes if index <= under_three_column]
-        if left_or_exact:
-            return left_or_exact[0]
-    return numeric_indexes[0]
+    return numeric_indexes[-1]
 
 
 def row_has_number_value(cells: list[str]) -> bool:
