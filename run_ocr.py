@@ -721,14 +721,18 @@ def nearest_number_source(lines: list[str], index: int) -> tuple[str, str] | Non
     return None
 
 
+def nearby_ocr_row_indexes(index: int, line_count: int) -> list[int]:
+    candidates = [index, index + 1, index - 1, index + 2, index - 2]
+    return [row_index for row_index in candidates if 0 <= row_index < line_count]
+
+
 def under_three_quantity_near_ingredient(lines: list[str], index: int) -> tuple[str, str] | None:
-    for row_index in (index, index + 1):
-        if 0 <= row_index < len(lines):
-            cells = split_ocr_cells(lines[row_index])
-            quantity_index = choose_under_three_quantity_index(cells, find_under_three_column(cells))
-            if quantity_index >= 0 and is_numeric_cell(cells[quantity_index]):
-                quantity = normalize_value(cells[quantity_index]).replace(",", "")
-                return quantity, guess_unit_near_quantity(cells, quantity_index)
+    for row_index in nearby_ocr_row_indexes(index, len(lines)):
+        cells = split_ocr_cells(lines[row_index])
+        quantity_index = choose_under_three_quantity_index(cells, find_under_three_column(cells))
+        if quantity_index >= 0 and is_numeric_cell(cells[quantity_index]):
+            quantity = normalize_value(cells[quantity_index]).replace(",", "")
+            return quantity, guess_unit_near_quantity(cells, quantity_index)
     return None
 
 
@@ -940,7 +944,7 @@ def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: st
         key = f"{weekday}|{normalize_ingredient_for_grouping(name)}|数量要確認|要確認"
         if key not in seen:
             seen.add(key)
-            rows.append(IngredientRow(name, "数量要確認", "要確認", weekday))
+            rows.append(IngredientRow(name, "数量要確認", "", weekday))
         return
     try:
         numeric_qty = float(qty)
@@ -1014,7 +1018,7 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
             key = normalize_ingredient_for_grouping(row.name)
             if key and key not in uncertain_seen and not is_excluded_ingredient(row.name):
                 uncertain_seen.add(key)
-                uncertain_rows.append(IngredientRow(row.name, "数量要確認", "要確認"))
+                uncertain_rows.append(IngredientRow(row.name, "数量要確認", ""))
             continue
         if is_excluded_ingredient(row.name) or row.weekday not in WEEKDAY_PEOPLE:
             continue

@@ -1608,7 +1608,7 @@
       const sourceRows = extractUnderThreeSourceRows(text);
       const pendingRows = sourceRows
         .filter(row => row.quantity === "数量要確認")
-        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "要確認", source: row.source || "OCR" }));
+        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "", source: row.source || "OCR" }));
       return mapMenuRowsToOrderRows(sourceRows, "OCR").concat(pendingRows);
     }
 
@@ -1639,8 +1639,9 @@
       const name = String(row && row.name ? row.name : "").trim();
       const quantity = String(row && row.quantity !== undefined ? row.quantity : "").trim();
       const unit = String(row && row.unit ? row.unit : "").trim();
-      if (!name || !quantity || !unit || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) return false;
+      if (!name || !quantity || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) return false;
       if (quantity === "数量要確認") return true;
+      if (!unit) return false;
       if (/^0+(?:[.,．]0+)?$/.test(quantity)) return false;
       return /^([0-9０-９]+(?:[.,．][0-9０-９]+)?|[0-9０-９]+\/[0-9０-９]+)$/.test(quantity);
     }
@@ -1670,7 +1671,7 @@
           addUniqueSourceRow(extracted, seen, {
             name,
             quantity: numberSource ? numberSource.quantity : "数量要確認",
-            unit: numberSource ? numberSource.unit : "要確認",
+            unit: numberSource ? numberSource.unit : "",
             weekday: detectedWeekday || currentWeekday,
             sourceLine: line,
             source: "3歳未満児"
@@ -1712,9 +1713,13 @@
       return null;
     }
 
+    function nearbyOcrRowIndexes(index, lineCount) {
+      return [index, index + 1, index - 1, index + 2, index - 2]
+        .filter(rowIndex => rowIndex >= 0 && rowIndex < lineCount);
+    }
+
     function underThreeQuantityNearIngredient(lines, index) {
-      for (const rowIndex of [index, index + 1]) {
-        if (rowIndex < 0 || rowIndex >= lines.length) continue;
+      for (const rowIndex of nearbyOcrRowIndexes(index, lines.length)) {
         const cells = splitIngredientCells(lines[rowIndex]);
         const quantityIndex = chooseUnderThreeQuantityIndex(cells, findUnderThreeColumn(cells));
         if (quantityIndex >= 0 && isNumericCell(cells[quantityIndex])) {
@@ -1762,7 +1767,7 @@
         const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
         if (seen.has(key)) return;
         seen.add(key);
-        target.push({ name: cleanName, quantity: "数量要確認", unit: "要確認", weekday, source: row.source || "3歳未満児" });
+        target.push({ name: cleanName, quantity: "数量要確認", unit: "", weekday, source: row.source || "3歳未満児" });
         return;
       }
       if (!isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0) return;
@@ -2086,7 +2091,11 @@
     }
 
     function getFilledRows() {
-      return rows.filter(row => String(row.name || "").trim() && String(row.quantity || "").trim() && String(row.unit || "").trim());
+      return rows.filter(row => {
+        const quantity = String(row.quantity || "").trim();
+        if (!String(row.name || "").trim() || !quantity) return false;
+        return quantity === "数量要確認" || String(row.unit || "").trim();
+      });
     }
 
     function focusLastNameInput() {
