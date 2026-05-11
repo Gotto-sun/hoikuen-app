@@ -8,9 +8,9 @@ from modules.ocr import debug_overlays_for_upload
 st.set_page_config(page_title="献立表OCR MVP", page_icon="🍱", layout="wide")
 
 st.title("🍱 献立表OCR MVP")
-st.caption("OCR対象範囲だけを確認します。計算・Excel出力・抽出処理は停止中です。")
+st.caption("原画像そのままOCRと前処理後画像を確認します。計算・Excel出力・抽出処理は停止中です。")
 
-st.warning("枠が正しい位置に来るまで、食材抽出・計算・Excel出力は実行しません。")
+st.warning("まず原画像そのままOCRを確認します。二値化はOFF、前処理はグレースケールのみです。")
 
 with st.sidebar:
     st.header("表示する枠")
@@ -63,6 +63,27 @@ st.info("青が食材名列、赤が3歳未満列です。抽出・計算・Exce
 
 for overlay in debug_overlays:
     st.markdown(f"### {overlay.page_number}ページ目")
+
+    st.markdown("#### 原画像そのままOCR")
+    original_col, preprocessed_col = st.columns(2)
+    with original_col:
+        st.image(overlay.original_image, caption="読み込んだ原画像（RGB変換のみ）", use_column_width=True)
+    with preprocessed_col:
+        st.image(overlay.preprocessed_image, caption="前処理後画像（グレースケールのみ・二値化OFF）", use_column_width=True)
+
+    for diagnostic in overlay.diagnostics:
+        if diagnostic.startswith("⚠️"):
+            st.warning(diagnostic)
+        else:
+            st.info(diagnostic)
+
+    st.text_area(
+        f"原画像そのままOCR結果：{overlay.page_number}ページ目 / 信頼度 {overlay.original_ocr_confidence}",
+        overlay.original_ocr_text or "（空）",
+        height=220,
+        key=f"raw-ocr-{overlay.page_number}",
+    )
+
     st.image(overlay.image, caption="検出した切り出し枠", use_column_width=True)
 
     rows = [
@@ -89,7 +110,17 @@ for overlay in debug_overlays:
         columns = st.columns(len(section_crops))
         for column, crop in zip(columns, section_crops, strict=False):
             with column:
-                st.image(crop.image, caption=f"{crop.label} / 信頼度 {crop.confidence}", use_column_width=True)
+                st.image(crop.image, caption=f"{crop.label} 原画像", use_column_width=True)
+                st.image(
+                    crop.processed_image,
+                    caption=f"{crop.label} 前処理後（グレースケールのみ・二値化OFF） / 信頼度 {crop.confidence}",
+                    use_column_width=True,
+                )
+                for diagnostic in crop.diagnostics:
+                    if diagnostic.startswith("⚠️"):
+                        st.warning(diagnostic)
+                    else:
+                        st.caption(diagnostic)
                 st.text_area(
                     f"OCR結果：{section} / {crop.label}",
                     crop.ocr_text or "（空）",

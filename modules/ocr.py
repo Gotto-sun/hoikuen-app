@@ -11,7 +11,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytesseract
-from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageSequence
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageSequence, ImageStat
 
 
 
@@ -50,6 +50,8 @@ SECTION_DEBUG_COLORS = {
 }
 FIXED_ROW_MARKER = "固定表行"
 FIXED_OCR_DPI = 300
+MAX_OCR_IMAGE_EDGE = 30000
+MAX_OCR_IMAGE_PIXELS = 250_000_000
 logger = logging.getLogger(__name__)
 
 NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9.])")
@@ -68,6 +70,53 @@ FORCED_INGREDIENT_NAMES = (
     "食パン",
     "いちごジャム",
 )
+
+
+def _assert_valid_ocr_image(image: Image.Image, context: str) -> None:
+    """OCR前に画像サイズを必ずログへ出し、異常サイズなら止めます。"""
+
+    width, height = image.size
+    logger.info("OCR前画像サイズ: context=%s mode=%s width=%s height=%s", context, image.mode, width, height)
+    if width <= 0 or height <= 0:
+        logger.error("OCR停止: 画像サイズが0です context=%s width=%s height=%s", context, width, height)
+        raise RuntimeError(f"OCR停止: 画像サイズが異常です（{context}: {width}x{height}）")
+    if width > MAX_OCR_IMAGE_EDGE or height > MAX_OCR_IMAGE_EDGE or width * height > MAX_OCR_IMAGE_PIXELS:
+        logger.error("OCR停止: 画像サイズが大きすぎます context=%s width=%s height=%s", context, width, height)
+        raise RuntimeError(f"OCR停止: 画像サイズが大きすぎます（{context}: {width}x{height}）")
+
+
+def _image_blankness_message(image: Image.Image, context: str) -> str:
+    """白飛び/真っ黒/空白の疑いをログと画面表示用メッセージにします。"""
+
+    gray = ImageOps.grayscale(image)
+    stat = ImageStat.Stat(gray)
+    mean = stat.mean[0]
+    stddev = stat.stddev[0]
+    min_value, max_value = gray.getextrema()
+    message = (
+        f"{context}: {gray.width}x{gray.height} / 平均 {mean:.1f} / "
+        f"ばらつき {stddev:.1f} / 最小 {min_value} / 最大 {max_value}"
+    )
+    logger.info("OCR前画像状態: %s", message)
+    if stddev < 1.0 or min_value == max_value:
+        logger.warning("OCR前画像が空白の可能性があります: %s", message)
+        return f"⚠️ 空白の可能性あり: {message}"
+    if mean > 252 and stddev < 8:
+        logger.warning("OCR前画像が白飛びの可能性があります: %s", message)
+        return f"⚠️ 白飛びの可能性あり: {message}"
+    if mean < 3 and stddev < 8:
+        logger.warning("OCR前画像が真っ黒の可能性があります: %s", message)
+        return f"⚠️ 真っ黒の可能性あり: {message}"
+    return f"OK: {message}"
+
+
+def _preprocess_for_ocr(image: Image.Image, context: str) -> Image.Image:
+    """OCR前処理を実行し、処理後画像もサイズ確認します。"""
+
+    processed = _preprocess_image(image)
+    _assert_valid_ocr_image(processed, f"{context}（前処理後）")
+    _image_blankness_message(processed, f"{context}（前処理後）")
+    return processed
 
 
 def _preprocess_image(image: Image.Image) -> Image.Image:
@@ -124,8 +173,10 @@ class DebugCropResult:
     label: str
     box: tuple[int, int, int, int]
     image: Image.Image
+    processed_image: Image.Image
     ocr_text: str
     confidence: float
+    diagnostics: list[str]
 
 
 @dataclass(frozen=True)
@@ -134,6 +185,11 @@ class DebugOverlayResult:
 
     page_number: int
     image: Image.Image
+    original_image: Image.Image
+    preprocessed_image: Image.Image
+    original_ocr_text: str
+    original_ocr_confidence: float
+    diagnostics: list[str]
     boxes: list[DebugBox]
     crops: list[DebugCropResult]
 
@@ -189,7 +245,8 @@ def run_paddleocr(image: Image.Image) -> OCRResult:
 
     paddleocr_module = import_module("paddleocr")
     paddle_ocr = paddleocr_module.PaddleOCR(use_angle_cls=True, lang="japan", show_log=False)
-    processed = _preprocess_image(image)
+    _assert_valid_ocr_image(image, "PaddleOCR原画像")
+    processed = _preprocess_for_ocr(image, "PaddleOCR")
 
     with NamedTemporaryFile(suffix=".png") as temp_file:
         processed.save(temp_file.name)
@@ -206,8 +263,11 @@ def run_tesseract(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
 
     best_result = OCRResult(text="", confidence=0.0, engine="Tesseract", rotation=0)
 
+    _assert_valid_ocr_image(image, "Tesseract入力画像")
+
     for rotation, rotated in _candidate_rotations(image):
-        processed = _preprocess_image(rotated)
+        _assert_valid_ocr_image(rotated, f"Tesseract回転{rotation}度")
+        processed = _preprocess_for_ocr(rotated, f"Tesseract回転{rotation}度")
         text = pytesseract.image_to_string(processed, lang=lang)
         data = pytesseract.image_to_data(
             processed,
@@ -225,6 +285,28 @@ def run_tesseract(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
 
     return best_result
 
+
+
+def run_raw_pillow_rgb_ocr(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
+    """Pillowで読み込んだ原画像をRGB化し、そのままTesseractへ渡します。"""
+
+    rgb = ImageOps.exif_transpose(image).convert("RGB")
+    _assert_valid_ocr_image(rgb, "原画像そのままOCR")
+    _image_blankness_message(rgb, "原画像そのままOCR")
+    config = f"--oem 3 --psm 6 --dpi {FIXED_OCR_DPI}"
+    text = pytesseract.image_to_string(rgb, lang=lang, config=config)
+    data = pytesseract.image_to_data(
+        rgb,
+        lang=lang,
+        config=config,
+        output_type=pytesseract.Output.DICT,
+    )
+    return OCRResult(
+        text=text.strip(),
+        confidence=_confidence_from_data(data),
+        engine="Tesseract原画像RGB",
+        rotation=0,
+    )
 
 def _ratio_crop_box(image: Image.Image, x: float, y: float, width: float, height: float) -> tuple[int, int, int, int]:
     left = round(image.width * x)
@@ -299,7 +381,7 @@ def _fixed_column_box(table_box: tuple[int, int, int, int], column_name: str) ->
 def _ocr_fixed_cell(image: Image.Image, lang: str) -> tuple[str, float]:
     cell = ImageOps.grayscale(image)
     cell = cell.resize((max(1, cell.width * 3), max(1, cell.height * 3)), Image.Resampling.LANCZOS)
-    processed = _preprocess_image(cell)
+    processed = _preprocess_for_ocr(cell, "固定セルOCR")
     config = f"--oem 3 --psm 7 --dpi {FIXED_OCR_DPI}"
     text = pytesseract.image_to_string(processed, lang=lang, config=config)
     data = pytesseract.image_to_data(
@@ -376,7 +458,8 @@ def _heading_matches(text: str, label: str) -> bool:
 def _find_heading_boxes(image: Image.Image) -> dict[str, tuple[int, int, int, int]]:
     """ページ内の3見出し位置だけを探します。食材本文の全文OCRには使いません。"""
 
-    processed = _preprocess_image(image)
+    _assert_valid_ocr_image(image, "見出し検出入力")
+    processed = _preprocess_for_ocr(image, "見出し検出")
     data = pytesseract.image_to_data(
         processed,
         lang="jpn+eng",
@@ -501,11 +584,20 @@ def _draw_text_label(draw: ImageDraw.ImageDraw, position: tuple[int, int], text:
     draw.text((x, y), text, fill=fill, font=font)
 
 
-def _ocr_debug_crop(image: Image.Image, label: str) -> tuple[str, float]:
-    gray = ImageOps.grayscale(image)
-    scale = 2 if max(gray.size) >= 1200 else 3
-    enlarged = gray.resize((max(1, gray.width * scale), max(1, gray.height * scale)), Image.Resampling.LANCZOS)
-    processed = _preprocess_image(enlarged)
+def _ocr_debug_crop(image: Image.Image, label: str) -> tuple[str, float, Image.Image, list[str]]:
+    diagnostics: list[str] = []
+    try:
+        _assert_valid_ocr_image(image, f"切り出しOCR {label} 原画像")
+        diagnostics.append(_image_blankness_message(image, f"切り出しOCR {label} 原画像"))
+        gray = ImageOps.grayscale(image)
+        scale = 2 if max(gray.size) >= 1200 else 3
+        enlarged = gray.resize((max(1, gray.width * scale), max(1, gray.height * scale)), Image.Resampling.LANCZOS)
+        processed = _preprocess_for_ocr(enlarged, f"切り出しOCR {label}")
+        diagnostics.append(_image_blankness_message(processed, f"切り出しOCR {label} 前処理後"))
+    except Exception as exc:  # noqa: BLE001 - デバッグ画面にOCR失敗を表示します。
+        fallback = Image.new("L", (1, 1), 255)
+        return f"OCRエラー: {exc}", 0.0, fallback, diagnostics
+
     lang = "eng" if label == "3歳未満" else "jpn+eng"
     config = f"--oem 3 --psm 6 --dpi {FIXED_OCR_DPI}"
     try:
@@ -517,8 +609,8 @@ def _ocr_debug_crop(image: Image.Image, label: str) -> tuple[str, float]:
             output_type=pytesseract.Output.DICT,
         )
     except Exception as exc:  # noqa: BLE001 - デバッグ画面にOCR失敗を表示します。
-        return f"OCRエラー: {exc}", 0.0
-    return text, _confidence_from_data(data)
+        return f"OCRエラー: {exc}", 0.0, processed, diagnostics
+    return text, _confidence_from_data(data), processed, diagnostics
 
 
 def _debug_crops_for_image(image: Image.Image, boxes: list[DebugBox]) -> list[DebugCropResult]:
@@ -527,15 +619,17 @@ def _debug_crops_for_image(image: Image.Image, boxes: list[DebugBox]) -> list[De
         if box.kind != "column":
             continue
         crop = image.crop(box.box)
-        ocr_text, confidence = _ocr_debug_crop(crop, box.label)
+        ocr_text, confidence, processed_image, diagnostics = _ocr_debug_crop(crop, box.label)
         crops.append(
             DebugCropResult(
                 section=box.section,
                 label=box.label,
                 box=box.box,
                 image=crop,
+                processed_image=processed_image,
                 ocr_text=ocr_text,
                 confidence=confidence,
+                diagnostics=diagnostics,
             )
         )
     return crops
@@ -545,6 +639,19 @@ def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverla
     """OCR前に、固定表のどの範囲を読む予定かを画像へ描画します。"""
 
     base = ImageOps.exif_transpose(image).convert("RGB")
+    _assert_valid_ocr_image(base, f"{page_number}ページ目 原画像")
+    diagnostics = [_image_blankness_message(base, f"{page_number}ページ目 原画像")]
+    preprocessed = _preprocess_for_ocr(base, f"{page_number}ページ目 全体")
+    diagnostics.append(_image_blankness_message(preprocessed, f"{page_number}ページ目 前処理後"))
+    try:
+        original_ocr = run_raw_pillow_rgb_ocr(base)
+        original_ocr_text = original_ocr.text
+        original_ocr_confidence = original_ocr.confidence
+    except Exception as exc:  # noqa: BLE001 - デバッグ画面にOCR失敗を表示します。
+        logger.exception("原画像そのままOCR失敗: page=%s", page_number)
+        original_ocr_text = f"OCRエラー: {exc}"
+        original_ocr_confidence = 0.0
+
     overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     boxes = _debug_boxes_for_image(base)
@@ -569,7 +676,17 @@ def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverla
             _draw_text_label(draw, (box.box[0] + 4, box.box[1] + 28), box.label, color)
 
     crops = _debug_crops_for_image(base, boxes)
-    return DebugOverlayResult(page_number=page_number, image=annotated, boxes=boxes, crops=crops)
+    return DebugOverlayResult(
+        page_number=page_number,
+        image=annotated,
+        original_image=base,
+        preprocessed_image=preprocessed,
+        original_ocr_text=original_ocr_text,
+        original_ocr_confidence=original_ocr_confidence,
+        diagnostics=diagnostics,
+        boxes=boxes,
+        crops=crops,
+    )
 
 
 def debug_overlays_for_upload(
@@ -644,9 +761,9 @@ def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
 
 
 def run_ocr_for_image(image: Image.Image) -> OCRResult:
-    """全文OCRを使わず、固定X座標の列切り出しOCRだけを実行します。"""
+    """まず読み込んだ原画像そのままでOCRします。"""
 
-    return run_fixed_layout_ocr(image)
+    return run_raw_pillow_rgb_ocr(image)
 
 
 def pdf_to_images(pdf_bytes: bytes) -> list[Image.Image]:
@@ -674,7 +791,10 @@ def _image_from_upload_bytes(file_bytes: bytes) -> Image.Image:
     try:
         with Image.open(BytesIO(file_bytes)) as image:
             image.seek(0)
-            return image.convert("RGB")
+            rgb = image.convert("RGB")
+            _assert_valid_ocr_image(rgb, "Pillow読み込み後画像")
+            _image_blankness_message(rgb, "Pillow読み込み後画像")
+            return rgb
     except Exception as exc:  # noqa: BLE001 - 利用者向けに読み込み失敗理由を固定します。
         raise RuntimeError("画像を読み込めませんでした。") from exc
 
@@ -695,7 +815,12 @@ def _tiff_image_from_upload_bytes(
 
     try:
         with Image.open(BytesIO(file_bytes)) as image:
-            frames = [frame.convert("RGB") for frame in ImageSequence.Iterator(image)]
+            frames = []
+            for frame_index, frame in enumerate(ImageSequence.Iterator(image), start=1):
+                rgb = frame.convert("RGB")
+                _assert_valid_ocr_image(rgb, f"TIFF読み込み後画像 {frame_index}ページ目")
+                _image_blankness_message(rgb, f"TIFF読み込み後画像 {frame_index}ページ目")
+                frames.append(rgb)
     except Exception as exc:  # noqa: BLE001 - Pillowの詳細エラーをログへ残します。
         logger.exception(
             "TIFF読み込み失敗: extension=%s mime_type=%s pillow_error=%s",
@@ -726,7 +851,13 @@ def images_from_upload(
 
     suffix = Path(file_name).suffix.lower()
     if suffix == ".pdf":
-        return [image.convert("RGB") for image in pdf_to_images(file_bytes)]
+        images = []
+        for index, image in enumerate(pdf_to_images(file_bytes), start=1):
+            rgb = image.convert("RGB")
+            _assert_valid_ocr_image(rgb, f"PDF変換後画像 {index}ページ目")
+            _image_blankness_message(rgb, f"PDF変換後画像 {index}ページ目")
+            images.append(rgb)
+        return images
 
     if _is_tiff_upload(suffix, mime_type):
         return [_tiff_image_from_upload_bytes(file_bytes, suffix, mime_type)]

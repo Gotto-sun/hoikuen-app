@@ -2,36 +2,17 @@
 
 from __future__ import annotations
 
-import cv2
-import numpy as np
-from PIL import Image, ImageEnhance, ImageOps
+from PIL import Image, ImageOps
 
 
 def preprocess_image(image: Image.Image) -> Image.Image:
-    """OCRしやすいように画像を最小限補正します。
+    """OCR前処理はグレースケール化だけにします。
 
-    MVPでは安全で軽い補正に絞ります。
-    - EXIF向き補正
-    - グレースケール化
-    - コントラスト強化
-    - ノイズ除去
-    - 白黒化
+    二値化・ノイズ除去・コントラスト強化で白飛び/真っ黒になる可能性を避けるため、
+    いったんOFFにしています。
     """
 
-    corrected = ImageOps.exif_transpose(image).convert("L")
-    corrected = ImageEnhance.Contrast(corrected).enhance(1.6)
-
-    array = np.array(corrected)
-    denoised = cv2.medianBlur(array, 3)
-    thresholded = cv2.adaptiveThreshold(
-        denoised,
-        255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        31,
-        11,
-    )
-    return Image.fromarray(thresholded)
+    return ImageOps.exif_transpose(image).convert("L")
 
 
 def candidate_rotations(image: Image.Image) -> list[tuple[int, Image.Image]]:
