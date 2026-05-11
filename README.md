@@ -160,7 +160,7 @@ streamlit run app.py
 
 ### MVPでできること
 
-- jpg / jpeg / png / pdf のアップロード
+- jpg / jpeg / png / tif / tiff / pdf のアップロード
 - PaddleOCR（入っている場合）またはTesseract OCRによる全文表示
 - OCR信頼度の表示
 - 数字と単位を含む行から食材候補を抽出
