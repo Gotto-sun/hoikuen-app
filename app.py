@@ -75,6 +75,25 @@ candidates = extract_food_candidates(
 st.session_state["candidates"] = candidates
 
 st.subheader("2. 全食材候補")
+accepted_foods = candidates.attrs.get("accepted_foods", [])
+excluded_rows = candidates.attrs.get("excluded_rows")
+
+st.caption("採用された食材")
+if accepted_foods:
+    st.write("、".join(accepted_foods))
+else:
+    st.write("なし")
+
+st.caption("除外された理由（ログ）")
+if excluded_rows is not None and not excluded_rows.empty:
+    st.dataframe(
+        excluded_rows,
+        use_container_width=True,
+        hide_index=True,
+    )
+else:
+    st.write("なし")
+
 if candidates.empty:
     st.warning("食材候補が見つかりませんでした。見出し別OCR結果を確認してください。")
     st.stop()

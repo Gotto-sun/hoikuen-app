@@ -15,9 +15,12 @@ class NormalizedFood:
     order_unit: str
     loss_rate: float
     found_in_master: bool
+    match_type: str = "未一致"
+    distance: int | None = None
 
 
 REQUIRED_COLUMNS = ["正式名称", "別名", "ロス率", "発注単位", "仕入先"]
+MAX_LEVENSHTEIN_DISTANCE = 2
 
 
 def ensure_food_master(path: Path) -> None:
@@ -45,22 +48,80 @@ def load_food_master(path: Path) -> pd.DataFrame:
     return master.fillna("")
 
 
+def _loss_rate(row: pd.Series) -> float:
+    try:
+        return float(row["ロス率"] or 1.0)
+    except (TypeError, ValueError):
+        return 1.0
+
+
+def _normalized_from_row(
+    row: pd.Series,
+    *,
+    match_type: str,
+    distance: int | None = None,
+) -> NormalizedFood:
+    return NormalizedFood(
+        name=str(row["正式名称"]).strip(),
+        supplier=str(row["仕入先"]).strip(),
+        order_unit=str(row["発注単位"]).strip(),
+        loss_rate=_loss_rate(row),
+        found_in_master=True,
+        match_type=match_type,
+        distance=distance,
+    )
+
+
+def _levenshtein_distance(left: str, right: str) -> int:
+    """2つの文字列のレーベンシュタイン距離を返します。"""
+
+    if left == right:
+        return 0
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        for right_index, right_char in enumerate(right, start=1):
+            insert_cost = current[right_index - 1] + 1
+            delete_cost = previous[right_index] + 1
+            replace_cost = previous[right_index - 1] + (left_char != right_char)
+            current.append(min(insert_cost, delete_cost, replace_cost))
+        previous = current
+    return previous[-1]
+
+
+def _candidate_names(row: pd.Series) -> list[str]:
+    official_name = str(row["正式名称"]).strip()
+    aliases = [alias.strip() for alias in str(row["別名"]).split(";") if alias.strip()]
+    return [name for name in [official_name, *aliases] if name]
+
+
 def normalize_food_name(raw_name: str, master: pd.DataFrame) -> NormalizedFood:
     """食材名をマスタの正式名称に寄せます。"""
 
     cleaned = raw_name.strip()
     for _, row in master.iterrows():
-        official_name = str(row["正式名称"]).strip()
-        aliases = [alias.strip() for alias in str(row["別名"]).split(";") if alias.strip()]
-        names = [official_name, *aliases]
-        if cleaned in names:
-            return NormalizedFood(
-                name=official_name,
-                supplier=str(row["仕入先"]).strip(),
-                order_unit=str(row["発注単位"]).strip(),
-                loss_rate=float(row["ロス率"] or 1.0),
-                found_in_master=True,
-            )
+        if cleaned in _candidate_names(row):
+            return _normalized_from_row(row, match_type="完全一致")
+
+    best_row: pd.Series | None = None
+    best_distance: int | None = None
+    for _, row in master.iterrows():
+        for candidate_name in _candidate_names(row):
+            distance = _levenshtein_distance(cleaned, candidate_name)
+            max_allowed = min(MAX_LEVENSHTEIN_DISTANCE, max(1, len(candidate_name) // 3))
+            if distance > max_allowed:
+                continue
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_row = row
+
+    if best_row is not None and best_distance is not None:
+        return _normalized_from_row(best_row, match_type="類似補正", distance=best_distance)
 
     return NormalizedFood(
         name=cleaned,
