@@ -148,6 +148,14 @@ class IngredientRow:
     unit: str
     weekday: str = ""
 
+
+@dataclass
+class SourceIngredientRow:
+    cells: list[str]
+    row_text: str
+    weekday: str
+    under_three_column: int
+
 def optional_module(name: str) -> Any | None:
     if importlib.util.find_spec(name) is None:
         return None
@@ -641,15 +649,27 @@ def is_suspicious_ingredient_name(value: str) -> bool:
     return japanese == 0 or digits > japanese or len(name) > 32 or is_garbled_text(name) or bool(SENTENCE_NOISE_PATTERN.search(name))
 
 def extract_ingredient_rows(text: str) -> list[IngredientRow]:
+    source_rows = collect_source_ingredient_rows(split_ocr_rows_for_ingredients(text))
     rows: list[IngredientRow] = []
     seen: set[str] = set()
+    for source_row in source_rows:
+        extracted = extract_under_three_from_source_row(source_row)
+        if not extracted:
+            continue
+        name, quantity, unit = extracted
+        add_ingredient_row(rows, seen, name, quantity, unit, source_row.weekday)
+    return rows
+
+
+def collect_source_ingredient_rows(lines: list[str]) -> list[SourceIngredientRow]:
+    rows: list[SourceIngredientRow] = []
     current_weekday = ""
     under_three_column = -1
 
-    for raw_line in split_ocr_rows_for_ingredients(text):
+    for raw_line in lines:
         cells = split_ocr_cells(raw_line)
         row_text = normalize_ocr_line(" ".join(cells) if cells else raw_line)
-        if not cells or is_ignored_source_row(row_text):
+        if not cells:
             continue
 
         weekday = detect_weekday(row_text)
@@ -661,27 +681,51 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
             under_three_column = header_column
             continue
 
-        if under_three_column < 0 or under_three_column >= len(cells):
+        if is_document_noise_row(row_text) or not row_has_number_value(cells):
             continue
 
-        quantity = cells[under_three_column]
-        if not is_numeric_cell(quantity):
-            continue
-
-        name = ingredient_name_left_of_column(cells, under_three_column)
-        unit = guess_unit_near_quantity(cells, under_three_column)
-        add_ingredient_row(rows, seen, name, quantity, unit, weekday or current_weekday)
+        rows.append(SourceIngredientRow(cells, row_text, weekday or current_weekday, under_three_column))
     return rows
+
+
+def extract_under_three_from_source_row(source_row: SourceIngredientRow) -> tuple[str, str, str] | None:
+    quantity_index = choose_under_three_quantity_index(source_row.cells, source_row.under_three_column)
+    if quantity_index < 0:
+        return None
+
+    quantity = source_row.cells[quantity_index]
+    if not is_numeric_cell(quantity):
+        return None
+
+    name = ingredient_name_left_of_column(source_row.cells, quantity_index)
+    if not name:
+        name = ingredient_name_before_quantity(source_row.row_text, quantity)
+    unit = guess_unit_near_quantity(source_row.cells, quantity_index)
+    return name, quantity, unit
+
+
+def choose_under_three_quantity_index(cells: list[str], under_three_column: int) -> int:
+    numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
+    if not numeric_indexes:
+        return -1
+    if under_three_column >= 0:
+        left_or_exact = [index for index in numeric_indexes if index <= under_three_column]
+        if left_or_exact:
+            return left_or_exact[0]
+    return numeric_indexes[0]
+
+
+def row_has_number_value(cells: list[str]) -> bool:
+    return any(is_number_cell(cell) for cell in cells)
+
+def is_document_noise_row(value: str) -> bool:
+    text = re.sub(r"\s+", "", str(value or ""))
+    return not text or text.startswith("※") or IGNORED_LINE_PATTERN.search(text) is not None or is_garbled_text(text)
+
 
 def is_ignored_source_row(value: str) -> bool:
     text = re.sub(r"\s+", "", str(value or ""))
-    return (
-        not text
-        or text.startswith("※")
-        or IGNORED_LINE_PATTERN.search(text) is not None
-        or SENTENCE_NOISE_PATTERN.search(text) is not None
-        or is_garbled_text(text)
-    )
+    return is_document_noise_row(text) or SENTENCE_NOISE_PATTERN.search(text) is not None
 
 def find_under_three_column(cells: list[str]) -> int:
     for index, cell in enumerate(cells):
@@ -689,6 +733,16 @@ def find_under_three_column(cells: list[str]) -> int:
         if re.search(r"3歳未満|３歳未満|未満児|乳児", compact) and not re.search(r"人数|対象|区分|年齢", compact):
             return index
     return -1
+
+def is_number_cell(value: str) -> bool:
+    text = normalize_value(normalize_ocr_line(value)).replace(",", "")
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", text):
+        return False
+    try:
+        return float(text) >= 0
+    except ValueError:
+        return False
+
 
 def is_numeric_cell(value: str) -> bool:
     text = normalize_value(normalize_ocr_line(value)).replace(",", "")
@@ -700,6 +754,7 @@ def is_numeric_cell(value: str) -> bool:
         return False
 
 def ingredient_name_left_of_column(cells: list[str], quantity_index: int) -> str:
+    name_parts: list[str] = []
     for index in range(quantity_index - 1, -1, -1):
         cell = normalize_ocr_line(cells[index])
         compact = re.sub(r"\s+", "", cell)
@@ -708,9 +763,19 @@ def ingredient_name_left_of_column(cells: list[str], quantity_index: int) -> str
         if detect_weekday(cell) or re.fullmatch(r"(?:" + UNIT_PATTERN + r")", compact, re.IGNORECASE):
             continue
         if re.search(r"日付|曜日|献立日|使用日|単位|3歳未満|３歳未満|未満児|乳児|食材|食品|材料|品名|食料|料理名", compact):
-            continue
-        return cell
-    return ""
+            break
+        name_parts.insert(0, cell)
+    return " ".join(name_parts).strip()
+
+def ingredient_name_before_quantity(row_text: str, quantity: str) -> str:
+    normalized = normalize_ocr_line(row_text)
+    quantity_text = re.escape(normalize_ocr_line(quantity))
+    match = re.search(quantity_text, normalized)
+    if not match:
+        return ""
+    before = normalized[:match.start()]
+    before = re.sub(r"(?i)(?:" + UNIT_PATTERN + r")\s*$", " ", before)
+    return before.strip()
 
 def split_ocr_rows_for_ingredients(text: str) -> list[str]:
     normalized_text = str(text or "").replace("OCR全文", "\n")
@@ -726,11 +791,27 @@ def split_ocr_cells(line: str) -> list[str]:
     protected = normalize_ocr_line(line)
     cells = [cell.strip() for cell in re.split(r"\t|,|，", protected) if cell.strip()]
     if len(cells) > 1:
-        return cells
-    return split_marker_tokens(protected)
+        return expand_quantity_unit_cells(cells)
+    return expand_quantity_unit_cells(split_marker_tokens(protected))
+
+
+def expand_quantity_unit_cells(cells: list[str]) -> list[str]:
+    expanded: list[str] = []
+    for cell in cells:
+        match = re.fullmatch(r"([0-9]+(?:[.]?[0-9]+)?)(" + UNIT_PATTERN + r")", normalize_ocr_line(cell), re.IGNORECASE)
+        if match:
+            expanded.extend([match.group(1), match.group(2)])
+        else:
+            expanded.append(cell)
+    return expanded
+
 
 def split_marker_tokens(line: str) -> list[str]:
-    return [token for token in re.split(r"\s{2,}", normalize_ocr_line(line)) if token]
+    normalized = normalize_ocr_line(line)
+    tokens = [token for token in re.split(r"\s{2,}", normalized) if token]
+    if len(tokens) > 1:
+        return tokens
+    return [token for token in re.split(r"\s+", normalized) if token]
 
 def guess_unit_near_quantity(cells: list[str], quantity_index: int) -> str:
     candidates = []
