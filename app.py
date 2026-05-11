@@ -1,29 +1,29 @@
 from __future__ import annotations
 
-from pathlib import Path
-
+import pandas as pd
 import streamlit as st
 
-from modules.extract import extract_food_candidates
-from modules.normalize import load_food_master
-from modules.ocr import run_ocr_for_upload
-
-FOOD_MASTER_PATH = Path("data/food_master.csv")
+from modules.ocr import debug_overlays_for_upload
 
 st.set_page_config(page_title="献立表OCR MVP", page_icon="🍱", layout="wide")
 
 st.title("🍱 献立表OCR MVP")
-st.caption("画像/PDFを見出しごとに分割し、食材候補を画面に表示します。")
+st.caption("OCR前に、画像上で読み取り予定の切り出し枠を確認します。")
 
-st.warning(
-    "OCR結果は間違う可能性があります。発注前に必ず確認・修正してください。"
-)
+st.warning("現在は計算処理・Excel出力・食材OCRを停止中です。まず読み取る場所だけ確認してください。")
 
 with st.sidebar:
-    st.header("読み取り対象")
-    st.write("- 午前おやつ")
-    st.write("- 昼食")
-    st.write("- 午後おやつ")
+    st.header("表示する枠")
+    st.write("- 食材名列：赤線")
+    st.write("- 総使用量列：赤線")
+    st.write("- 3歳以上列：赤線")
+    st.write("- 3歳未満列：赤線")
+    st.write("- 職員列：赤線")
+    st.divider()
+    st.write("区分範囲")
+    st.write("- 午前おやつ：青")
+    st.write("- 昼食：緑")
+    st.write("- 午後おやつ：紫")
     st.divider()
     st.write("対応ファイル")
     st.write("- 画像: jpg / jpeg / png")
@@ -41,67 +41,41 @@ if uploaded_file is None:
 file_bytes = uploaded_file.getvalue()
 st.write(f"アップロード済み: `{uploaded_file.name}`")
 
-if st.button("OCRを実行する", type="primary"):
-    with st.spinner("OCRを実行しています。少しお待ちください..."):
+current_upload_key = (uploaded_file.name, len(file_bytes))
+if st.session_state.get("upload_key") != current_upload_key:
+    st.session_state["upload_key"] = current_upload_key
+    st.session_state.pop("debug_overlays", None)
+
+if st.button("切り出し枠を表示する", type="primary"):
+    with st.spinner("切り出し枠を作成しています。少しお待ちください..."):
         try:
-            st.session_state["ocr_result"] = run_ocr_for_upload(uploaded_file.name, file_bytes)
-            st.session_state.pop("candidates", None)
+            st.session_state["debug_overlays"] = debug_overlays_for_upload(uploaded_file.name, file_bytes)
         except Exception as exc:  # noqa: BLE001 - 画面で利用者にわかりやすく表示します。
             st.error(str(exc))
             st.stop()
 
-ocr_result = st.session_state.get("ocr_result")
-if not ocr_result:
+debug_overlays = st.session_state.get("debug_overlays")
+if not debug_overlays:
     st.stop()
 
-st.subheader("1. 見出し別OCR結果")
-col1, col2, col3 = st.columns(3)
-col1.metric("OCRエンジン", ocr_result.engine)
-col2.metric("平均信頼度", f"{ocr_result.confidence}%")
-col3.metric("採用した向き", "自動判定" if ocr_result.rotation == -1 else f"{ocr_result.rotation}度")
+st.subheader("切り出し枠プレビュー")
+st.info("赤線が各列の読み取り予定範囲です。OCR・計算・Excel出力はまだ実行しません。")
 
-ocr_text = st.text_area(
-    "見出し別OCR結果（区分 / 食材名列 / 3歳未満列）",
-    value=ocr_result.text,
-    height=280,
-)
+for overlay in debug_overlays:
+    st.markdown(f"### {overlay.page_number}ページ目")
+    st.image(overlay.image, caption="検出した切り出し枠", use_column_width=True)
 
-master = load_food_master(FOOD_MASTER_PATH)
-candidates = extract_food_candidates(
-    ocr_text,
-    master,
-    ocr_result.confidence,
-)
-st.session_state["candidates"] = candidates
-
-st.subheader("2. 全食材候補")
-accepted_foods = candidates.attrs.get("accepted_foods", [])
-excluded_rows = candidates.attrs.get("excluded_rows")
-
-st.caption("採用された食材")
-if accepted_foods:
-    st.write("、".join(accepted_foods))
-else:
-    st.write("なし")
-
-st.caption("除外された理由（ログ）")
-if excluded_rows is not None and not excluded_rows.empty:
-    st.dataframe(
-        excluded_rows,
-        use_container_width=True,
-        hide_index=True,
-    )
-else:
-    st.write("なし")
-
-if candidates.empty:
-    st.warning("食材候補が見つかりませんでした。見出し別OCR結果を確認してください。")
-    st.stop()
-
-st.dataframe(
-    candidates,
-    use_container_width=True,
-    hide_index=True,
-)
-
-st.info("計算処理とExcel出力は停止中です。まず読み取り結果だけ確認してください。")
+    rows = [
+        {
+            "区分": box.section,
+            "種類": "区分範囲" if box.kind == "section" else "列範囲",
+            "表示名": box.label,
+            "検出方法": box.source,
+            "左X": box.box[0],
+            "上Y": box.box[1],
+            "右X": box.box[2],
+            "下Y": box.box[3],
+        }
+        for box in overlay.boxes
+    ]
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)

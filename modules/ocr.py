@@ -9,9 +9,8 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import pytesseract
-from PIL import Image, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from modules.preprocess import candidate_rotations, preprocess_image
 
 
 SECTION_LABELS = ["午前おやつ", "昼食", "午後おやつ"]
@@ -31,9 +30,37 @@ FIXED_MENU_COLUMNS = {
     "under_three": (0.64, 0.80),
     "staff": (0.80, 1.00),
 }
+DEBUG_COLUMN_LABELS = {
+    "food_name": "食材名",
+    "total": "総使用量",
+    "over_three": "3歳以上",
+    "under_three": "3歳未満",
+    "staff": "職員",
+}
+SECTION_DEBUG_COLORS = {
+    "午前おやつ": (0, 150, 255),
+    "昼食": (0, 190, 90),
+    "午後おやつ": (170, 80, 255),
+}
 FIXED_ROW_MARKER = "固定表行"
 FIXED_OCR_DPI = 300
 NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9.])")
+
+
+def _preprocess_image(image: Image.Image) -> Image.Image:
+    try:
+        from modules.preprocess import preprocess_image
+    except Exception:  # noqa: BLE001 - デバッグ表示は前処理なしでも動かします。
+        return ImageOps.grayscale(image)
+    return preprocess_image(image)
+
+
+def _candidate_rotations(image: Image.Image):
+    try:
+        from modules.preprocess import candidate_rotations
+    except Exception:  # noqa: BLE001 - 前処理依存が使えない環境では回転なしで進めます。
+        return [(0, image)]
+    return candidate_rotations(image)
 
 
 @dataclass
@@ -53,6 +80,26 @@ class SectionArea:
     label: str
     box: tuple[int, int, int, int]
     source: str
+
+
+@dataclass(frozen=True)
+class DebugBox:
+    """画面確認用に表示する切り出し枠です。"""
+
+    section: str
+    kind: str
+    label: str
+    box: tuple[int, int, int, int]
+    source: str
+
+
+@dataclass(frozen=True)
+class DebugOverlayResult:
+    """切り出し枠を描画したデバッグ画像です。"""
+
+    page_number: int
+    image: Image.Image
+    boxes: list[DebugBox]
 
 
 def _confidence_from_data(data: dict[str, list[str]]) -> float:
@@ -106,7 +153,7 @@ def run_paddleocr(image: Image.Image) -> OCRResult:
 
     paddleocr_module = import_module("paddleocr")
     paddle_ocr = paddleocr_module.PaddleOCR(use_angle_cls=True, lang="japan", show_log=False)
-    processed = preprocess_image(image)
+    processed = _preprocess_image(image)
 
     with NamedTemporaryFile(suffix=".png") as temp_file:
         processed.save(temp_file.name)
@@ -123,8 +170,8 @@ def run_tesseract(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
 
     best_result = OCRResult(text="", confidence=0.0, engine="Tesseract", rotation=0)
 
-    for rotation, rotated in candidate_rotations(image):
-        processed = preprocess_image(rotated)
+    for rotation, rotated in _candidate_rotations(image):
+        processed = _preprocess_image(rotated)
         text = pytesseract.image_to_string(processed, lang=lang)
         data = pytesseract.image_to_data(
             processed,
@@ -210,10 +257,18 @@ def _fixed_cell_box(
     )
 
 
+def _fixed_column_box(table_box: tuple[int, int, int, int], column_name: str) -> tuple[int, int, int, int]:
+    left_ratio, right_ratio = FIXED_MENU_COLUMNS[column_name]
+    table_width = table_box[2] - table_box[0]
+    left = table_box[0] + round(table_width * left_ratio)
+    right = table_box[0] + round(table_width * right_ratio)
+    return left, table_box[1], right, table_box[3]
+
+
 def _ocr_fixed_cell(image: Image.Image, lang: str) -> tuple[str, float]:
     cell = ImageOps.grayscale(image)
     cell = cell.resize((max(1, cell.width * 3), max(1, cell.height * 3)), Image.Resampling.LANCZOS)
-    processed = preprocess_image(cell)
+    processed = _preprocess_image(cell)
     config = f"--oem 3 --psm 7 --dpi {FIXED_OCR_DPI}"
     text = pytesseract.image_to_string(processed, lang=lang, config=config)
     data = pytesseract.image_to_data(
@@ -250,7 +305,7 @@ def _heading_matches(text: str, label: str) -> bool:
 def _find_heading_boxes(image: Image.Image) -> dict[str, tuple[int, int, int, int]]:
     """ページ内の3見出し位置だけを探します。食材本文の全文OCRには使いません。"""
 
-    processed = preprocess_image(image)
+    processed = _preprocess_image(image)
     data = pytesseract.image_to_data(
         processed,
         lang="jpn+eng",
@@ -298,7 +353,10 @@ def _fallback_section_area(image: Image.Image, label: str) -> SectionArea:
 
 
 def _section_areas_from_headings(image: Image.Image) -> list[SectionArea]:
-    heading_boxes = _find_heading_boxes(image)
+    try:
+        heading_boxes = _find_heading_boxes(image)
+    except Exception:  # noqa: BLE001 - 見出し検出に失敗しても固定位置の枠は表示します。
+        heading_boxes = {}
     if not heading_boxes:
         return [_fallback_section_area(image, label) for label in SECTION_LABELS]
 
@@ -309,7 +367,7 @@ def _section_areas_from_headings(image: Image.Image) -> list[SectionArea]:
     )
     heading_by_label = dict(sorted_headings)
 
-    for index, label in enumerate(SECTION_LABELS):
+    for label in SECTION_LABELS:
         fallback = _fallback_section_area(image, label)
         heading = heading_by_label.get(label)
         if heading is None:
@@ -341,6 +399,73 @@ def _section_areas_from_headings(image: Image.Image) -> list[SectionArea]:
     return areas
 
 
+def _debug_boxes_for_image(image: Image.Image) -> list[DebugBox]:
+    source = ImageOps.exif_transpose(image).convert("RGB")
+    section_areas = _section_areas_from_headings(source)
+    boxes: list[DebugBox] = []
+    for area in section_areas:
+        boxes.append(DebugBox(section=area.label, kind="section", label=area.label, box=area.box, source=area.source))
+        for column_name in FIXED_MENU_COLUMNS:
+            boxes.append(
+                DebugBox(
+                    section=area.label,
+                    kind="column",
+                    label=DEBUG_COLUMN_LABELS[column_name],
+                    box=_fixed_column_box(area.box, column_name),
+                    source=area.source,
+                )
+            )
+    return boxes
+
+
+def _draw_text_label(draw: ImageDraw.ImageDraw, position: tuple[int, int], text: str, fill: tuple[int, int, int]) -> None:
+    try:
+        font = ImageFont.truetype("DejaVuSans.ttf", 16)
+    except OSError:
+        font = ImageFont.load_default()
+    x, y = position
+    text_box = draw.textbbox((x, y), text, font=font)
+    background = (255, 255, 255)
+    draw.rectangle((text_box[0] - 2, text_box[1] - 2, text_box[2] + 2, text_box[3] + 2), fill=background)
+    draw.text((x, y), text, fill=fill, font=font)
+
+
+def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverlayResult:
+    """OCR前に、固定表のどの範囲を読む予定かを画像へ描画します。"""
+
+    base = ImageOps.exif_transpose(image).convert("RGB")
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    boxes = _debug_boxes_for_image(base)
+
+    for box in boxes:
+        if box.kind != "section":
+            continue
+        color = SECTION_DEBUG_COLORS.get(box.section, (0, 150, 255))
+        overlay_draw.rectangle(box.box, fill=(*color, 35), outline=(*color, 255), width=5)
+
+    annotated = Image.alpha_composite(base.convert("RGBA"), overlay).convert("RGB")
+    draw = ImageDraw.Draw(annotated)
+
+    for box in boxes:
+        if box.kind == "section":
+            color = SECTION_DEBUG_COLORS.get(box.section, (0, 150, 255))
+            draw.rectangle(box.box, outline=color, width=5)
+            _draw_text_label(draw, (box.box[0] + 6, box.box[1] + 6), f"{box.label}（{box.source}）", color)
+        else:
+            draw.rectangle(box.box, outline=(255, 0, 0), width=3)
+            _draw_text_label(draw, (box.box[0] + 4, box.box[1] + 28), box.label, (255, 0, 0))
+
+    return DebugOverlayResult(page_number=page_number, image=annotated, boxes=boxes)
+
+
+def debug_overlays_for_upload(file_name: str, file_bytes: bytes) -> list[DebugOverlayResult]:
+    """アップロードファイルから切り出し枠確認用の画像を作ります。"""
+
+    images = images_from_upload(file_name, file_bytes)
+    return [build_debug_overlay(image, page_number=index + 1) for index, image in enumerate(images)]
+
+
 def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
     """見出しごとのエリア内で、食材名列と3歳未満列だけをOCRします。"""
 
@@ -353,11 +478,11 @@ def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
         table = source.crop(area.box)
         row_ranges = _detect_table_row_ranges(table)
         if not row_ranges:
-            lines.append(f"区分	{area.label}	検出行なし	{area.source}")
+            lines.append(f"区分\t{area.label}\t検出行なし\t{area.source}")
             continue
 
         section_row_count = 0
-        lines.append(f"区分	{area.label}	{area.source}	{len(row_ranges)}行")
+        lines.append(f"区分\t{area.label}\t{area.source}\t{len(row_ranges)}行")
         for top, bottom in row_ranges:
             row_top = area.box[1] + top
             row_bottom = area.box[1] + bottom
@@ -377,11 +502,11 @@ def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
             if food_name:
                 section_row_count += 1
                 lines.append(
-                    f"{FIXED_ROW_MARKER}	{area.label}	{food_name}	{quantity or '数量要確認'}	g"
+                    f"{FIXED_ROW_MARKER}\t{area.label}\t{food_name}\t{quantity or '数量要確認'}\tg"
                 )
 
         if section_row_count == 0:
-            lines.append(f"{FIXED_ROW_MARKER}	{area.label}	食材名要確認	数量要確認	g")
+            lines.append(f"{FIXED_ROW_MARKER}\t{area.label}\t食材名要確認\t数量要確認\tg")
 
     average_confidence = round(sum(confidences) / len(confidences), 1) if confidences else 0.0
     return OCRResult(
