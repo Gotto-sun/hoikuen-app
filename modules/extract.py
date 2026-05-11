@@ -43,8 +43,18 @@ SENTENCE_MARKERS = ["。", "、", "です", "ます", "してください", "た
 NOISE_KANA = {"を", "ゑ", "ゐ"}
 CORRECTIONS = {
     "豚ひき内": "豚ひき肉",
+    "玉ねぎ": "たまねぎ",
+    "玉葱": "たまねぎ",
+    "ジャガイモ": "じゃがいも",
+    "じゃが芋": "じゃがいも",
     "とゃがいも": "じゃがいも",
+    "人参": "にんじん",
     "にんん": "にんじん",
+    "にんヒじん": "にんじん",
+    "カットわかめ": "カットわかめ",
+    "わかめ": "カットわかめ",
+    "牛乳": "牛乳",
+    "ひじき": "ひじき",
     "でちこジャ": "いちごジャム",
     "きゆうり": "きゅうり",
     "せんい": "しょうゆせんべい",
@@ -91,6 +101,10 @@ def _line_exclusion_reason(line: str) -> str:
 
 def _correct_name(name: str) -> str:
     compact = re.sub(r"\s+", "", name)
+    if compact == "乳":
+        return "牛乳"
+    if compact.startswith("ひじ"):
+        return "ひじき"
     for wrong, corrected in CORRECTIONS.items():
         if wrong in compact:
             return corrected
@@ -226,25 +240,33 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
             continue
 
         quantity_text = _normalize_line(fixed_cells[3]).replace(",", "")
-        if not NUMBER_RE.fullmatch(quantity_text):
-            excluded_rows.append(_excluded_row(line_number, line, raw_food_name, "数量がありません"))
-            continue
+        quantity: float | str
+        forced_review_note = ""
+        if NUMBER_RE.fullmatch(quantity_text):
+            quantity = float(quantity_text)
+        else:
+            quantity = "数量要確認"
+            forced_review_note = "数量がありません。食材候補として先に表示します"
 
         unit = _normalize_line(fixed_cells[4])
-        unit_reason = _unit_exclusion_reason(unit)
-        if unit_reason:
-            excluded_rows.append(_excluded_row(line_number, line, raw_food_name, unit_reason))
-            continue
+        if quantity != "数量要確認":
+            unit_reason = _unit_exclusion_reason(unit)
+            if unit_reason:
+                excluded_rows.append(_excluded_row(line_number, line, raw_food_name, unit_reason))
+                continue
+        elif not unit:
+            unit = ""
 
         rows.append(
             _row_from_values(
                 line_number=line_number,
                 line=line,
                 raw_food_name=raw_food_name,
-                quantity=float(quantity_text),
+                quantity=quantity,
                 unit=unit,
                 master=master,
                 ocr_confidence=ocr_confidence,
+                forced_review_note=forced_review_note,
                 section=fixed_cells[1],
             )
         )

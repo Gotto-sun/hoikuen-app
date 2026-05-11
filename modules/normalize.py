@@ -31,8 +31,12 @@ def ensure_food_master(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "正式名称,別名,ロス率,発注単位,仕入先\n"
-        "にんじん,人参;ニンジン;人じん,1.10,kg,青果業者\n"
-        "玉ねぎ,玉葱;タマネギ,1.08,kg,青果業者\n"
+        "にんじん,人参;ニンジン;人じん;にんん;にんヒじん,1.10,kg,青果業者\n"
+        "たまねぎ,玉ねぎ;玉葱;玉ねき;タマネギ;玉ネギ,1.08,kg,青果業者\n"
+        "じゃがいも,じゃが芋;ジャガイモ;とゃがいも;馬鈴薯,1.10,kg,青果業者\n"
+        "カットわかめ,わかめ;若布;カットわかめ;カット若布,1.00,袋,食品業者\n"
+        "ひじき,ひじ;ひじき;ヒジキ,1.00,kg,食品業者\n"
+        "牛乳,乳;ぎゅうにゅう;ミルク,1.00,L,乳製品業者\n"
         "豚ひき肉,豚ひき内;豚ミンチ,1.05,kg,精肉業者\n"
         "いちごジャム,でちこジャ;苺ジャム,1.00,個,食品業者\n",
         encoding="utf-8-sig",
@@ -104,15 +108,22 @@ def normalize_food_name(raw_name: str, master: pd.DataFrame) -> NormalizedFood:
     """食材名をマスタの正式名称に寄せます。"""
 
     cleaned = raw_name.strip()
+    compact = "".join(cleaned.split())
     for _, row in master.iterrows():
-        if cleaned in _candidate_names(row):
+        if cleaned in _candidate_names(row) or compact in _candidate_names(row):
             return _normalized_from_row(row, match_type="完全一致")
+
+    for _, row in master.iterrows():
+        for candidate_name in _candidate_names(row):
+            candidate_compact = "".join(candidate_name.split())
+            if len(candidate_compact) >= 2 and (candidate_compact in compact or compact in candidate_compact):
+                return _normalized_from_row(row, match_type="部分一致")
 
     best_row: pd.Series | None = None
     best_distance: int | None = None
     for _, row in master.iterrows():
         for candidate_name in _candidate_names(row):
-            distance = _levenshtein_distance(cleaned, candidate_name)
+            distance = _levenshtein_distance(compact, "".join(candidate_name.split()))
             max_allowed = min(MAX_LEVENSHTEIN_DISTANCE, max(1, len(candidate_name) // 3))
             if distance > max_allowed:
                 continue
