@@ -364,10 +364,10 @@
     }
 
     .preview-sheet .checker-label-row td {
-      height: 7.714px;
+      height: 18px;
       padding-top: 0;
       padding-bottom: 0;
-      line-height: 1;
+      font-size: 12px;
     }
 
     .preview-sheet .total-row td {
@@ -2199,7 +2199,7 @@
       if (row === 4) return 18;
       if (row === 6) return 20;
       if (row >= layout.detailStart && row <= layout.detailEnd) return 20;
-      if (row === layout.checkerStart) return 54 / 7;
+      if (row === layout.checkerStart) return 18;
       if (row >= layout.totalStart && row <= layout.totalEnd) return 18;
       if (row > layout.totalEnd) return 7;
       return 7;
@@ -2215,12 +2215,17 @@
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
       const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 5 && col <= 8;
       const isTotalAmountCell = row >= layout.totalStart && row <= layout.totalEnd && (col === 7 || col === 8);
+      const isCheckerLabelCell = row === layout.checkerStart && col >= 2 && col <= 3;
+      const isTotalLabelCell = isTotalBox && col <= 6;
+      const bodyFontSize = 8;
+      const summaryLabelFontSize = bodyFontSize;
+      const fontSize = isTitle ? 15 : (isSubTitle ? 9 : bodyFontSize);
 
       return {
         font: {
           name: "Yu Gothic",
-          sz: isTitle ? 15 : (isSubTitle ? 9 : 8),
-          bold: isTitle || isSubTitle || isHeader || isCheckerBox || (isTotalBox && col <= 6)
+          sz: (isCheckerLabelCell || isTotalLabelCell) ? summaryLabelFontSize : fontSize,
+          bold: isTitle || isSubTitle || isHeader || isCheckerBox || isTotalLabelCell
         },
         alignment: {
           horizontal: isTotalAmountCell ? "right" : (isDateLine ? "left" : (isTitle || isSubTitle || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center"))),
