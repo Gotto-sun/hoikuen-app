@@ -425,6 +425,33 @@
       }
     }
 
+    .original-image-preview {
+      display: grid;
+      gap: 14px;
+      margin: 16px 0;
+    }
+
+    .original-image-card {
+      border: 1px solid #d9e2ec;
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .original-image-card strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+
+    .original-image-card img {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fff;
+    }
+
     @media print {
       body {
         background: #fff;
@@ -480,13 +507,14 @@
 
       <h2>1. ファイル読み込み（OCR確認）</h2>
       <div class="pdf-box">
-        <p class="note">ファイルを選ぶと、読み取った全文を必ず下に表示します。材料名・数量・単位を抽出できた時だけExcel出力できます。</p>
+        <p class="note">固定表OCR・切り出し・前処理・二値化・トリミング・表分割は一旦OFFです。原画像を表示し、原画像全体のOCR全文を先に確認します。</p>
         <input id="pdfFile" type="file" accept=".pdf,application/pdf,.png,.jpg,.jpeg,.tif,.tiff,image/tiff,.webp,.bmp,.gif,image/*,.xlsx,.xls,.csv,text/csv,.docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.txt,text/plain" aria-label="読み込みファイル">
         <div id="importProgress" class="import-progress" aria-label="読み込み率" aria-live="polite">
           <div class="progress-track"><div id="importProgressBar" class="progress-bar"></div></div>
           <span id="importProgressPercent" class="progress-percent">0%</span>
         </div>
-        <textarea id="pdfText" class="pdf-textarea" readonly placeholder="抽出テキスト欄：ファイルから読み込んだ文字を必ずここに表示します。"></textarea>
+        <div id="originalImagePreview" class="original-image-preview" aria-label="アップロード原画像プレビュー"></div>
+        <textarea id="pdfText" class="pdf-textarea" readonly placeholder="原画像OCR全文：ファイルから読み込んだ文字を必ずここに表示します。"></textarea>
         <p id="pdfStatus" class="status"></p>
         <label for="ocrLog">ログ</label>
         <textarea id="ocrLog" class="copy-textarea" readonly placeholder="OCR結果・抽出結果・失敗理由をここに表示します。"></textarea>
@@ -501,7 +529,7 @@
       </div>
 
       <h2>2. 自動抽出結果</h2>
-      <p class="note">固定レイアウトの表エリアだけをOCRし、食材名と3歳未満児の数量だけを表示します。</p>
+      <p class="note">現在は固定表OCRを停止中です。原画像OCR全文の確認を優先しています。</p>
 
       <div class="document-fields" aria-label="発注書情報">
         <label for="deliveryDate">納品日</label>
@@ -563,6 +591,7 @@
     const orderTsv = document.getElementById("orderTsv");
     const csvStatus = document.getElementById("csvStatus");
     const ocrLog = document.getElementById("ocrLog");
+    const originalImagePreview = document.getElementById("originalImagePreview");
 
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
     const orderSheetColumns = {
@@ -669,6 +698,7 @@
 
     async function handleFileSelect(file) {
       pdfText.value = "";
+      originalImagePreview.innerHTML = "";
       notice.textContent = "";
       if (!file) {
         pdfStatus.textContent = "ファイルが選ばれていません。";
@@ -683,16 +713,18 @@
         const text = await readFileText(file);
         const extractedText = String(text || "").trim();
         pdfText.value = extractedText || "【読み取り失敗】OCR結果が空です。Excelは作成しません。";
-        logOcrStep("固定表OCR結果", extractedText ? extractedText : "空");
+        logOcrStep("原画像OCR全文", extractedText ? extractedText : "空");
         if (!extractedText) {
           markFileImportFailed("読み取り失敗：OCR結果が空です。Excelは作成しません。", { keepText: true });
           return;
         }
-        updateImportProgress(75, "材料を抽出中です。");
-        const parsedRows = parseIngredients(extractedText);
-        logOcrStep("抽出結果", parsedRows.length ? parsedRows.map(row => row.name + " " + row.quantity + row.unit).join(" / ") : "0件");
-        updateImportProgress(100, "読み込み完了");
-        applyParsedRows(parsedRows, { append: false, statusPrefix: file.name + " の読み込み完了" });
+        rows = [];
+        renderManualTable();
+        renderOrderPreview();
+        updateExcelButtonState();
+        updateImportProgress(100, "原画像OCR全文の確認完了");
+        notice.textContent = "原画像OCR全文を表示しました。固定表OCRと表切り出しは停止中です。";
+        pdfStatus.textContent = "原画像OCR全文を表示しました。";
       } catch (error) {
         const reason = error && error.message ? error.message : String(error || "不明なエラー");
         console.error("file import error", { fileName: file.name, reason });
@@ -724,7 +756,7 @@
         throw new Error("画像OCRライブラリを読み込めませんでした。");
       }
 
-      pdfStatus.textContent = "PDFの固定表エリアをOCR中です。しばらくお待ちください。";
+      pdfStatus.textContent = "PDFを原画像表示用に読み込み、ページ全体をOCR中です。";
       const pdf = await pdfjsLib.getDocument({ data: content }).promise;
       const pages = [];
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
@@ -741,13 +773,17 @@
       canvas.width = Math.ceil(viewport.width);
       canvas.height = Math.ceil(viewport.height);
       await page.render({ canvasContext: context, viewport }).promise;
-      updateImportProgress(Math.min(72, 20 + Math.round((pageNumber / pageCount) * 50)), "PDF固定表OCR中です（" + pageNumber + "/" + pageCount + "ページ）。");
-      const lightCanvas = await createLightweightOcrCanvas(canvas);
-      return withTimeout(extractFixedMenuTableText(lightCanvas, {
+      updateImportProgress(Math.min(72, 20 + Math.round((pageNumber / pageCount) * 50)), "PDF原画像OCR中です（" + pageNumber + "/" + pageCount + "ページ）。");
+      showOcrTargetCanvas(canvas, "PDF原画像 " + pageNumber + "ページ目");
+      logOcrStep("OCR対象画像サイズ", "PDF " + pageNumber + "ページ目: width=" + canvas.width + " height=" + canvas.height);
+      const result = await withTimeout(recognizeBestJapaneseOcr(canvas, {
         baseProgress: 20,
         progressRange: 52,
-        label: "PDF固定表OCR"
+        label: "PDF原画像OCR",
+        detail: pageNumber + "/" + pageCount + "ページ"
       }), ocrTimeoutMs, ocrTimeoutMessage);
+      logOcrStep("PDF原画像OCR全文 " + pageNumber + "ページ目", result.text || "空");
+      return result.text || "";
     }
 
     async function extractTextFromImage(file) {
@@ -756,18 +792,20 @@
       }
       validateImageFileSize(file);
 
-      pdfStatus.textContent = "画像から文字をOCR中です。しばらくお待ちください。";
-      updateImportProgress(20, "画像OCRを開始しました。");
+      pdfStatus.textContent = "アップロード原画像を表示し、画像全体をOCR中です。";
+      updateImportProgress(20, "原画像OCRを開始しました。");
       try {
         const sourceCanvas = await fileToCanvas(file);
-        const lightCanvas = await createLightweightOcrCanvas(sourceCanvas);
-        const tableText = await withTimeout(extractFixedMenuTableText(lightCanvas, {
+        showOcrTargetCanvas(sourceCanvas, "アップロード原画像");
+        logOcrStep("OCR対象画像サイズ", "画像: width=" + sourceCanvas.width + " height=" + sourceCanvas.height);
+        const result = await withTimeout(recognizeBestJapaneseOcr(sourceCanvas, {
           baseProgress: 20,
           progressRange: 75,
-          label: "画像固定表OCR"
+          label: "原画像OCR"
         }), ocrTimeoutMs, ocrTimeoutMessage);
-        updateImportProgress(100, "画像固定表OCR完了");
-        return tableText;
+        updateImportProgress(100, "原画像OCR完了");
+        logOcrStep("原画像OCR全文", result.text || "空");
+        return result.text || "";
       } catch (error) {
         const reason = error && error.message ? error.message : "画像OCRに失敗しました。";
         console.error("image ocr failed", { fileName: file.name, reason });
@@ -778,9 +816,9 @@
 
     function validateImageFileSize(file) {
       if (file.size > maxImageOcrSizeBytes) {
-        console.warn("large image will be processed in lightweight OCR mode", { fileName: file.name, sizeBytes: file.size });
+        console.warn("large image will be processed as raw full-image OCR", { fileName: file.name, sizeBytes: file.size });
       }
-      console.info("image file check", { fileName: file.name, sizeBytes: file.size, type: file.type, lightweightMode: true });
+      console.info("image file check", { fileName: file.name, sizeBytes: file.size, type: file.type, rawFullImageOcr: true, preprocessing: false, binarization: false, trimming: false, tableSplit: false });
     }
 
 
@@ -817,11 +855,13 @@
       const progressRange = Number(options.progressRange) || 60;
       const label = options.label || "画像OCR";
       const detail = options.detail ? "（" + options.detail + "）" : "";
-      const ocrTargets = rotations.flatMap(angle => {
-        const rotatedCanvas = angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle);
-        return createOcrPreprocessCanvases(rotatedCanvas).map(variant => ({ angle, ...variant }));
-      }).slice(0, maxOcrCandidatePatterns);
-      console.info("ocr lightweight mode", { maxSeconds: ocrTimeoutMs / 1000, maxWidth: maxImageOcrDimension, jpegQuality: lightImageJpegQuality, candidatePatterns: ocrTargets.length });
+      const ocrTargets = rotations.map(angle => ({
+        angle,
+        label: "原画像・前処理OFF",
+        canvas: angle === 0 ? sourceCanvas : rotateCanvas(sourceCanvas, angle)
+      }));
+      console.info("raw image ocr mode", { width: sourceCanvas.width, height: sourceCanvas.height, preprocessing: false, binarization: false, trimming: false, tableSplit: false, candidatePatterns: ocrTargets.length });
+      logOcrStep("OCR対象画像サイズ", label + detail + ": width=" + sourceCanvas.width + " height=" + sourceCanvas.height + " / 前処理OFF / 二値化OFF / トリミングOFF / 表分割OFF");
       const results = [];
 
       for (let index = 0; index < ocrTargets.length; index++) {
@@ -1435,6 +1475,20 @@
       context.imageSmoothingEnabled = false;
       context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
       return canvas;
+    }
+
+    function showOcrTargetCanvas(sourceCanvas, label) {
+      const card = document.createElement("div");
+      card.className = "original-image-card";
+      const title = document.createElement("strong");
+      title.textContent = label + "（" + sourceCanvas.width + "x" + sourceCanvas.height + "）";
+      const image = document.createElement("img");
+      image.alt = label;
+      image.src = sourceCanvas.toDataURL("image/png");
+      card.appendChild(title);
+      card.appendChild(image);
+      originalImagePreview.appendChild(card);
+      console.info("ocr target image", { label, width: sourceCanvas.width, height: sourceCanvas.height, preprocessing: false, binarization: false, trimming: false, tableSplit: false });
     }
 
     function extractTextFromWorkbook(content, fileName) {
