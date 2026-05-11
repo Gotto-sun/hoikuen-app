@@ -111,9 +111,9 @@ def _image_blankness_message(image: Image.Image, context: str) -> str:
 
 
 def _preprocess_for_ocr(image: Image.Image, context: str) -> Image.Image:
-    """前処理は一旦OFFにし、RGB化した原画像をOCRへ渡します。"""
+    """前処理・二値化・トリミング・表分割を一旦OFFにし、原画像RGBだけをOCRへ渡します。"""
 
-    processed = _preprocess_image(image)
+    processed = ImageOps.exif_transpose(image).convert("RGB")
     _assert_valid_ocr_image(processed, f"{context}（前処理OFF）")
     _image_blankness_message(processed, f"{context}（前処理OFF）")
     return processed
@@ -267,34 +267,22 @@ def run_paddleocr(image: Image.Image) -> OCRResult:
 
 
 def run_tesseract(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
-    """TesseractでOCRします。
-
-    4方向を試し、平均信頼度が一番高い結果を採用します。
-    """
-
-    best_result = OCRResult(text="", confidence=0.0, engine="Tesseract", rotation=0)
+    """Tesseractで原画像全体をOCRします。回転補正・前処理は一旦OFFです。"""
 
     _assert_valid_ocr_image(image, "Tesseract入力画像")
-
-    for rotation, rotated in _candidate_rotations(image):
-        _assert_valid_ocr_image(rotated, f"Tesseract回転{rotation}度")
-        processed = _preprocess_for_ocr(rotated, f"Tesseract回転{rotation}度")
-        text = pytesseract.image_to_string(processed, lang=lang)
-        data = pytesseract.image_to_data(
-            processed,
-            lang=lang,
-            output_type=pytesseract.Output.DICT,
-        )
-        confidence = _confidence_from_data(data)
-        if confidence > best_result.confidence or (not best_result.text and text.strip()):
-            best_result = OCRResult(
-                text=text.strip(),
-                confidence=confidence,
-                engine="Tesseract",
-                rotation=rotation,
-            )
-
-    return best_result
+    processed = _preprocess_for_ocr(image, "Tesseract原画像全体")
+    text = pytesseract.image_to_string(processed, lang=lang)
+    data = pytesseract.image_to_data(
+        processed,
+        lang=lang,
+        output_type=pytesseract.Output.DICT,
+    )
+    return OCRResult(
+        text=text.strip(),
+        confidence=_confidence_from_data(data),
+        engine="Tesseract原画像全体",
+        rotation=0,
+    )
 
 
 def run_raw_pillow_rgb_ocr(image: Image.Image, lang: str = "jpn+eng", context: str = "原画像そのままOCR") -> OCRResult:
