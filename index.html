@@ -576,6 +576,7 @@
       { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
       { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] }
     ];
+    const priorityFoodPattern = /にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
     const canonicalIngredientPatterns = [
       { label: "しょうせんべい", tests: [/しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい/] },
       { label: "牛乳", tests: [/牛乳|ミルク/] },
@@ -1647,7 +1648,29 @@
       const lines = splitOcrRowsForIngredients(text);
       const extracted = [];
       const seen = new Set();
-      collectUnderThreeRows(lines).forEach(row => addUniqueSourceRow(extracted, seen, row));
+      const candidatesForLog = [];
+      let currentWeekday = "";
+
+      lines.forEach((line, index) => {
+        const detectedWeekday = detectWeekday(line);
+        if (detectedWeekday) currentWeekday = detectedWeekday;
+        if (!isLooseIngredientCandidate(line)) return;
+
+        candidatesForLog.push(line);
+        const numberSource = nearestNumberSource(lines, index);
+        if (!numberSource) return;
+
+        addUniqueSourceRow(extracted, seen, {
+          name: looseIngredientName(line),
+          quantity: numberSource.quantity,
+          unit: numberSource.unit,
+          weekday: detectedWeekday || currentWeekday,
+          sourceLine: line,
+          source: "3歳未満児"
+        });
+      });
+
+      if (!extracted.length && candidatesForLog.length) logOcrStep("食材候補のみ", candidatesForLog.slice(0, 30).join(" / "));
       return extracted;
     }
 
@@ -1659,6 +1682,48 @@
         .split(/\r?\n/)
         .map(line => normalizeOcrLine(line))
         .filter(Boolean);
+    }
+
+    function isLooseIngredientCandidate(line) {
+      const text = normalizeOcrLine(line);
+      const compact = text.replace(/\s/g, "");
+      if (isIgnoredSourceRow(compact) || /^[月火水木金](?:曜日|曜)?$/.test(compact)) return false;
+      if (countJapaneseCharacters(compact) < 2) return false;
+      if (priorityFoodPattern.test(compact)) return true;
+      if (canonicalIngredientPatterns.some(rule => rule.tests.some(pattern => pattern.test(compact)))) return true;
+      return /[ぁ-んァ-ヶ一-龠々]{2,}/.test(compact);
+    }
+
+    function nearestNumberSource(lines, index) {
+      const indexes = [index, index + 1, index - 1, index + 2, index - 2];
+      for (const rowIndex of indexes) {
+        if (rowIndex < 0 || rowIndex >= lines.length) continue;
+        const found = lastQuantityInLine(lines[rowIndex]);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function lastQuantityInLine(line) {
+      const unitPattern = unitNames().map(escapeRegExp).join("|");
+      const regex = new RegExp("(^|[^0-9])([0-9]+(?:\\.[0-9]+)?)(?:\\s*(" + unitPattern + "))?", "gi");
+      const valid = [];
+      let match;
+      while ((match = regex.exec(normalizeOcrLine(line))) !== null) {
+        const quantity = normalizeQuantity(match[2]);
+        const numericQuantity = numberValue(quantity);
+        if (numericQuantity > 0) valid.push({ quantity, unit: normalizeUnit(match[3] || "g") });
+      }
+      return valid.length ? valid[valid.length - 1] : null;
+    }
+
+    function looseIngredientName(line) {
+      const unitPattern = unitNames().map(escapeRegExp).join("|");
+      return cleanIngredientName(normalizeOcrLine(line)
+        .replace(new RegExp("(?:" + unitPattern + ")", "gi"), " ")
+        .replace(/[0-9]+(?:\.[0-9]+)?/g, " ")
+        .replace(/3歳未満児?|３歳未満児?|未満児|乳児|3歳以上児?|３歳以上児?|以上児|幼児|職員|合計|総量|使用量|数量|分量/g, " ")
+        .replace(/日付|曜日|献立日|使用日|単位|食材|食品|材料|品名|食料|料理名/g, " "));
     }
 
     function addUniqueSourceRow(target, seen, row) {
@@ -1729,11 +1794,7 @@
     function chooseUnderThreeQuantityIndex(cells, underThreeColumn) {
       const numericIndexes = cells.map((cell, index) => isNumberCell(cell) ? index : -1).filter(index => index >= 0);
       if (!numericIndexes.length) return -1;
-      if (underThreeColumn >= 0) {
-        const leftOrExact = numericIndexes.filter(index => index <= underThreeColumn);
-        if (leftOrExact.length) return leftOrExact[0];
-      }
-      return numericIndexes[0];
+      return numericIndexes[numericIndexes.length - 1];
     }
 
     function rowHasNumberValue(cells) {
