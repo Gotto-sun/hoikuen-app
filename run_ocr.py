@@ -82,7 +82,7 @@ MAX_FILE_SIZE_BYTES = 60 * 1024 * 1024
 JPEG_QUALITY = 55
 OCR_TIMEOUT_SECONDS = 30
 TESSERACT_CALL_TIMEOUT_SECONDS = 12
-OCR_CANDIDATE_LIMIT = 2
+OCR_CANDIDATE_LIMIT = 4
 TIMEOUT_MESSAGE = "タイムアウト：画像が重すぎるため処理を中断しました"
 
 HEADERS = [
@@ -265,13 +265,16 @@ def otsu_threshold(gray: Image.Image) -> Image.Image:
 
 def pil_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
     trimmed = trim_margin(image)
+    normal = trimmed.convert("RGB")
     gray = ImageOps.grayscale(trimmed)
-    contrast = ImageEnhance.Contrast(ImageEnhance.Brightness(gray).enhance(1.08)).enhance(1.35)
-    variants = [
-        ("軽量JPEG+通常向き", gray),
-        ("軽量JPEG+濃淡補正", contrast),
-    ]
-    return variants[:OCR_CANDIDATE_LIMIT]
+    binary = otsu_threshold(gray)
+    contrast = ImageEnhance.Contrast(ImageEnhance.Brightness(gray).enhance(1.08)).enhance(1.55)
+    return [
+        ("通常画像", normal),
+        ("グレースケール", gray),
+        ("二値化", binary),
+        ("コントラスト強化", contrast),
+    ][:OCR_CANDIDATE_LIMIT]
 
 def opencv_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
     cv2 = optional_module("cv2")
@@ -456,20 +459,25 @@ def run_tesseract_data(pytesseract: Any, image: Image.Image, lang: str, config: 
         logging.info("Tesseract失敗 lang=%s config=%s: %s", lang, config, exc)
         return None
 
-def best_tesseract_orientation(source: Image.Image) -> OcrCandidate:
+def best_tesseract_orientation(source: Image.Image) -> tuple[OcrCandidate, list[OcrCandidate]]:
     best = OcrCandidate("Tesseract", notes=[])
+    candidates: list[OcrCandidate] = []
     pattern_count = 0
     for angle in ORIENTATIONS:
         rotated = source.rotate(angle, expand=True)
         for method, processed in pil_preprocess_variants(rotated):
             if pattern_count >= OCR_CANDIDATE_LIMIT:
                 logging.info("OCR候補上限に到達: limit=%s", OCR_CANDIDATE_LIMIT)
-                return best
+                return best, candidates
             pattern_count += 1
             candidate = tesseract_candidate(processed, angle, method)
+            candidates.append(candidate)
+            logging.info("OCR候補結果: method=%s angle=%s text_length=%s confidence=%.1f", method, angle, len(candidate.text.strip()), candidate.confidence)
+            if pattern_count == 1 and not candidate.text.strip():
+                logging.info("1回目OCR結果が空のため、別パターンで再OCRします")
             if candidate.score > best.score:
                 best = candidate
-    return best
+    return best, candidates
 
 def easyocr_candidate(image: Image.Image, angle: int, method: str) -> OcrCandidate | None:
     easyocr = optional_module("easyocr")
@@ -509,8 +517,9 @@ def paddleocr_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
     return OcrCandidate("PaddleOCR", "\n".join(texts), statistics.mean(confidences) if confidences else 0.0, angle, method, image)
 
 def collect_candidates(source: Image.Image) -> tuple[OcrCandidate, list[OcrCandidate]]:
-    tesseract = best_tesseract_orientation(source)
-    candidates = [tesseract]
+    best, candidates = best_tesseract_orientation(source)
+    if not candidates:
+        candidates = [best]
     best = max(candidates, key=lambda item: item.score)
     return best, candidates
 
@@ -1057,9 +1066,12 @@ def process_image_inner(path: Path) -> list[Any]:
     source = load_image(path)
     best, candidates = collect_candidates(source)
     raw_text = best.text.strip()
+    logging.info("OCR全文: %s\n%s", path, raw_text if raw_text else "空")
+    print(f"OCR全文 ({path.name}):")
+    print(raw_text if raw_text else "空")
     if not raw_text:
         logging.error("読み取り失敗: %s OCR結果が空", path)
-        raise ValueError("OCR結果が空です。Excelは作成しません")
+        return row_for_error(path, "OCR結果が空です。Excelは作成しません")
     ingredient_rows = build_order_rows(extract_ingredient_rows(raw_text))
     fields = extract_fields(raw_text)
     reasons = confirmation_reasons(best, candidates, fields)
