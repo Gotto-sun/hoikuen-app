@@ -6,8 +6,16 @@ output/*
 !output/processed_images/
 output/processed_images/*
 !output/processed_images/.gitkeep
+!output/generated_orders/
+output/generated_orders/*
+!output/generated_orders/.gitkeep
 
 __pycache__/
 *.py[cod]
+.env
 .venv/
 venv/
+uploads/*
+!uploads/.gitkeep
+temp/*
+!temp/.gitkeep
