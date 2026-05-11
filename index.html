@@ -501,7 +501,7 @@
       </div>
 
       <h2>2. 自動抽出結果</h2>
-      <p class="note">OCR全文から抽出できた材料名・数量・単位だけを表示します。抽出できない場合、Excelは作成しません。</p>
+      <p class="note">固定レイアウトの表エリアだけをOCRし、食材名と3歳未満児の数量だけを表示します。</p>
 
       <div class="document-fields" aria-label="発注書情報">
         <label for="deliveryDate">納品日</label>
@@ -594,7 +594,7 @@
       { label: "いちごジャム", tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] },
       { label: "コンソメ", tests: [/コンソメ|ョヨンツメ/] }
     ];
-    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
+    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
     const recipeInstructionPattern = /(作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 800;
@@ -666,7 +666,7 @@
         const text = await readFileText(file);
         const extractedText = String(text || "").trim();
         pdfText.value = extractedText || "【読み取り失敗】OCR結果が空です。Excelは作成しません。";
-        logOcrStep("OCR結果", extractedText ? extractedText : "空");
+        logOcrStep("固定表OCR結果", extractedText ? extractedText : "空");
         if (!extractedText) {
           markFileImportFailed("読み取り失敗：OCR結果が空です。Excelは作成しません。", { keepText: true });
           return;
@@ -703,21 +703,18 @@
       if (!isPdfReady()) {
         throw new Error("PDF読み込みライブラリを読み込めませんでした。");
       }
+      if (!isTesseractReady()) {
+        throw new Error("画像OCRライブラリを読み込めませんでした。");
+      }
 
-      pdfStatus.textContent = "PDFからテキストを抽出中です。しばらくお待ちください。";
+      pdfStatus.textContent = "PDFの固定表エリアをOCR中です。しばらくお待ちください。";
       const pdf = await pdfjsLib.getDocument({ data: content }).promise;
       const pages = [];
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-        updateImportProgress(Math.min(70, 10 + Math.round((pageNumber / pdf.numPages) * 55)), "PDF " + pageNumber + "/" + pdf.numPages + "ページを読み込み中です。");
         const page = await pdf.getPage(pageNumber);
-        const pageContent = await page.getTextContent();
-        let pageText = getPageTextLines(pageContent.items);
-        if (!pageText && isTesseractReady()) {
-          pageText = await extractTextFromPdfPageImage(page, pageNumber, pdf.numPages);
-        }
-        pages.push("【" + pageNumber + "ページ】\n" + (pageText || ""));
+        pages.push(await extractTextFromPdfPageImage(page, pageNumber, pdf.numPages));
       }
-      return pages.join("\n\n").trim();
+      return pages.join("\n").trim();
     }
 
     async function extractTextFromPdfPageImage(page, pageNumber, pageCount) {
@@ -727,15 +724,13 @@
       canvas.width = Math.ceil(viewport.width);
       canvas.height = Math.ceil(viewport.height);
       await page.render({ canvasContext: context, viewport }).promise;
-      updateImportProgress(Math.min(72, 20 + Math.round((pageNumber / pageCount) * 50)), "PDF画像をOCR中です（" + pageNumber + "/" + pageCount + "ページ）。");
+      updateImportProgress(Math.min(72, 20 + Math.round((pageNumber / pageCount) * 50)), "PDF固定表OCR中です（" + pageNumber + "/" + pageCount + "ページ）。");
       const lightCanvas = await createLightweightOcrCanvas(canvas);
-      const ocrResult = await withTimeout(recognizeBestJapaneseOcr(lightCanvas, {
+      return withTimeout(extractFixedMenuTableText(lightCanvas, {
         baseProgress: 20,
         progressRange: 52,
-        label: "PDF画像OCR",
-        detail: "軽量モード " + pageNumber + "/" + pageCount + "ページ"
+        label: "PDF固定表OCR"
       }), ocrTimeoutMs, ocrTimeoutMessage);
-      return ocrResult.text;
     }
 
     async function extractTextFromImage(file) {
@@ -749,14 +744,13 @@
       try {
         const sourceCanvas = await fileToCanvas(file);
         const lightCanvas = await createLightweightOcrCanvas(sourceCanvas);
-        const ocrResult = await withTimeout(recognizeBestJapaneseOcr(lightCanvas, {
+        const tableText = await withTimeout(extractFixedMenuTableText(lightCanvas, {
           baseProgress: 20,
           progressRange: 75,
-          label: "画像OCR",
-          detail: "軽量モード"
+          label: "画像固定表OCR"
         }), ocrTimeoutMs, ocrTimeoutMessage);
-        updateImportProgress(100, "画像OCR完了");
-        return ocrResult.text;
+        updateImportProgress(100, "画像固定表OCR完了");
+        return tableText;
       } catch (error) {
         const reason = error && error.message ? error.message : "画像OCRに失敗しました。";
         console.error("image ocr failed", { fileName: file.name, reason });
@@ -837,13 +831,138 @@
 
       const best = results.slice().sort((a, b) => b.score - a.score || b.japaneseCount - a.japaneseCount || b.digitCount - a.digitCount || a.angle - b.angle)[0] || { angle: 0, variant: "", text: "", score: 0, japaneseCount: 0, digitCount: 0, garbled: true };
       updateImportProgress(100, best.text
-        ? label + "完了。" + best.angle + "度（" + best.variant + "）のOCR全文を表示してから抽出します。"
-        : label + "完了。OCR全文が空です。");
+        ? label + "完了。" + best.angle + "度（" + best.variant + "）のOCR結果を表示してから抽出します。"
+        : label + "完了。OCR結果が空です。");
       return best;
     }
 
 
-    async function recognizeWithManagedTesseract(canvas, logger, timeoutMs, timeoutMessage) {
+    const fixedMenuTableAreas = [
+      { label: "午前おやつ", x: 0.04, y: 0.18, width: 0.92, height: 0.16 },
+      { label: "昼食", x: 0.04, y: 0.34, width: 0.92, height: 0.36 },
+      { label: "午後おやつ", x: 0.04, y: 0.70, width: 0.92, height: 0.18 }
+    ];
+    const fixedMenuRowMarker = "固定表行";
+
+    async function extractFixedMenuTableText(sourceCanvas, options = {}) {
+      const rows = [];
+      const baseProgress = Number(options.baseProgress) || 0;
+      const progressRange = Number(options.progressRange) || 70;
+      const label = options.label || "固定表OCR";
+      const rowTargets = fixedMenuTableAreas.flatMap(area => fixedMenuRowsFromArea(sourceCanvas, area));
+      console.info("fixed layout table ocr", { areas: fixedMenuTableAreas.length, rows: rowTargets.length, width: sourceCanvas.width, height: sourceCanvas.height });
+
+      for (let index = 0; index < rowTargets.length; index++) {
+        const row = rowTargets[index];
+        const startProgress = baseProgress + Math.round((index / Math.max(1, rowTargets.length)) * progressRange);
+        updateImportProgress(startProgress, label + "中です（" + row.areaLabel + " " + (index + 1) + "/" + rowTargets.length + "行）。");
+        const nameText = await recognizeSingleFixedCell(row.nameCanvas, label + " 食材名");
+        const quantityText = await recognizeSingleFixedCell(row.underThreeCanvas, label + " 3歳未満量", "eng");
+        const name = cleanIngredientName(nameText);
+        const quantity = normalizeQuantity(quantityText).replace(/,/g, "");
+        if (name && isNumericCell(quantity) && !isExcludedIngredient(name) && !isSuspiciousIngredientName(name)) {
+          rows.push([fixedMenuRowMarker, row.areaLabel, name, quantity, "g"].join("\t"));
+        }
+      }
+
+      updateImportProgress(baseProgress + progressRange, label + "完了。固定表から" + rows.length + "行抽出しました。");
+      return rows.join("\n");
+    }
+
+    async function recognizeSingleFixedCell(canvas, label, lang = "jpn+eng") {
+      if (!canvas || canvas.width < 2 || canvas.height < 2) return "";
+      const enlarged = enlargeCellCanvas(canvas, 2.2);
+      const result = await recognizeWithManagedTesseract(enlarged, null, ocrTargetTimeoutMs, ocrTimeoutMessage, lang, "--psm 7");
+      return result && result.data ? normalizeOcrLine(result.data.text || "") : "";
+    }
+
+    function fixedMenuRowsFromArea(sourceCanvas, area) {
+      const box = ratioBox(sourceCanvas, area);
+      const tableCanvas = cropCanvas(sourceCanvas, box.x, box.y, box.width, box.height);
+      const rowRanges = detectTableRowRanges(tableCanvas);
+      return rowRanges.map(range => {
+        const y = box.y + range.top;
+        const height = Math.max(2, range.bottom - range.top);
+        const nameX = box.x + Math.round(box.width * 0.02);
+        const nameW = Math.round(box.width * 0.48);
+        const numbersX = box.x + Math.round(box.width * 0.52);
+        const numberW = Math.round(box.width * 0.12);
+        return {
+          areaLabel: area.label,
+          nameCanvas: cropCanvas(sourceCanvas, nameX, y, nameW, height),
+          underThreeCanvas: cropCanvas(sourceCanvas, numbersX + numberW * 2, y, numberW, height)
+        };
+      });
+    }
+
+    function ratioBox(canvas, area) {
+      return {
+        x: Math.round(canvas.width * area.x),
+        y: Math.round(canvas.height * area.y),
+        width: Math.round(canvas.width * area.width),
+        height: Math.round(canvas.height * area.height)
+      };
+    }
+
+    function detectTableRowRanges(tableCanvas) {
+      const context = tableCanvas.getContext("2d", { willReadFrequently: true });
+      const imageData = context.getImageData(0, 0, tableCanvas.width, tableCanvas.height).data;
+      const lineYs = [];
+      for (let y = 0; y < tableCanvas.height; y++) {
+        let dark = 0;
+        for (let x = 0; x < tableCanvas.width; x++) {
+          const offset = (y * tableCanvas.width + x) * 4;
+          const brightness = (imageData[offset] + imageData[offset + 1] + imageData[offset + 2]) / 3;
+          if (brightness < 105) dark++;
+        }
+        if (dark / Math.max(1, tableCanvas.width) > 0.32) lineYs.push(y);
+      }
+      const grouped = groupLinePositions(lineYs);
+      const ranges = [];
+      for (let index = 0; index < grouped.length - 1; index++) {
+        const top = grouped[index] + 2;
+        const bottom = grouped[index + 1] - 2;
+        if (bottom - top >= Math.max(10, tableCanvas.height * 0.035)) ranges.push({ top, bottom });
+      }
+      if (ranges.length) return ranges;
+      const fallbackCount = Math.max(1, Math.round(tableCanvas.height / 38));
+      return Array.from({ length: fallbackCount }, (_, index) => ({
+        top: Math.round((tableCanvas.height * index) / fallbackCount),
+        bottom: Math.round((tableCanvas.height * (index + 1)) / fallbackCount)
+      }));
+    }
+
+    function groupLinePositions(values) {
+      const groups = [];
+      values.forEach(value => {
+        const last = groups[groups.length - 1];
+        if (!last || value - last[last.length - 1] > 2) groups.push([value]);
+        else last.push(value);
+      });
+      return groups.map(group => Math.round(group.reduce((sum, value) => sum + value, 0) / group.length));
+    }
+
+    function cropCanvas(sourceCanvas, x, y, width, height) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width));
+      canvas.height = Math.max(1, Math.round(height));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(sourceCanvas, Math.max(0, Math.round(x)), Math.max(0, Math.round(y)), canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+      return grayscaleCanvas(canvas);
+    }
+
+    function enlargeCellCanvas(sourceCanvas, scale) {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+      canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.imageSmoothingEnabled = true;
+      context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    }
+
+
+    async function recognizeWithManagedTesseract(canvas, logger, timeoutMs, timeoutMessage, lang = "jpn+eng", config = "--psm 6") {
       let worker = null;
       let timedOut = false;
       let timerId = null;
@@ -870,7 +989,7 @@
       const ocrPromise = (async () => {
         try {
           if (typeof Tesseract.createWorker === "function") {
-            worker = await Tesseract.createWorker("jpn+eng", 1, {
+            worker = await Tesseract.createWorker(lang, 1, {
               langPath: "https://tessdata.projectnaptha.com/4.0.0",
               logger
             });
@@ -879,17 +998,17 @@
               throw new Error(timeoutMessage);
             }
             await worker.setParameters({
-              tessedit_pageseg_mode: "6",
+              tessedit_pageseg_mode: String(config).includes("--psm 7") ? "7" : "6",
               preserve_interword_spaces: "1",
               user_defined_dpi: "300",
               textord_heavy_nr: "1"
             });
             return await worker.recognize(canvas);
           }
-          return await Tesseract.recognize(canvas, "jpn+eng", {
+          return await Tesseract.recognize(canvas, lang, {
             langPath: "https://tessdata.projectnaptha.com/4.0.0",
             logger,
-            tessedit_pageseg_mode: "6",
+            tessedit_pageseg_mode: String(config).includes("--psm 7") ? "7" : "6",
             preserve_interword_spaces: "1",
             user_defined_dpi: "300",
             textord_heavy_nr: "1"
@@ -1605,12 +1724,31 @@
     }
 
     function parseIngredients(text) {
-      const sourceRows = extractUnderThreeSourceRows(text);
+      const sourceRows = extractFixedMenuSourceRows(text);
       const pendingRows = sourceRows
         .filter(row => row.quantity === "数量要確認")
-        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "", source: row.source || "OCR" }));
-      return mapMenuRowsToOrderRows(sourceRows, "OCR").concat(pendingRows);
+        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "", source: row.source || "固定表OCR" }));
+      return mapMenuRowsToOrderRows(sourceRows, "固定表OCR").concat(pendingRows);
     }
+
+    function extractFixedMenuSourceRows(text) {
+      const seen = new Set();
+      const rows = [];
+      String(text || "").split(/\r?\n/).forEach(line => {
+        const cells = line.split("\t").map(cell => cell.trim());
+        if (cells[0] !== fixedMenuRowMarker || cells.length < 5) return;
+        addUniqueSourceRow(rows, seen, {
+          name: cells[2],
+          quantity: cells[3],
+          unit: cells[4] || "g",
+          weekday: "月",
+          sourceLine: line,
+          source: "固定表OCR"
+        });
+      });
+      return rows;
+    }
+
 
     function applyParsedRows(parsedRows, options = {}) {
       const append = options.append !== false;
