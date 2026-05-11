@@ -688,9 +688,6 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
     if meal_rows or any(is_meal_section_heading(line) for line in lines):
         return meal_rows
 
-    quantity = r"([0-9０-９]+(?:[.,．][0-9０-９]+)?)"
-    unit_pattern = r"(" + UNIT_PATTERN + r")"
-    marker = r"(?:3歳未満児?|３歳未満児?|未満児|乳児)"
     current_weekday = ""
     table_columns: dict[str, int] | None = None
     for raw_line in lines:
@@ -713,22 +710,6 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
                 current_weekday = table_weekday
             if add_row_from_detected_columns(rows, seen, cells, table_columns, table_weekday or weekday or current_weekday):
                 continue
-        marker_row = parse_marker_numeric_row(line)
-        if marker_row:
-            add_ingredient_row(rows, seen, marker_row["name"], marker_row["quantity"], marker_row["unit"], weekday or current_weekday)
-            continue
-        under_three_match = re.search(r"^(.{1,80}?)" + marker + r".*?" + quantity + r"\s*" + unit_pattern, line, re.IGNORECASE)
-        if under_three_match:
-            add_ingredient_row(rows, seen, strip_non_ingredient_prefix(under_three_match.group(1)), under_three_match.group(2), under_three_match.group(3), weekday or current_weekday)
-            continue
-        if len(cells) >= 4 and any(re.search(marker, cell, re.IGNORECASE) for cell in cells):
-            for index, cell in enumerate(cells):
-                if re.search(marker, cell, re.IGNORECASE):
-                    name = cells[index - 1] if index > 0 else cells[0]
-                    value = cells[index + 1] if index + 1 < len(cells) else ""
-                    unit = cells[index + 2] if index + 2 < len(cells) else "g"
-                    if re.fullmatch(quantity, value) and re.search(unit_pattern, unit, re.IGNORECASE):
-                        add_ingredient_row(rows, seen, name, value, unit, weekday or detect_weekday(" ".join(cells)) or current_weekday)
     return rows
 
 
@@ -767,8 +748,6 @@ def collect_meal_section_rows(lines: list[str]) -> list[IngredientRow]:
             table_weekday = detect_weekday(cells[table_columns.get("day", -1)]) if 0 <= table_columns.get("day", -1) < len(cells) else ""
             add_row_from_detected_columns(rows, seen, cells, table_columns, table_weekday or weekday or current_weekday)
             continue
-
-        add_row_from_simple_meal_table(rows, seen, cells, weekday or current_weekday)
     return rows
 
 
@@ -780,17 +759,6 @@ def is_meal_section_stop(value: str) -> bool:
     text = re.sub(r"\s+", "", str(value or ""))
     return bool(MEAL_SECTION_STOP_PATTERN.search(text)) and not is_meal_section_heading(text)
 
-
-def add_row_from_simple_meal_table(rows: list[IngredientRow], seen: set[str], cells: list[str], weekday: str) -> bool:
-    for index in range(0, max(0, len(cells) - 2)):
-        name = cells[index]
-        value = cells[index + 1]
-        unit = cells[index + 2]
-        if re.fullmatch(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?", value) and re.search(r"^(?:" + UNIT_PATTERN + r")$", unit, re.IGNORECASE) and not is_meal_section_heading(name):
-            before = len(rows)
-            add_ingredient_row(rows, seen, name, value, unit, weekday)
-            return len(rows) > before
-    return False
 
 
 def split_ocr_rows_for_ingredients(text: str) -> list[str]:
@@ -822,70 +790,21 @@ def add_row_from_detected_columns(rows: list[IngredientRow], seen: set[str], cel
     name_index = columns.get("name", 0)
     quantity_index = columns.get("quantity", -1)
     unit_index = columns.get("unit", -1)
-    if not (0 <= name_index < len(cells)):
+    if not (0 <= name_index < len(cells)) or name_index >= quantity_index:
+        return False
+    day_index = columns.get("day", -1)
+    if 0 <= day_index < len(cells) and cells[day_index].strip() and not detect_weekday(cells[day_index]):
         return False
     value = cells[quantity_index] if 0 <= quantity_index < len(cells) else ""
     unit = cells[unit_index] if 0 <= unit_index < len(cells) else guess_unit_near_quantity(cells, quantity_index)
+    name = cells[name_index]
+    if SENTENCE_NOISE_PATTERN.search(name) or IGNORED_LINE_PATTERN.search(name) or is_meal_section_heading(name) or is_meal_section_stop(name):
+        return False
     if re.fullmatch(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?", value) and re.search(r"^(?:" + UNIT_PATTERN + r")$", unit, re.IGNORECASE):
-        add_ingredient_row(rows, seen, cells[name_index], value, unit, weekday)
-        return True
-    marker_parse = parse_marker_numeric_row("\t".join(cells), preferred_numeric_index=quantity_index, preferred_numeric_value=(cells[quantity_index] if 0 <= quantity_index < len(cells) else ""))
-    if marker_parse:
-        add_ingredient_row(rows, seen, cells[name_index] or marker_parse["name"], marker_parse["quantity"], marker_parse["unit"], weekday)
-        return True
+        before = len(rows)
+        add_ingredient_row(rows, seen, name, value, unit, weekday)
+        return len(rows) > before
     return False
-
-
-def parse_marker_numeric_row(line: str, preferred_numeric_index: int | None = None, preferred_numeric_value: str = "") -> dict[str, str] | None:
-    normalized = re.sub(r"^[0-9０-９]+[.)）．、\s]+", "", normalize_ocr_line(line))
-    if not normalized or SENTENCE_NOISE_PATTERN.search(normalized) or IGNORED_LINE_PATTERN.search(normalized):
-        return None
-    token_pattern = re.compile(r"(?P<number>[0-9０-９]+(?:[.,．][0-9０-９]+)?)(?:\s*(?P<unit>" + UNIT_PATTERN + r"))?", re.IGNORECASE)
-    matches = list(token_pattern.finditer(normalized))
-    if len(matches) < 2:
-        return None
-    first_number = matches[0]
-    name = clean_ingredient_name(normalized[: first_number.start()])
-    if not name:
-        return None
-    numeric_values: list[tuple[int, str, str, bool]] = []
-    row_unit = ""
-    for position, match in enumerate(matches):
-        value = normalize_value(match.group("number")).replace(",", "")
-        unit = normalize_unit(match.group("unit") or "")
-        if unit and not row_unit:
-            row_unit = unit
-        try:
-            numeric = float(value)
-        except ValueError:
-            continue
-        if numeric <= 0:
-            continue
-        numeric_values.append((position, value, unit or row_unit or "g", bool(unit)))
-    if not numeric_values:
-        return None
-    preferred_value = normalize_value(preferred_numeric_value).replace(",", "") if preferred_numeric_value else ""
-    if preferred_value:
-        for _position, value, unit, _has_unit in numeric_values:
-            if value == preferred_value:
-                return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
-    if preferred_numeric_index is not None and preferred_numeric_index >= 0:
-        numeric_position = preferred_numeric_index - 1 if re.search(r"^.*?" + UNIT_PATTERN + r"$", normalized[: matches[0].end()], re.IGNORECASE) else preferred_numeric_index
-        for position, value, unit, _has_unit in numeric_values:
-            if position == numeric_position:
-                return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
-    # マーカー部では「0g 20.0 14.0 24.0」のように、単位付き0の直後が3歳未満量になりやすい。
-    for index, (position, value, unit, _has_unit) in enumerate(numeric_values):
-        original_match = matches[position]
-        previous_has_unit = position > 0 and bool(matches[position - 1].group("unit"))
-        previous_is_zero = position > 0 and float(normalize_value(matches[position - 1].group("number")).replace(",", "")) == 0
-        if previous_has_unit and previous_is_zero:
-            return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
-        if not original_match.group("unit"):
-            return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
-    position, value, unit, _has_unit = numeric_values[0]
-    return {"name": name, "quantity": value, "unit": unit or row_unit or "g"}
-
 
 def detect_under_three_table_columns(cells: list[str]) -> dict[str, int] | None:
     if len(cells) < 2 or not any(re.search(r"3歳未満|３歳未満|未満児|乳児", cell) for cell in cells):
@@ -894,7 +813,9 @@ def detect_under_three_table_columns(cells: list[str]) -> dict[str, int] | None:
     quantity_index = next((index for index, cell in enumerate(normalized) if re.search(r"(3歳未満|３歳未満|未満児|乳児)", cell) and not re.search(r"人数|対象|区分|年齢", cell)), -1)
     if quantity_index < 0:
         return None
-    name_index = next((index for index, cell in enumerate(normalized) if re.search(r"食材|食品|材料|品名|食料", cell)), 0)
+    name_index = next((index for index, cell in enumerate(normalized) if re.search(r"食材|食品|材料|品名|食料", cell)), 0 if quantity_index > 0 else -1)
+    if name_index < 0 or name_index >= quantity_index:
+        return None
     unit_index = next((index for index, cell in enumerate(normalized) if index > name_index and re.search(r"単位", cell)), -1)
     if unit_index < 0 and quantity_index + 1 < len(cells) and re.search(r"単位", normalized[quantity_index + 1]):
         unit_index = quantity_index + 1
