@@ -1664,14 +1664,13 @@
         candidatesForLog.push(line);
         const correctedName = correctedIngredientFromText(line);
         const name = correctedName || looseIngredientName(line);
-        const numberSource = lastQuantityInLine(line);
-        const hasWeekday = Boolean(detectedWeekday || currentWeekday);
+        const numberSource = underThreeQuantityNearIngredient(lines, index);
 
-        if ((numberSource && hasWeekday) || correctedName) {
+        if (numberSource || correctedName) {
           addUniqueSourceRow(extracted, seen, {
             name,
-            quantity: numberSource && hasWeekday ? numberSource.quantity : "数量要確認",
-            unit: numberSource && hasWeekday ? numberSource.unit : "要確認",
+            quantity: numberSource ? numberSource.quantity : "数量要確認",
+            unit: numberSource ? numberSource.unit : "要確認",
             weekday: detectedWeekday || currentWeekday,
             sourceLine: line,
             source: "3歳未満児"
@@ -1709,6 +1708,21 @@
         if (rowIndex < 0 || rowIndex >= lines.length) continue;
         const found = lastQuantityInLine(lines[rowIndex]);
         if (found) return found;
+      }
+      return null;
+    }
+
+    function underThreeQuantityNearIngredient(lines, index) {
+      for (const rowIndex of [index, index + 1]) {
+        if (rowIndex < 0 || rowIndex >= lines.length) continue;
+        const cells = splitIngredientCells(lines[rowIndex]);
+        const quantityIndex = chooseUnderThreeQuantityIndex(cells, findUnderThreeColumn(cells));
+        if (quantityIndex >= 0 && isNumericCell(cells[quantityIndex])) {
+          return {
+            quantity: normalizeQuantity(cells[quantityIndex]).replace(/,/g, ""),
+            unit: guessUnitNearQuantity(cells, quantityIndex)
+          };
+        }
       }
       return null;
     }
@@ -1751,7 +1765,7 @@
         target.push({ name: cleanName, quantity: "数量要確認", unit: "要確認", weekday, source: row.source || "3歳未満児" });
         return;
       }
-      if (!isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0 || !peopleForWeekday(weekday)) return;
+      if (!isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0) return;
       const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
       if (seen.has(key)) return;
       seen.add(key);
@@ -1813,7 +1827,13 @@
     function chooseUnderThreeQuantityIndex(cells, underThreeColumn) {
       const numericIndexes = cells.map((cell, index) => isNumberCell(cell) ? index : -1).filter(index => index >= 0);
       if (!numericIndexes.length) return -1;
-      return numericIndexes[numericIndexes.length - 1];
+      if (underThreeColumn >= 0) {
+        const rightSide = numericIndexes.find(index => index >= underThreeColumn);
+        if (rightSide !== undefined) return rightSide;
+      }
+      if (numericIndexes.length >= 4) return numericIndexes[2];
+      if (numericIndexes.length >= 2) return numericIndexes[1];
+      return numericIndexes[0];
     }
 
     function rowHasNumberValue(cells) {

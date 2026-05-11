@@ -682,8 +682,8 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
         candidates_for_log.append(line)
         name = loose_ingredient_name(line)
         corrected_name = corrected_ingredient_from_text(line)
-        number_source = last_quantity_in_line(line)
-        if number_source and (weekday or current_weekday):
+        number_source = under_three_quantity_near_ingredient(lines, index)
+        if number_source:
             quantity, unit = number_source
             add_ingredient_row(rows, seen, corrected_name or name, quantity, unit, weekday or current_weekday)
         elif corrected_name:
@@ -718,6 +718,17 @@ def nearest_number_source(lines: list[str], index: int) -> tuple[str, str] | Non
             found = last_quantity_in_line(lines[row_index])
             if found:
                 return found
+    return None
+
+
+def under_three_quantity_near_ingredient(lines: list[str], index: int) -> tuple[str, str] | None:
+    for row_index in (index, index + 1):
+        if 0 <= row_index < len(lines):
+            cells = split_ocr_cells(lines[row_index])
+            quantity_index = choose_under_three_quantity_index(cells, find_under_three_column(cells))
+            if quantity_index >= 0 and is_numeric_cell(cells[quantity_index]):
+                quantity = normalize_value(cells[quantity_index]).replace(",", "")
+                return quantity, guess_unit_near_quantity(cells, quantity_index)
     return None
 
 
@@ -793,7 +804,15 @@ def choose_under_three_quantity_index(cells: list[str], under_three_column: int)
     numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
     if not numeric_indexes:
         return -1
-    return numeric_indexes[-1]
+    if under_three_column >= 0:
+        right_side = [index for index in numeric_indexes if index >= under_three_column]
+        if right_side:
+            return right_side[0]
+    if len(numeric_indexes) >= 4:
+        return numeric_indexes[2]
+    if len(numeric_indexes) >= 2:
+        return numeric_indexes[1]
+    return numeric_indexes[0]
 
 
 def row_has_number_value(cells: list[str]) -> bool:
