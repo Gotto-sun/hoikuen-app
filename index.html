@@ -860,41 +860,50 @@
       { label: "午後おやつ", x: 0.04, y: 0.70, width: 0.92, height: 0.18 }
     ];
     const fixedMenuColumns = {
-      foodName: [0.00, 0.30],
-      total: [0.30, 0.48],
-      overThree: [0.48, 0.64],
-      underThree: [0.64, 0.80],
-      staff: [0.80, 1.00]
+      foodName: [0.00, 0.40],
+      total: [0.40, 0.55],
+      overThree: [0.55, 0.70],
+      underThree: [0.70, 0.85],
+      staff: [0.85, 1.00]
     };
     const fixedMenuRowMarker = "固定表行";
 
     async function extractFixedMenuTableText(sourceCanvas, options = {}) {
       const rows = [];
-      const reviewRows = [];
       const baseProgress = Number(options.baseProgress) || 0;
       const progressRange = Number(options.progressRange) || 70;
       const label = options.label || "固定表OCR";
       const rowTargets = fixedMenuTableAreas.flatMap(area => fixedMenuRowsFromArea(sourceCanvas, area));
       console.info("fixed layout table ocr", { areas: fixedMenuTableAreas.length, rows: rowTargets.length, width: sourceCanvas.width, height: sourceCanvas.height });
 
+      let currentAreaLabel = "";
+      let inRecipeBlock = false;
       for (let index = 0; index < rowTargets.length; index++) {
         const row = rowTargets[index];
+        if (row.areaLabel !== currentAreaLabel) {
+          currentAreaLabel = row.areaLabel;
+          inRecipeBlock = false;
+        }
         const startProgress = baseProgress + Math.round((index / Math.max(1, rowTargets.length)) * progressRange);
         updateImportProgress(startProgress, label + "中です（" + row.areaLabel + " " + (index + 1) + "/" + rowTargets.length + "行）。");
         const nameText = await recognizeSingleFixedCell(row.nameCanvas, label + " 食材名");
         const quantityText = await recognizeSingleFixedCell(row.underThreeCanvas, label + " 3歳未満列", "eng");
         const name = cleanIngredientName(nameText);
         const quantity = quantityFromUnderThreeCell(quantityText);
-        const rowLog = [fixedMenuRowMarker, row.areaLabel, name || "要確認", "数量要確認", ""].join("\t");
 
-        if (!name || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) continue;
-        if (isNumericCell(quantity)) rows.push([fixedMenuRowMarker, row.areaLabel, name, quantity, "g"].join("\t"));
-        else reviewRows.push(rowLog);
+        if (isFixedRecipeTitleRow(name, quantity)) {
+          inRecipeBlock = true;
+          continue;
+        }
+
+        if (!isFixedIngredientListRow(name, quantity)) continue;
+        if (!inRecipeBlock && !correctIngredientName(name)) continue;
+        if (isExcludedIngredient(name) || isSuspiciousIngredientName(name)) continue;
+        rows.push([fixedMenuRowMarker, row.areaLabel, name, quantity, "g"].join("\t"));
       }
 
-      const outputRows = rows.length ? rows : reviewRows.slice(0, 10);
       updateImportProgress(baseProgress + progressRange, label + "完了。固定表から" + rows.length + "行抽出しました。");
-      return outputRows.join("\n");
+      return rows.join("\n");
     }
 
     async function recognizeSingleFixedCell(canvas, label, lang = "jpn+eng") {
@@ -923,6 +932,23 @@
       const normalized = normalizeQuantity(normalizeOcrLine(value)).replace(/,/g, "");
       const match = normalized.match(/[0-9]+(?:\.[0-9]+)?/);
       return match ? match[0] : "";
+    }
+
+    function isFixedRecipeTitleRow(name, quantity) {
+      const compact = normalizeOcrLine(name).replace(/\s/g, "");
+      if (!compact || quantity || isFixedRecipeInstructionRow(compact) || /[0-9０-９]/.test(compact)) return false;
+      return /[ぁ-んァ-ヶ一-龠々]{2,}/.test(compact);
+    }
+
+    function isFixedIngredientListRow(name, quantity) {
+      const compact = normalizeOcrLine(name).replace(/\s/g, "");
+      if (!compact || !isNumericCell(quantity) || isFixedRecipeInstructionRow(compact) || /[0-9０-９]/.test(compact)) return false;
+      return /[ぁ-んァ-ヶ一-龠々]{2,}/.test(compact);
+    }
+
+    function isFixedRecipeInstructionRow(value) {
+      const compact = String(value || "").replace(/\s/g, "");
+      return !compact || compact.startsWith("※") || /^[0-9０-９]+[.)）．、]?$/.test(compact) || isSentenceNoise(compact);
     }
 
     function cropFixedMenuCell(sourceCanvas, box, y, height, columnRange) {
@@ -962,12 +988,7 @@
         const bottom = grouped[index + 1] - 2;
         if (bottom - top >= Math.max(10, tableCanvas.height * 0.035)) ranges.push({ top, bottom });
       }
-      if (ranges.length) return ranges;
-      const fallbackCount = Math.max(1, Math.round(tableCanvas.height / 38));
-      return Array.from({ length: fallbackCount }, (_, index) => ({
-        top: Math.round((tableCanvas.height * index) / fallbackCount),
-        bottom: Math.round((tableCanvas.height * (index + 1)) / fallbackCount)
-      }));
+      return ranges;
     }
 
     function groupLinePositions(values) {
@@ -1777,8 +1798,8 @@
         const cells = line.split("\t").map(cell => cell.trim());
         if (cells[0] !== fixedMenuRowMarker || cells.length < 5) return;
         const correctedName = correctIngredientName(cells[2]);
-        const quantity = isNumericCell(cells[3]) ? cells[3] : "数量要確認";
-        if (!correctedName && quantity !== "数量要確認") return;
+        const quantity = isNumericCell(cells[3]) ? cells[3] : "";
+        if (!correctedName || !quantity) return;
         addUniqueSourceRow(rows, seen, {
           name: correctedName || cells[2],
           quantity,
