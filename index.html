@@ -1664,6 +1664,12 @@
     }
 
     function collectUnderThreeRows(lines) {
+      return collectSourceIngredientRows(lines)
+        .map(extractUnderThreeFromSourceRow)
+        .filter(Boolean);
+    }
+
+    function collectSourceIngredientRows(lines) {
       const rows = [];
       let underThreeColumn = -1;
       let currentWeekday = "";
@@ -1671,7 +1677,7 @@
       lines.forEach(line => {
         const cells = splitIngredientCells(line);
         const rowText = cells.join(" ") || normalizeOcrLine(line);
-        if (!cells.length || isIgnoredSourceRow(rowText)) return;
+        if (!cells.length) return;
 
         const detectedWeekday = detectWeekday(rowText);
         if (detectedWeekday) currentWeekday = detectedWeekday;
@@ -1682,31 +1688,70 @@
           return;
         }
 
-        if (underThreeColumn < 0 || underThreeColumn >= cells.length) return;
-        const quantity = cells[underThreeColumn];
-        if (!isNumericCell(quantity)) return;
-
+        if (isDocumentNoiseRow(rowText) || !rowHasNumberValue(cells)) return;
         rows.push({
-          name: ingredientNameLeftOfColumn(cells, underThreeColumn),
-          quantity,
-          unit: guessUnitNearQuantity(cells, underThreeColumn),
+          cells,
+          rowText,
           weekday: detectedWeekday || currentWeekday,
-          sourceLine: rowText,
-          source: "3歳未満児"
+          underThreeColumn
         });
       });
 
       return rows;
     }
 
+    function extractUnderThreeFromSourceRow(sourceRow) {
+      const quantityIndex = chooseUnderThreeQuantityIndex(sourceRow.cells, sourceRow.underThreeColumn);
+      if (quantityIndex < 0) return null;
+      const quantity = sourceRow.cells[quantityIndex];
+      if (!isNumericCell(quantity)) return null;
+      return {
+        name: ingredientNameLeftOfColumn(sourceRow.cells, quantityIndex) || ingredientNameBeforeQuantity(sourceRow.rowText, quantity),
+        quantity,
+        unit: guessUnitNearQuantity(sourceRow.cells, quantityIndex),
+        weekday: sourceRow.weekday,
+        sourceLine: sourceRow.rowText,
+        source: "3歳未満児"
+      };
+    }
+
+    function chooseUnderThreeQuantityIndex(cells, underThreeColumn) {
+      const numericIndexes = cells.map((cell, index) => isNumberCell(cell) ? index : -1).filter(index => index >= 0);
+      if (!numericIndexes.length) return -1;
+      if (underThreeColumn >= 0) {
+        const leftOrExact = numericIndexes.filter(index => index <= underThreeColumn);
+        if (leftOrExact.length) return leftOrExact[0];
+      }
+      return numericIndexes[0];
+    }
+
+    function rowHasNumberValue(cells) {
+      return cells.some(cell => isNumberCell(cell));
+    }
+
+    function isDocumentNoiseRow(value) {
+      const text = String(value || "").replace(/\s/g, "");
+      return !text || text.startsWith("※") || isIgnoredPdfLine(text) || isGarbledText(text);
+    }
+
     function isIgnoredSourceRow(value) {
       const text = String(value || "").replace(/\s/g, "");
-      return !text || text.startsWith("※") || isIgnoredPdfLine(text) || isSentenceNoise(text) || isGarbledText(text);
+      return isDocumentNoiseRow(text) || isSentenceNoise(text);
     }
 
     function splitIngredientCells(line) {
       const cells = normalizeOcrLine(line).split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
-      return cells.length > 1 ? cells : normalizeOcrLine(line).split(/\s{2,}/).map(cell => cell.trim()).filter(Boolean);
+      if (cells.length > 1) return expandQuantityUnitCells(cells);
+      const spacedCells = normalizeOcrLine(line).split(/\s{2,}/).map(cell => cell.trim()).filter(Boolean);
+      if (spacedCells.length > 1) return expandQuantityUnitCells(spacedCells);
+      return expandQuantityUnitCells(normalizeOcrLine(line).split(/\s+/).map(cell => cell.trim()).filter(Boolean));
+    }
+
+    function expandQuantityUnitCells(cells) {
+      return cells.flatMap(cell => {
+        const match = normalizeOcrLine(cell).match(new RegExp("^([0-9]+(?:[.]?[0-9]+)?)(" + unitNames().map(escapeRegExp).join("|") + ")$", "i"));
+        return match ? [match[1], match[2]] : [cell];
+      });
     }
 
     function findUnderThreeColumn(cells) {
@@ -1716,21 +1761,37 @@
       });
     }
 
+    function isNumberCell(value) {
+      const quantity = normalizeQuantity(value).replace(/,/g, "");
+      return /^[0-9]+(?:\.[0-9]+)?$/.test(quantity) && numberValue(quantity) >= 0;
+    }
+
     function isNumericCell(value) {
       const quantity = normalizeQuantity(value).replace(/,/g, "");
       return /^[0-9]+(?:\.[0-9]+)?$/.test(quantity) && numberValue(quantity) > 0;
     }
 
     function ingredientNameLeftOfColumn(cells, quantityIndex) {
+      const nameParts = [];
       for (let index = quantityIndex - 1; index >= 0; index--) {
         const cell = normalizeOcrLine(cells[index]);
         const text = cell.replace(/\s/g, "");
         if (!text) continue;
         if (detectWeekday(cell) || isKnownUnit(text)) continue;
-        if (/日付|曜日|献立日|使用日|単位|3歳未満|３歳未満|未満児|乳児|食材|食品|材料|品名|食料|料理名/.test(text)) continue;
-        return cell;
+        if (/日付|曜日|献立日|使用日|単位|3歳未満|３歳未満|未満児|乳児|食材|食品|材料|品名|食料|料理名/.test(text)) break;
+        nameParts.unshift(cell);
       }
-      return "";
+      return nameParts.join(" ").trim();
+    }
+
+    function ingredientNameBeforeQuantity(rowText, quantity) {
+      const normalized = normalizeOcrLine(rowText);
+      const quantityText = escapeRegExp(normalizeOcrLine(quantity));
+      const match = normalized.match(new RegExp(quantityText));
+      if (!match || match.index === undefined) return "";
+      return normalized.slice(0, match.index)
+        .replace(new RegExp("(?:" + unitNames().map(escapeRegExp).join("|") + ")\\s*$", "i"), " ")
+        .trim();
     }
 
     function unitNames() {
