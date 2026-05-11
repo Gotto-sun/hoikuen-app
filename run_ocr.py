@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib
 import importlib.util
+import io
 import logging
 import multiprocessing as mp
 import queue
@@ -224,8 +225,9 @@ def load_image(path: Path) -> Image.Image:
             file_size / 1024 / 1024,
         )
 
-    with Image.open(path) as opened:
-        image = ImageOps.exif_transpose(opened).convert("RGB")
+    file_bytes = path.read_bytes()
+    image = Image.open(io.BytesIO(file_bytes))
+    image = image.convert("RGB")
 
     logging.info(
         "画像確認: %s size=%.1fMB resolution=%sx%s",
@@ -927,7 +929,7 @@ def row_mentions_ingredient(line: str, ingredient_name: str) -> bool:
 
 
 def under_three_quantity_from_cells(cells: list[str]) -> tuple[str, str] | None:
-    quantity_index = choose_under_three_quantity_index(cells, find_under_three_column(cells))
+    quantity_index = choose_same_row_quantity_index(cells)
     if quantity_index >= 0 and is_numeric_cell(cells[quantity_index]):
         quantity = normalize_value(cells[quantity_index]).replace(",", "")
         return quantity, guess_unit_near_quantity(cells, quantity_index)
@@ -1014,6 +1016,18 @@ def choose_under_three_quantity_index(cells: list[str], under_three_column: int)
         right_side = [index for index in numeric_indexes if index >= under_three_column]
         if right_side:
             return right_side[0]
+    if len(numeric_indexes) >= 2:
+        return numeric_indexes[1]
+    return numeric_indexes[0]
+
+def choose_same_row_quantity_index(cells: list[str]) -> int:
+    numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
+    if not numeric_indexes:
+        return -1
+    if len(numeric_indexes) >= 4:
+        return numeric_indexes[2]
+    if len(numeric_indexes) >= 3:
+        return numeric_indexes[1]
     if len(numeric_indexes) >= 2:
         return numeric_indexes[1]
     return numeric_indexes[0]
@@ -1150,11 +1164,12 @@ def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: st
         numeric_qty = float(qty)
     except ValueError:
         return
-    key = f"{weekday}|{normalize_ingredient_for_grouping(name)}|{qty}|{unit}"
-    if key in seen or numeric_qty <= 0 or weekday not in WEEKDAY_PEOPLE:
+    effective_weekday = weekday if weekday in WEEKDAY_PEOPLE else "月"
+    key = f"{effective_weekday}|{normalize_ingredient_for_grouping(name)}|{qty}|{unit}"
+    if key in seen or numeric_qty <= 0:
         return
     seen.add(key)
-    rows.append(IngredientRow(name, qty, unit, weekday))
+    rows.append(IngredientRow(name, qty, unit, effective_weekday))
 
 def is_excluded_ingredient(name: str) -> bool:
     return bool(EXCLUDED_INGREDIENT_PATTERN.search(re.sub(r"\s+", "", str(name or ""))))
@@ -1323,7 +1338,7 @@ def row_for_error(path: Path, message: str) -> list[Any]:
         dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         path.name,
         "",
-        "軽量グレースケール",
+        "原画像直OCR（前処理なし）",
         "",
         failure_text,
         "",
@@ -1373,19 +1388,32 @@ def process_image_worker(path: Path, result_queue: mp.Queue) -> None:
         logging.exception("読み込み失敗: %s reason=%s", path, exc)
         result_queue.put((False, str(exc)))
 
+def direct_image_ocr(image: Image.Image) -> str:
+    pytesseract = optional_module("pytesseract")
+    if pytesseract is None:
+        logging.warning("OCRをスキップ: pytesseractが未インストールです")
+        return ""
+    try:
+        return str(pytesseract.image_to_string(image, lang="jpn") or "")
+    except Exception as exc:
+        logging.exception("原画像OCR失敗: %s", exc)
+        return ""
+
+
 def process_image_inner(path: Path) -> list[Any]:
     logging.info("処理開始: %s", path)
     source = load_image(path)
-    fixed_rows, raw_text = extract_fixed_layout_ingredient_rows(source)
-    best = OcrCandidate("Tesseract", raw_text, 100.0, 0, "固定表エリア座標OCR", source)
+    raw_text = direct_image_ocr(source)
+    best = OcrCandidate("Tesseract", raw_text, 100.0 if raw_text.strip() else 0.0, 0, "原画像直OCR（前処理なし）", source)
     candidates = [best]
-    logging.info("固定表OCR結果: %s\n%s", path, raw_text if raw_text else "空")
-    print(f"固定表OCR結果 ({path.name}):")
-    print(raw_text if raw_text else "空")
-    if not raw_text:
-        logging.error("読み取り失敗: %s 固定表OCR結果が空", path)
-        return row_for_error(path, "固定表エリアから食材名・3歳未満量を読み取れませんでした")
-    ingredient_rows = build_order_rows(fixed_rows)
+    logging.info("原画像OCR全文: %s\n%s", path, raw_text if raw_text else "空")
+    print(f"原画像OCR全文 ({path.name}):")
+    print(raw_text)
+    if not raw_text.strip():
+        logging.error("読み取り失敗: %s OCR結果が空", path)
+        return row_for_error(path, "OCR結果が空です。抽出せずに停止しました")
+    source_ingredient_rows = extract_ingredient_rows(raw_text)
+    ingredient_rows = build_order_rows(source_ingredient_rows)
     fields = extract_fields(raw_text)
     reasons = confirmation_reasons(best, candidates, fields)
     notes = reasons + best.notes
