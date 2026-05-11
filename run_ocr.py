@@ -43,7 +43,6 @@ REQUIRED_MODULES = {
     "openpyxl": "openpyxl",
 }
 
-
 def load_required_dependencies() -> None:
     missing = [package for module, package in REQUIRED_MODULES.items() if importlib.util.find_spec(module) is None]
     if missing:
@@ -149,12 +148,10 @@ class IngredientRow:
     unit: str
     weekday: str = ""
 
-
 def optional_module(name: str) -> Any | None:
     if importlib.util.find_spec(name) is None:
         return None
     return importlib.import_module(name)
-
 
 def setup() -> None:
     INPUT_DIR.mkdir(exist_ok=True)
@@ -169,10 +166,8 @@ def setup() -> None:
     )
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
-
 def supported_images() -> list[Path]:
     return sorted(path for path in INPUT_DIR.iterdir() if path.suffix.lower() in SUPPORTED_EXTENSIONS and path.is_file())
-
 
 def load_image(path: Path) -> Image.Image:
     file_size = path.stat().st_size
@@ -195,7 +190,6 @@ def load_image(path: Path) -> Image.Image:
     image = lighten_image_for_ocr(image, path)
     return image
 
-
 def lighten_image_for_ocr(image: Image.Image, path: Path) -> Image.Image:
     scale = min(1.0, MAX_IMAGE_WIDTH / max(1, image.width), MAX_IMAGE_HEIGHT / max(1, image.height))
     if scale < 1.0:
@@ -208,7 +202,6 @@ def lighten_image_for_ocr(image: Image.Image, path: Path) -> Image.Image:
     logging.info("OCR前JPEG軽量化: %s quality=%s temp=%s", path, JPEG_QUALITY, temp_path)
     with Image.open(temp_path) as reopened:
         return ImageOps.exif_transpose(reopened).convert("RGB")
-
 
 def trim_margin(image: Image.Image) -> Image.Image:
     gray = ImageOps.grayscale(image)
@@ -226,7 +219,6 @@ def trim_margin(image: Image.Image) -> Image.Image:
         return image
     return image.crop((left, top, right, bottom))
 
-
 def upscale(image: Image.Image, min_width: int = 1000) -> Image.Image:
     if image.width >= min_width:
         return image
@@ -234,12 +226,10 @@ def upscale(image: Image.Image, min_width: int = 1000) -> Image.Image:
     new_size = (int(image.width * ratio), int(image.height * ratio))
     return image.resize(new_size, Image.Resampling.LANCZOS)
 
-
 def gamma_correct(image: Image.Image, gamma: float) -> Image.Image:
     inv = 1.0 / gamma
     table = [min(255, max(0, int((i / 255.0) ** inv * 255))) for i in range(256)]
     return image.point(table)
-
 
 def otsu_threshold(gray: Image.Image) -> Image.Image:
     hist = gray.histogram()
@@ -265,7 +255,6 @@ def otsu_threshold(gray: Image.Image) -> Image.Image:
             threshold = index
     return gray.point(lambda p: 255 if p > threshold else 0)
 
-
 def pil_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
     trimmed = trim_margin(image)
     gray = ImageOps.grayscale(trimmed)
@@ -275,7 +264,6 @@ def pil_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]
         ("軽量JPEG+濃淡補正", contrast),
     ]
     return variants[:OCR_CANDIDATE_LIMIT]
-
 
 def opencv_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
     cv2 = optional_module("cv2")
@@ -302,7 +290,6 @@ def opencv_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Imag
         ("傾き補正+Otsu threshold", Image.fromarray(otsu)),
     ]
 
-
 def deskew_cv2(gray: Any, cv2: Any, np: Any) -> Any:
     coords = np.column_stack(np.where(gray < 245))
     if len(coords) < 50:
@@ -317,7 +304,6 @@ def deskew_cv2(gray: Any, cv2: Any, np: Any) -> Any:
     height, width = gray.shape[:2]
     matrix = cv2.getRotationMatrix2D((width // 2, height // 2), angle, 1.0)
     return cv2.warpAffine(gray, matrix, (width, height), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-
 
 def tesseract_candidate(image: Image.Image, angle: int, method: str) -> OcrCandidate:
     pytesseract = optional_module("pytesseract")
@@ -350,7 +336,6 @@ def tesseract_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
         best.notes.append("Tesseractで文字を読み取れませんでした")
     return best
 
-
 def reconstruct_ocr_rows(data: dict[str, Any], image: Image.Image | None = None) -> str:
     words = []
     for index, raw_text in enumerate(data.get("text", [])):
@@ -381,7 +366,6 @@ def reconstruct_ocr_rows(data: dict[str, Any], image: Image.Image | None = None)
     rows = [join_positioned_words(row) for row in grouped]
     return "\n".join(row for row in rows if row)
 
-
 def detect_horizontal_rule_bands(image: Image.Image | None) -> list[tuple[int, int]]:
     cv2 = optional_module("cv2")
     np = optional_module("numpy")
@@ -405,7 +389,6 @@ def detect_horizontal_rule_bands(image: Image.Image | None) -> list[tuple[int, i
             bands[-1] = (bands[-1][0], y)
     return bands
 
-
 def group_words_by_rule_bands(words: list[dict[str, Any]], bands: list[tuple[int, int]]) -> list[list[dict[str, Any]]]:
     separators = [int((start + end) / 2) for start, end in bands]
     rows_by_band: dict[int, list[dict[str, Any]]] = {}
@@ -415,7 +398,6 @@ def group_words_by_rule_bands(words: list[dict[str, Any]], bands: list[tuple[int
         rows_by_band.setdefault(row_index, []).append(word)
     rows = [row for _index, row in sorted(rows_by_band.items()) if row]
     return split_tall_rule_rows(rows)
-
 
 def split_tall_rule_rows(rows: list[list[dict[str, Any]]]) -> list[list[dict[str, Any]]]:
     split_rows: list[list[dict[str, Any]]] = []
@@ -436,7 +418,6 @@ def split_tall_rule_rows(rows: list[list[dict[str, Any]]]) -> list[list[dict[str
         split_rows.extend(buckets)
     return split_rows
 
-
 def group_words_by_tesseract_lines(words: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
     grouped: dict[tuple[int, int, int], list[dict[str, Any]]] = {}
     for word in words:
@@ -444,7 +425,6 @@ def group_words_by_tesseract_lines(words: list[dict[str, Any]]) -> list[list[dic
     rows = list(grouped.values())
     rows.sort(key=lambda row: (statistics.mean(item["top"] for item in row), min(item["left"] for item in row)))
     return rows
-
 
 def join_positioned_words(words: list[dict[str, Any]]) -> str:
     words = sorted(words, key=lambda item: item["left"])
@@ -461,14 +441,12 @@ def join_positioned_words(words: list[dict[str, Any]]) -> str:
         prev = word
     return normalize_ocr_line("".join(parts))
 
-
 def run_tesseract_data(pytesseract: Any, image: Image.Image, lang: str, config: str) -> dict[str, Any] | None:
     try:
         return pytesseract.image_to_data(image, lang=lang, config=config, output_type=pytesseract.Output.DICT, timeout=TESSERACT_CALL_TIMEOUT_SECONDS)
     except Exception as exc:
         logging.info("Tesseract失敗 lang=%s config=%s: %s", lang, config, exc)
         return None
-
 
 def best_tesseract_orientation(source: Image.Image) -> OcrCandidate:
     best = OcrCandidate("Tesseract", notes=[])
@@ -485,7 +463,6 @@ def best_tesseract_orientation(source: Image.Image) -> OcrCandidate:
                 best = candidate
     return best
 
-
 def easyocr_candidate(image: Image.Image, angle: int, method: str) -> OcrCandidate | None:
     easyocr = optional_module("easyocr")
     np = optional_module("numpy")
@@ -500,7 +477,6 @@ def easyocr_candidate(image: Image.Image, angle: int, method: str) -> OcrCandida
     texts = [str(item[1]).strip() for item in results if len(item) >= 2 and str(item[1]).strip()]
     confidences = [float(item[2]) * 100 for item in results if len(item) >= 3]
     return OcrCandidate("EasyOCR", "\n".join(texts), statistics.mean(confidences) if confidences else 0.0, angle, method, image)
-
 
 def paddleocr_candidate(image: Image.Image, angle: int, method: str) -> OcrCandidate | None:
     paddleocr_module = optional_module("paddleocr")
@@ -524,26 +500,21 @@ def paddleocr_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
                 confidences.append(float(conf) * 100)
     return OcrCandidate("PaddleOCR", "\n".join(texts), statistics.mean(confidences) if confidences else 0.0, angle, method, image)
 
-
 def collect_candidates(source: Image.Image) -> tuple[OcrCandidate, list[OcrCandidate]]:
     tesseract = best_tesseract_orientation(source)
     candidates = [tesseract]
     best = max(candidates, key=lambda item: item.score)
     return best, candidates
 
-
 def japanese_count(text: str) -> int:
     return len(re.findall(r"[ぁ-んァ-ン一-龥]", text))
-
 
 def digit_count(text: str) -> int:
     return len(re.findall(r"[0-9０-９]", text))
 
-
 def normalize_value(value: str) -> str:
     table = str.maketrans("０１２３４５６７８９，．ー−￥", "0123456789,.-ー¥")
     return re.sub(r"\s+", "", value.translate(table))
-
 
 def unique_matches(patterns: str | Iterable[str], text: str) -> list[str]:
     if isinstance(patterns, str):
@@ -560,7 +531,6 @@ def unique_matches(patterns: str | Iterable[str], text: str) -> list[str]:
                 values.append(value)
     return values
 
-
 def extract_fields(text: str) -> ExtractedFields:
     return ExtractedFields(
         dates=unique_matches(DATE_PATTERNS, text),
@@ -574,8 +544,6 @@ def extract_fields(text: str) -> ExtractedFields:
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
 SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
-MEAL_SECTION_HEADING_PATTERN = re.compile(r"午前中?おやつ|午前おやつ|昼食|午後おやつ")
-MEAL_SECTION_STOP_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|備考|ポイント|メモ|栄養|給与栄養目標量|予定献立|献立名|料理名のみ")
 EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
 FIXED_ORDER_RULES = []
@@ -604,7 +572,6 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("いちごジャム", re.compile(r"いちご\s*ジャム|苺\s*ジャム")),
 ]
 
-
 def normalize_ocr_line(value: str) -> str:
     table = str.maketrans("０１２３４５６７８９，．ｋＫｇＧｍＭｌＬ", "0123456789,.kkggmmll")
     text = str(value or "").translate(table)
@@ -612,7 +579,6 @@ def normalize_ocr_line(value: str) -> str:
     text = re.sub(r"([0-9])[ \f\v]*(グラム|G)(?=\s|$)", r"\1g", text, flags=re.IGNORECASE)
     text = re.sub(r"[|＿_~〜=<>《》]+", " ", text)
     return re.sub(r"[ \f\v\r\n]+", " ", text).strip()
-
 
 def normalize_unit(value: str) -> str:
     unit = normalize_ocr_line(value)
@@ -625,7 +591,6 @@ def normalize_unit(value: str) -> str:
         return "ml"
     return unit
 
-
 def is_garbled_text(value: str) -> bool:
     compact = re.sub(r"\s+", "", str(value or ""))
     if not compact:
@@ -634,7 +599,6 @@ def is_garbled_text(value: str) -> bool:
     readable = japanese + len(re.findall(r"[A-Za-z0-9]", compact))
     broken = len(re.findall(r"[�□■◇◆○●]", compact))
     return broken > 0 or (len(compact) >= 12 and readable / len(compact) < 0.45)
-
 
 def clean_ingredient_name(value: str) -> str:
     name = strip_non_ingredient_prefix(value)
@@ -646,7 +610,6 @@ def clean_ingredient_name(value: str) -> str:
     name = re.sub(r"[：:].*$", "", name)
     return correct_ingredient_name(re.sub(r"\s+", " ", name).strip())
 
-
 def correct_ingredient_name(name: str) -> str:
     compact = re.sub(r"\s+", "", str(name or ""))
     if not compact or SENTENCE_NOISE_PATTERN.search(compact) or is_excluded_ingredient(compact):
@@ -655,7 +618,6 @@ def correct_ingredient_name(name: str) -> str:
         if pattern.search(compact):
             return canonical
     return str(name or "").strip()
-
 
 def strip_non_ingredient_prefix(value: str) -> str:
     name = normalize_ocr_line(value)
@@ -670,7 +632,6 @@ def strip_non_ingredient_prefix(value: str) -> str:
     name = re.sub(r"^[□■◇◆☑✓・*\-－—\s]+", "", name)
     return re.sub(r"\s+", " ", name).strip()
 
-
 def is_suspicious_ingredient_name(value: str) -> bool:
     name = re.sub(r"\s+", "", str(value or ""))
     if not name:
@@ -679,87 +640,77 @@ def is_suspicious_ingredient_name(value: str) -> bool:
     digits = len(re.findall(r"[0-9]", name))
     return japanese == 0 or digits > japanese or len(name) > 32 or is_garbled_text(name) or bool(SENTENCE_NOISE_PATTERN.search(name))
 
-
 def extract_ingredient_rows(text: str) -> list[IngredientRow]:
-    lines = split_ocr_rows_for_ingredients(text)
     rows: list[IngredientRow] = []
     seen: set[str] = set()
-    meal_rows = collect_meal_section_rows(lines)
-    if meal_rows or any(is_meal_section_heading(line) for line in lines):
-        return meal_rows
-
     current_weekday = ""
-    table_columns: dict[str, int] | None = None
-    for raw_line in lines:
-        line = normalize_ocr_line(raw_line)
-        if not line or IGNORED_LINE_PATTERN.search(line) or SENTENCE_NOISE_PATTERN.search(line) or is_garbled_text(line):
+    under_three_column = -1
+
+    for raw_line in split_ocr_rows_for_ingredients(text):
+        cells = split_ocr_cells(raw_line)
+        row_text = normalize_ocr_line(" ".join(cells) if cells else raw_line)
+        if not cells or is_ignored_source_row(row_text):
             continue
-        weekday = detect_weekday(line)
-        if weekday:
-            current_weekday = weekday
-        cells = split_ocr_cells(line)
-        detected_columns = detect_under_three_table_columns(cells)
-        if detected_columns:
-            table_columns = detected_columns
-            continue
-        if table_columns and cells:
-            if len(cells) <= max(table_columns.get("name", 0), table_columns.get("quantity", -1)):
-                continue
-            table_weekday = detect_weekday(cells[table_columns.get("day", -1)]) if 0 <= table_columns.get("day", -1) < len(cells) else ""
-            if table_weekday:
-                current_weekday = table_weekday
-            if add_row_from_detected_columns(rows, seen, cells, table_columns, table_weekday or weekday or current_weekday):
-                continue
-    return rows
 
-
-def collect_meal_section_rows(lines: list[str]) -> list[IngredientRow]:
-    rows: list[IngredientRow] = []
-    seen: set[str] = set()
-    in_meal_section = False
-    current_weekday = ""
-    table_columns: dict[str, int] | None = None
-
-    for raw_line in lines:
-        line = normalize_ocr_line(raw_line)
-        cells = split_ocr_cells(line)
-        row_text = " ".join(cells) if cells else line
         weekday = detect_weekday(row_text)
         if weekday:
             current_weekday = weekday
 
-        if is_meal_section_heading(row_text):
-            in_meal_section = True
-            table_columns = None
-            continue
-        if not in_meal_section or not cells or IGNORED_LINE_PATTERN.search(row_text):
-            continue
-        if is_meal_section_stop(row_text) or SENTENCE_NOISE_PATTERN.search(row_text):
+        header_column = find_under_three_column(cells)
+        if header_column >= 0:
+            under_three_column = header_column
             continue
 
-        detected_columns = detect_under_three_table_columns(cells)
-        if detected_columns:
-            table_columns = detected_columns
+        if under_three_column < 0 or under_three_column >= len(cells):
             continue
 
-        if table_columns:
-            if len(cells) <= max(table_columns.get("name", 0), table_columns.get("quantity", -1)):
-                continue
-            table_weekday = detect_weekday(cells[table_columns.get("day", -1)]) if 0 <= table_columns.get("day", -1) < len(cells) else ""
-            add_row_from_detected_columns(rows, seen, cells, table_columns, table_weekday or weekday or current_weekday)
+        quantity = cells[under_three_column]
+        if not is_numeric_cell(quantity):
             continue
+
+        name = ingredient_name_left_of_column(cells, under_three_column)
+        unit = guess_unit_near_quantity(cells, under_three_column)
+        add_ingredient_row(rows, seen, name, quantity, unit, weekday or current_weekday)
     return rows
 
-
-def is_meal_section_heading(value: str) -> bool:
-    return bool(MEAL_SECTION_HEADING_PATTERN.search(re.sub(r"\s+", "", str(value or ""))))
-
-
-def is_meal_section_stop(value: str) -> bool:
+def is_ignored_source_row(value: str) -> bool:
     text = re.sub(r"\s+", "", str(value or ""))
-    return bool(MEAL_SECTION_STOP_PATTERN.search(text)) and not is_meal_section_heading(text)
+    return (
+        not text
+        or text.startswith("※")
+        or IGNORED_LINE_PATTERN.search(text) is not None
+        or SENTENCE_NOISE_PATTERN.search(text) is not None
+        or is_garbled_text(text)
+    )
 
+def find_under_three_column(cells: list[str]) -> int:
+    for index, cell in enumerate(cells):
+        compact = re.sub(r"\s+", "", normalize_ocr_line(cell))
+        if re.search(r"3歳未満|３歳未満|未満児|乳児", compact) and not re.search(r"人数|対象|区分|年齢", compact):
+            return index
+    return -1
 
+def is_numeric_cell(value: str) -> bool:
+    text = normalize_value(normalize_ocr_line(value)).replace(",", "")
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", text):
+        return False
+    try:
+        return float(text) > 0
+    except ValueError:
+        return False
+
+def ingredient_name_left_of_column(cells: list[str], quantity_index: int) -> str:
+    for index in range(quantity_index - 1, -1, -1):
+        cell = normalize_ocr_line(cells[index])
+        compact = re.sub(r"\s+", "", cell)
+        if not compact:
+            continue
+        if detect_weekday(cell) or re.fullmatch(r"(?:" + UNIT_PATTERN + r")", compact, re.IGNORECASE):
+            continue
+        if re.search(r"日付|曜日|献立日|使用日|単位|3歳未満|３歳未満|未満児|乳児|食材|食品|材料|品名|食料|料理名", compact):
+            continue
+        return cell
+    return ""
 
 def split_ocr_rows_for_ingredients(text: str) -> list[str]:
     normalized_text = str(text or "").replace("OCR全文", "\n")
@@ -767,12 +718,9 @@ def split_ocr_rows_for_ingredients(text: str) -> list[str]:
     rows: list[str] = []
     for raw_row in rough_rows:
         row = normalize_ocr_line(raw_row)
-        if not row:
-            continue
-        pieces = re.split(r"\s{2,}(?=[月火水木金]?[ぁ-んァ-ヶ一-龥々])", row, flags=re.IGNORECASE)
-        rows.extend(piece for piece in pieces if piece.strip())
+        if row:
+            rows.append(row)
     return rows
-
 
 def split_ocr_cells(line: str) -> list[str]:
     protected = normalize_ocr_line(line)
@@ -781,47 +729,8 @@ def split_ocr_cells(line: str) -> list[str]:
         return cells
     return split_marker_tokens(protected)
 
-
 def split_marker_tokens(line: str) -> list[str]:
-    return [token for token in re.split(r"\s+", normalize_ocr_line(line)) if token]
-
-
-def add_row_from_detected_columns(rows: list[IngredientRow], seen: set[str], cells: list[str], columns: dict[str, int], weekday: str) -> bool:
-    name_index = columns.get("name", 0)
-    quantity_index = columns.get("quantity", -1)
-    unit_index = columns.get("unit", -1)
-    if not (0 <= name_index < len(cells)) or name_index >= quantity_index:
-        return False
-    day_index = columns.get("day", -1)
-    if 0 <= day_index < len(cells) and cells[day_index].strip() and not detect_weekday(cells[day_index]):
-        return False
-    value = cells[quantity_index] if 0 <= quantity_index < len(cells) else ""
-    unit = cells[unit_index] if 0 <= unit_index < len(cells) else guess_unit_near_quantity(cells, quantity_index)
-    name = cells[name_index]
-    if SENTENCE_NOISE_PATTERN.search(name) or IGNORED_LINE_PATTERN.search(name) or is_meal_section_heading(name) or is_meal_section_stop(name):
-        return False
-    if re.fullmatch(r"[0-9０-９]+(?:[.,．][0-9０-９]+)?", value) and re.search(r"^(?:" + UNIT_PATTERN + r")$", unit, re.IGNORECASE):
-        before = len(rows)
-        add_ingredient_row(rows, seen, name, value, unit, weekday)
-        return len(rows) > before
-    return False
-
-def detect_under_three_table_columns(cells: list[str]) -> dict[str, int] | None:
-    if len(cells) < 2 or not any(re.search(r"3歳未満|３歳未満|未満児|乳児", cell) for cell in cells):
-        return None
-    normalized = [re.sub(r"\s+", "", cell) for cell in cells]
-    quantity_index = next((index for index, cell in enumerate(normalized) if re.search(r"(3歳未満|３歳未満|未満児|乳児)", cell) and not re.search(r"人数|対象|区分|年齢", cell)), -1)
-    if quantity_index < 0:
-        return None
-    name_index = next((index for index, cell in enumerate(normalized) if re.search(r"食材|食品|材料|品名|食料", cell)), 0 if quantity_index > 0 else -1)
-    if name_index < 0 or name_index >= quantity_index:
-        return None
-    unit_index = next((index for index, cell in enumerate(normalized) if index > name_index and re.search(r"単位", cell)), -1)
-    if unit_index < 0 and quantity_index + 1 < len(cells) and re.search(r"単位", normalized[quantity_index + 1]):
-        unit_index = quantity_index + 1
-    day_index = next((index for index, cell in enumerate(normalized) if re.search(r"曜日|使用日|日付|献立日", cell)), -1)
-    return {"name": name_index, "quantity": quantity_index, "unit": unit_index, "day": day_index}
-
+    return [token for token in re.split(r"\s{2,}", normalize_ocr_line(line)) if token]
 
 def guess_unit_near_quantity(cells: list[str], quantity_index: int) -> str:
     candidates = []
@@ -831,7 +740,7 @@ def guess_unit_near_quantity(cells: list[str], quantity_index: int) -> str:
         candidates.append(cells[quantity_index - 1])
     if cells:
         candidates.append(cells[-1])
-    return next((value for value in candidates if re.search(r"^(?:" + UNIT_PATTERN + r")$", value, re.IGNORECASE)), "g")
+    return next((value for value in candidates if re.fullmatch(r"(?i)(?:" + UNIT_PATTERN + r")", normalize_ocr_line(value))), "g")
 
 def detect_weekday(value: str) -> str:
     text = normalize_ocr_line(value)
@@ -839,7 +748,6 @@ def detect_weekday(value: str) -> str:
     if not match:
         return ""
     return (match.group(1) or match.group(0))[0]
-
 
 def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: str, quantity_value: str, unit_value: str, weekday: str) -> None:
     name = clean_ingredient_name(name_value)
@@ -849,18 +757,17 @@ def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: st
         numeric_qty = float(qty)
     except ValueError:
         return
-    if numeric_qty <= 0 or weekday not in WEEKDAY_PEOPLE or is_suspicious_ingredient_name(name) or is_excluded_ingredient(name):
+    key = f"{weekday}|{normalize_ingredient_for_grouping(name)}|{qty}|{unit}"
+    if key in seen or numeric_qty <= 0 or weekday not in WEEKDAY_PEOPLE or is_suspicious_ingredient_name(name) or is_excluded_ingredient(name):
         return
+    seen.add(key)
     rows.append(IngredientRow(name, qty, unit, weekday))
-
 
 def is_excluded_ingredient(name: str) -> bool:
     return bool(EXCLUDED_INGREDIENT_PATTERN.search(re.sub(r"\s+", "", str(name or ""))))
 
-
 def normalize_ingredient_for_grouping(name: str) -> str:
     return re.sub(r"^(冷凍|国産|生|千切り|皮むき)", "", re.sub(r"[（(].*?[）)]", "", clean_ingredient_name(name))).strip()
-
 
 def fixed_order_key(name: str) -> str | None:
     for _label, key, pattern in FIXED_ORDER_RULES:
@@ -868,13 +775,11 @@ def fixed_order_key(name: str) -> str | None:
             return key
     return None
 
-
 def rounding_order_rule(name: str) -> tuple[str, str, float, dict[str, float]] | None:
     for label, unit, step, base, pattern in ROUNDING_ORDER_RULES:
         if pattern.search(name):
             return label, unit, step, base
     return None
-
 
 def convert_order_quantity(quantity: str, unit: str) -> tuple[float, str]:
     amount = float(normalize_value(str(quantity)).replace(",", ""))
@@ -889,7 +794,6 @@ def convert_order_quantity(quantity: str, unit: str) -> tuple[float, str]:
         return amount, "ml"
     return amount, normalized_unit
 
-
 def convert_to_purchase_unit(quantity: float, unit: str, rule: tuple[str, str, float, dict[str, float]]) -> float:
     if unit == rule[1]:
         return quantity
@@ -898,12 +802,10 @@ def convert_to_purchase_unit(quantity: float, unit: str, rule: tuple[str, str, f
         return quantity / base
     return quantity
 
-
 def ceil_to_step(quantity: float, step: float) -> float:
     if step <= 0:
         return quantity
     return int((quantity + step - 0.0000001) / step) * step
-
 
 def format_order_quantity(quantity: float, unit: str) -> tuple[str, str]:
     if unit == "g" and quantity >= 1000:
@@ -913,7 +815,6 @@ def format_order_quantity(quantity: float, unit: str) -> tuple[str, str]:
     if abs(quantity - round(quantity)) < 0.000001:
         return str(int(round(quantity))), unit
     return (f"{quantity:.3f}".rstrip("0").rstrip("."), unit)
-
 
 def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
     aggregate: dict[tuple[str, str], dict[str, Any]] = {}
@@ -952,17 +853,14 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
             order_rows.append(IngredientRow(name, formatted_quantity, formatted_unit))
     return sorted(order_rows, key=lambda row: row.name)
 
-
 def format_ingredient_column(rows: list[IngredientRow], field_name: str) -> str:
     return " / ".join(str(getattr(row, field_name)) for row in rows)
-
 
 def garbled_ratio(text: str) -> float:
     if not text:
         return 1.0
     suspicious = len(re.findall(r"[�□■◆◇●○]|[\\|]{2,}|[_]{3,}", text))
     return suspicious / max(1, len(text))
-
 
 def has_unusual_numbers(text: str) -> bool:
     numbers = [normalize_value(item) for item in re.findall(r"[0-9０-９][0-9０-９,，.．]{5,}", text)]
@@ -974,14 +872,12 @@ def has_unusual_numbers(text: str) -> bool:
             return True
     return False
 
-
 def critical_sets(fields: ExtractedFields) -> tuple[set[str], set[str], set[str]]:
     return (
         {normalize_value(item) for item in fields.dates},
         {normalize_value(item) for item in fields.amounts},
         {normalize_value(item) for item in fields.quantities},
     )
-
 
 def disagreement(candidates: list[OcrCandidate]) -> bool:
     useful = [candidate for candidate in candidates if candidate.text]
@@ -993,7 +889,6 @@ def disagreement(candidates: list[OcrCandidate]) -> bool:
         if current != base and any(base_item or current_item for base_item, current_item in zip(base, current)):
             return True
     return False
-
 
 def confirmation_reasons(candidate: OcrCandidate, candidates: list[OcrCandidate], fields: ExtractedFields) -> list[str]:
     reasons: list[str] = []
@@ -1013,7 +908,6 @@ def confirmation_reasons(candidate: OcrCandidate, candidates: list[OcrCandidate]
         reasons.append("読み取り全文が空")
     return list(dict.fromkeys(reasons))
 
-
 def save_processed_image(candidate: OcrCandidate, original_path: Path) -> str:
     if candidate.image is None:
         return ""
@@ -1021,7 +915,6 @@ def save_processed_image(candidate: OcrCandidate, original_path: Path) -> str:
     out_path = PROCESSED_DIR / f"{safe_stem}_angle{candidate.angle}.png"
     candidate.image.save(out_path)
     return str(out_path)
-
 
 def row_for_error(path: Path, message: str) -> list[Any]:
     return [
@@ -1043,7 +936,6 @@ def row_for_error(path: Path, message: str) -> list[Any]:
         f"エラー: {message}",
         "",
     ]
-
 
 def process_image(path: Path) -> list[Any]:
     result_queue: mp.Queue = mp.Queue(maxsize=1)
@@ -1069,7 +961,6 @@ def process_image(path: Path) -> list[Any]:
     logging.error("読み込み失敗: %s reason=%s", path, payload)
     return row_for_error(path, f"読み込み失敗: {payload}")
 
-
 def process_image_worker(path: Path, result_queue: mp.Queue) -> None:
     try:
         if Image is None:
@@ -1079,7 +970,6 @@ def process_image_worker(path: Path, result_queue: mp.Queue) -> None:
     except Exception as exc:
         logging.exception("読み込み失敗: %s reason=%s", path, exc)
         result_queue.put((False, str(exc)))
-
 
 def process_image_inner(path: Path) -> list[Any]:
     logging.info("処理開始: %s", path)
@@ -1121,7 +1011,6 @@ def process_image_inner(path: Path) -> list[Any]:
         processed_path,
     ]
 
-
 def write_excel(rows: list[list[Any]]) -> None:
     workbook = Workbook()
     sheet = workbook.active
@@ -1156,7 +1045,6 @@ def write_excel(rows: list[list[Any]]) -> None:
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     workbook.save(EXCEL_PATH)
-
 
 def main() -> int:
     load_required_dependencies()

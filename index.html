@@ -594,8 +594,6 @@
     ];
     const excludedIngredientPattern = /(スチコン|オーブン|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
     const recipeInstructionPattern = /(作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
-    const mealSectionHeadingPattern = /(午前中?おやつ|午前おやつ|昼食|午後おやつ)/;
-    const mealSectionStopPattern = /(作り方|つくり方|手順|調理方法|下処理|備考|ポイント|メモ|栄養|給与栄養目標量|予定献立|献立名|料理名のみ)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 1000;
     const imageLoadTimeoutMs = 6000;
@@ -1407,7 +1405,7 @@
           if (isGarbledText(lineText) || isSentenceNoise(lineText)) { skipped++; continue; }
           const detectedWeekday = detectWeekday(row[columns.day] || lineText);
           if (detectedWeekday) currentWeekday = detectedWeekday;
-          const name = cleanIngredientName(row[columns.name]);
+          const name = ingredientNameLeftOfColumn(row, columns.quantity);
           const quantity = normalizeQuantity(row[columns.quantity]);
           const unit = normalizeUnit(row[columns.unit] || guessUnitNearQuantity(row, columns.quantity));
           const weekday = detectedWeekday || currentWeekday;
@@ -1488,7 +1486,7 @@
       const cleanName = cleanIngredientName(name);
       const cleanUnit = normalizeUnit(unit || "g");
       const numericQuantity = numberValue(quantity);
-      if (!cleanName || !numericQuantity || !cleanUnit || !peopleForWeekday(weekday) || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
+      if (!cleanName || !isNumericCell(quantity) || !numericQuantity || !cleanUnit || !peopleForWeekday(weekday) || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
       target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: "献立CSV" });
       return true;
     }
@@ -1638,9 +1636,7 @@
       const lines = splitOcrRowsForIngredients(text);
       const extracted = [];
       const seen = new Set();
-      const mealRows = collectMealSectionRows(lines);
-      const sourceRows = mealRows.length || lines.some(isMealSectionHeading) ? mealRows : collectUnderThreeRows(lines);
-      sourceRows.forEach(row => addUniqueSourceRow(extracted, seen, row));
+      collectUnderThreeRows(lines).forEach(row => addUniqueSourceRow(extracted, seen, row));
       return extracted;
     }
 
@@ -1649,7 +1645,7 @@
         .replace(/OCR全文/g, "\n")
         .replace(/【[^】]+】/g, "\n")
         .replace(/[|｜]/g, "\n")
-        .split(/\r?\n|(?<=\d)\s{2,}|\s{2,}(?=[月火水木金]?[ぁ-んァ-ヶ一-龠々])/i)
+        .split(/\r?\n/)
         .map(line => normalizeOcrLine(line))
         .filter(Boolean);
     }
@@ -1660,153 +1656,81 @@
       const quantity = normalizeQuantity(row.quantity);
       const numericQuantity = numberValue(quantity);
       const weekday = row.weekday || detectWeekday(row.sourceLine || "");
-      if (!cleanName || !cleanUnit || !numericQuantity || numericQuantity <= 0 || !peopleForWeekday(weekday) || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
-      const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit, normalizeOcrLine(row.sourceLine || "")].join("|");
+      if (!cleanName || !cleanUnit || !isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0 || !peopleForWeekday(weekday) || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
+      const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
       if (seen.has(key)) return;
       seen.add(key);
       target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: row.source || "3歳未満児" });
     }
 
-    function collectMealSectionRows(lines) {
+    function collectUnderThreeRows(lines) {
       const rows = [];
-      let inMealSection = false;
+      let underThreeColumn = -1;
       let currentWeekday = "";
-      let columns = null;
 
       lines.forEach(line => {
         const cells = splitIngredientCells(line);
         const rowText = cells.join(" ") || normalizeOcrLine(line);
+        if (!cells.length || isIgnoredSourceRow(rowText)) return;
+
         const detectedWeekday = detectWeekday(rowText);
         if (detectedWeekday) currentWeekday = detectedWeekday;
 
-        if (isMealSectionHeading(rowText)) {
-          inMealSection = true;
-          columns = null;
-          return;
-        }
-        if (!inMealSection || !cells.length || isIgnoredPdfLine(rowText)) return;
-        if (isMealSectionStop(rowText) || isSentenceNoise(rowText)) return;
-
-        const detectedColumns = detectMenuColumns(cells);
-        if (detectedColumns && detectedColumns.name >= 0 && detectedColumns.quantity >= 0) {
-          columns = detectedColumns;
+        const headerColumn = findUnderThreeColumn(cells);
+        if (headerColumn >= 0) {
+          underThreeColumn = headerColumn;
           return;
         }
 
-        if (!columns || cells.length <= Math.max(columns.name, columns.quantity)) return;
-        const row = rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText);
-        if (row) rows.push(row);
+        if (underThreeColumn < 0 || underThreeColumn >= cells.length) return;
+        const quantity = cells[underThreeColumn];
+        if (!isNumericCell(quantity)) return;
+
+        rows.push({
+          name: ingredientNameLeftOfColumn(cells, underThreeColumn),
+          quantity,
+          unit: guessUnitNearQuantity(cells, underThreeColumn),
+          weekday: detectedWeekday || currentWeekday,
+          sourceLine: rowText,
+          source: "3歳未満児"
+        });
       });
 
       return rows;
     }
 
+    function isIgnoredSourceRow(value) {
+      const text = String(value || "").replace(/\s/g, "");
+      return !text || text.startsWith("※") || isIgnoredPdfLine(text) || isSentenceNoise(text) || isGarbledText(text);
+    }
+
     function splitIngredientCells(line) {
-      return normalizeOcrLine(line).split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
+      const cells = normalizeOcrLine(line).split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
+      return cells.length > 1 ? cells : normalizeOcrLine(line).split(/\s{2,}/).map(cell => cell.trim()).filter(Boolean);
     }
 
-    function isMealSectionHeading(value) {
-      const text = String(value || "").replace(/\s/g, "");
-      return mealSectionHeadingPattern.test(text);
+    function findUnderThreeColumn(cells) {
+      return cells.findIndex(cell => {
+        const text = normalizeOcrLine(cell).replace(/\s/g, "");
+        return /(3歳未満|３歳未満|未満児|乳児)/.test(text) && !/人数|対象|区分|年齢/.test(text);
+      });
     }
 
-    function isMealSectionStop(value) {
-      const text = String(value || "").replace(/\s/g, "");
-      return mealSectionStopPattern.test(text) && !isMealSectionHeading(text);
+    function isNumericCell(value) {
+      const quantity = normalizeQuantity(value).replace(/,/g, "");
+      return /^[0-9]+(?:\.[0-9]+)?$/.test(quantity) && numberValue(quantity) > 0;
     }
 
-    function rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText) {
-      const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
-      const weekday = detectedWeekday || currentWeekday;
-      const dayCell = columns.day >= 0 ? String(cells[columns.day] || "").trim() : "";
-      if (dayCell && !detectedWeekday) return null;
-      const name = cells[columns.name] || "";
-      const quantity = cells[columns.quantity] || "";
-      const unit = cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity);
-      if (!isValidUnderThreeIngredientRow(name, quantity, unit, columns)) return null;
-      return { name, quantity, unit, weekday, sourceLine: rowText, source: "3歳未満児" };
-    }
-
-    function isValidUnderThreeIngredientRow(name, quantity, unit, columns) {
-      return columns
-        && columns.name >= 0
-        && columns.quantity >= 0
-        && columns.name < columns.quantity
-        && cleanIngredientName(name)
-        && isQuantity(quantity)
-        && numberValue(quantity) > 0
-        && isKnownUnit(unit)
-        && !isSentenceNoise(name)
-        && !isIgnoredPdfLine(name)
-        && !isMealSectionHeading(name)
-        && !isMealSectionStop(name);
-    }
-
-    function collectUnderThreeRows(lines) {
-      const rows = [];
-      const table = lines.map(line => line.split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean));
-      const headerIndex = findMenuHeaderIndex(table);
-      const columns = headerIndex >= 0 ? detectMenuColumns(table[headerIndex]) : null;
-      let currentWeekday = "";
-      if (columns && columns.name >= 0 && columns.quantity >= 0) {
-        for (let index = headerIndex + 1; index < table.length; index++) {
-          const cells = table[index];
-          const rowText = cells.join(" ");
-          if (!cells.length || isIgnoredPdfLine(rowText) || isSentenceNoise(rowText)) continue;
-          const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
-          if (detectedWeekday) currentWeekday = detectedWeekday;
-          if (cells.length <= Math.max(columns.name, columns.quantity)) continue;
-          const row = rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText);
-          if (row) rows.push(row);
-        }
+    function ingredientNameLeftOfColumn(cells, quantityIndex) {
+      for (let index = quantityIndex - 1; index >= 0; index--) {
+        const cell = normalizeOcrLine(cells[index]);
+        const text = cell.replace(/\s/g, "");
+        if (!text) continue;
+        if (detectWeekday(cell) || isKnownUnit(text)) continue;
+        if (/日付|曜日|献立日|使用日|単位|3歳未満|３歳未満|未満児|乳児|食材|食品|材料|品名|食料|料理名/.test(text)) continue;
+        return cell;
       }
-
-      return rows;
-    }
-
-    function extractRowsFromLine(line) {
-      const escapedUnits = unitNames().map(unit => unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-      const results = [];
-      const normalizedLine = normalizeOcrLine(line).replace(/,/g, " ").replace(/\t/g, " ").replace(/\s+/g, " ").trim();
-      if (!normalizedLine || isGarbledText(normalizedLine) || isIgnoredPdfLine(normalizedLine) || isSentenceNoise(normalizedLine)) return results;
-      const quantityText = "([0-9０-９]+(?:[.,．][0-9０-９]+)?)";
-      const nameFirstPattern = new RegExp("^(.+?)\\s+" + quantityText + "\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
-      const joinedNameFirstPattern = new RegExp("^(.{1,40}?)" + quantityText + "\\s*(" + escapedUnits + ")(?:\\s|$)", "i");
-      const quantityFirstPattern = new RegExp("^" + quantityText + "\\s*(" + escapedUnits + ")\\s+(.+)$", "i");
-      const inlinePattern = new RegExp("([ぁ-んァ-ヶ一-龠々A-Za-zーｰ－・/／()（）\\s]{1,32}?)\\s*" + quantityText + "\\s*(" + escapedUnits + ")", "gi");
-      const nameFirstMatch = normalizedLine.match(nameFirstPattern) || normalizedLine.match(joinedNameFirstPattern);
-      const quantityFirstMatch = normalizedLine.match(quantityFirstPattern);
-
-      if (nameFirstMatch) {
-        addExtractedRow(results, nameFirstMatch[1], nameFirstMatch[2], nameFirstMatch[3], line);
-      } else if (quantityFirstMatch) {
-        addExtractedRow(results, quantityFirstMatch[3], quantityFirstMatch[1], quantityFirstMatch[2], line);
-      }
-
-      for (const match of normalizedLine.matchAll(inlinePattern)) {
-        addExtractedRow(results, match[1], match[2], match[3], line);
-      }
-
-      const cells = String(line || "").split(/\t|,|，/).map(cell => cell.trim()).filter(Boolean);
-      if (cells.length >= 3) {
-        for (let index = 0; index < cells.length - 2; index++) {
-          const name = cells[index];
-          const quantity = cells[index + 1];
-          const unit = cells[index + 2];
-          if (isQuantity(quantity) && isKnownUnit(unit)) addExtractedRow(results, name, quantity, unit, line);
-        }
-      }
-
-      return results;
-    }
-
-    function addExtractedRow(target, nameValue, quantityValue, unitValue, sourceLine = "") {
-      const name = cleanIngredientName(nameValue);
-      const quantity = normalizeQuantity(quantityValue);
-      const unit = normalizeUnit(unitValue);
-      if (!name || !quantity || !unit || isIgnoredPdfLine(name) || isSuspiciousIngredientName(name) || isExcludedIngredient(name)) return;
-      if (!isLikelyIngredientRow({ name, quantity, unit }, sourceLine)) return;
-      target.push({ name, quantity, unit, source: "OCR" });
+      return "";
     }
 
     function unitNames() {
@@ -1828,19 +1752,6 @@
 
     function isSentenceNoise(line) {
       return recipeInstructionPattern.test(String(line || "")) || /を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます/.test(String(line || ""));
-    }
-
-    function isLikelyIngredientRow(row, sourceLine = "") {
-      const name = String(row && row.name ? row.name : "").trim();
-      const line = String(sourceLine || name).trim();
-      const compactName = name.replace(/\s/g, "");
-      const japaneseCount = countJapaneseCharacters(compactName);
-      const hasFoodLikeChars = /[ぁ-んァ-ヶ一-龠々]/.test(compactName);
-      const hasQuantityAndUnit = isQuantity(row.quantity) && isKnownUnit(row.unit);
-      const tooLong = compactName.length > 32 || line.length > 80;
-      const looksLikeSentence = /です|ます|ください|お願い|備考|注意|以下|以上|合計|小計|税込|税抜|を塗って|しましょう|食べる|入れる|加える|混ぜる|焼く|煮る|炒める/.test(line);
-      const hasTooManyDigits = countMatches(compactName, /[0-9０-９]/g) > Math.max(1, japaneseCount);
-      return hasQuantityAndUnit && hasFoodLikeChars && japaneseCount >= 1 && !tooLong && !looksLikeSentence && !hasTooManyDigits && !isGarbledText(line);
     }
 
     function scoreOcrText(result) {
