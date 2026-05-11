@@ -1981,9 +1981,9 @@
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
           '<tr class="summary-row checker-label-row"><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="6"></td></tr>' +
-          '<tr class="summary-row total-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td colspan="2"></td><td class="total-label" colspan="2">合計金額</td><td class="total-amount">' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr class="summary-row total-row"><td colspan="6"></td><td class="total-label" colspan="2">消費税 課税合計</td><td class="total-amount">' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr class="summary-row total-row"><td colspan="6"></td><td class="total-label" colspan="2">請求金額</td><td class="total-amount">' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="summary-row total-row"><td colspan="2"></td><td colspan="2">' + escapeHtml(checkerName.value || "") + '</td><td></td><td class="total-label" colspan="2">合計金額</td><td class="total-amount">' + escapeHtml(totals.total || "") + '</td><td class="no-border" colspan="2"></td></tr>' +
+          '<tr class="summary-row total-row"><td colspan="2"></td><td colspan="2"></td><td></td><td class="total-label" colspan="2">消費税 課税合計</td><td class="total-amount">' + escapeHtml(totals.tax || "") + '</td><td class="no-border" colspan="2"></td></tr>' +
+          '<tr class="summary-row total-row"><td colspan="2"></td><td colspan="2"></td><td></td><td class="total-label" colspan="2">請求金額</td><td class="total-amount">' + escapeHtml(totals.billed || "") + '</td><td class="no-border" colspan="2"></td></tr>' +
           '<tr class="blank"><td colspan="10"></td></tr>' +
         '</tbody>' +
       '</table>';
@@ -2034,9 +2034,9 @@
         blank,
         blank,
         ["", "", "検品者", "", "", "", "", "", "", ""],
-        ["", "", checkerName.value || "", "", "", "", "合計金額", "", totals.total || "", ""],
-        ["", "", "", "", "", "", "消費税 課税合計", "", totals.tax || "", ""],
-        ["", "", "", "", "", "", "請求金額", "", totals.billed || "", ""],
+        ["", "", checkerName.value || "", "", "", "合計金額", "", totals.total || "", "", ""],
+        ["", "", "", "", "", "消費税 課税合計", "", totals.tax || "", "", ""],
+        ["", "", "", "", "", "請求金額", "", totals.billed || "", "", ""],
         blank
       ];
     }
@@ -2067,7 +2067,7 @@
         totalStart: detailRowCount + 10,
         totalEnd: detailRowCount + 12,
         checkerStart: detailRowCount + 9,
-        checkerEnd: detailRowCount + 10
+        checkerEnd: detailRowCount + 12
       };
     }
 
@@ -2083,11 +2083,13 @@
         { s: { r: 1, c: 2 }, e: { r: 1, c: 7 } },
         { s: { r: 2, c: 2 }, e: { r: 2, c: 7 } },
         { s: { r: 4, c: 0 }, e: { r: 4, c: 9 } },
-        { s: { r: layout.totalStart, c: 6 }, e: { r: layout.totalStart, c: 7 } },
-        { s: { r: layout.totalStart + 1, c: 6 }, e: { r: layout.totalStart + 1, c: 7 } },
-        { s: { r: layout.totalStart + 2, c: 6 }, e: { r: layout.totalStart + 2, c: 7 } },
+        { s: { r: layout.totalStart, c: 5 }, e: { r: layout.totalStart, c: 6 } },
+        { s: { r: layout.totalStart + 1, c: 5 }, e: { r: layout.totalStart + 1, c: 6 } },
+        { s: { r: layout.totalStart + 2, c: 5 }, e: { r: layout.totalStart + 2, c: 6 } },
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
-        { s: { r: layout.checkerEnd, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
+        { s: { r: layout.checkerStart + 1, c: 2 }, e: { r: layout.checkerStart + 1, c: 3 } },
+        { s: { r: layout.checkerStart + 2, c: 2 }, e: { r: layout.checkerStart + 2, c: 3 } },
+        { s: { r: layout.checkerStart + 3, c: 2 }, e: { r: layout.checkerStart + 3, c: 3 } }
       ];
       worksheet["!margins"] = {
         left: cmToInch(1.5),
@@ -2137,14 +2139,14 @@
       const isDateLine = row === 4;
       const isHeader = row === 6;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
-      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 8;
-      const isTotalAmountCell = row >= layout.totalStart && row <= layout.totalEnd && col === 8;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 5 && col <= 7;
+      const isTotalAmountCell = row >= layout.totalStart && row <= layout.totalEnd && col === 7;
 
       return {
         font: {
           name: "Yu Gothic",
           sz: isTitle ? 15 : (isSubTitle ? 9 : 8),
-          bold: isTitle || isSubTitle || isHeader || isCheckerBox || (isTotalBox && col <= 7)
+          bold: isTitle || isSubTitle || isHeader || isCheckerBox || (isTotalBox && col <= 6)
         },
         alignment: {
           horizontal: isTotalAmountCell ? "right" : (isDateLine ? "left" : (isTitle || isSubTitle || isHeader || isCheckerBox || isTotalBox ? "center" : (col === 1 || col === 4 ? "left" : "center"))),
@@ -2160,7 +2162,7 @@
     function borderForOrderSheetCell(row, col, layout, thinBorder, mediumBorder) {
       const isTable = row >= 6 && row <= layout.detailEnd;
       const isCheckerBox = row >= layout.checkerStart && row <= layout.checkerEnd && col >= 2 && col <= 3;
-      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 6 && col <= 8;
+      const isTotalBox = row >= layout.totalStart && row <= layout.totalEnd && col >= 5 && col <= 7;
       const hasBorder = isTable || isCheckerBox || isTotalBox;
       if (!hasBorder) return undefined;
 
@@ -2174,8 +2176,8 @@
       if (isCheckerBox || isTotalBox) {
         const firstRow = isCheckerBox ? layout.checkerStart : layout.totalStart;
         const lastRow = isCheckerBox ? layout.checkerEnd : layout.totalEnd;
-        const firstCol = isCheckerBox ? 2 : 6;
-        const lastCol = isCheckerBox ? 3 : 8;
+        const firstCol = isCheckerBox ? 2 : 5;
+        const lastCol = isCheckerBox ? 3 : 7;
         if (row === firstRow) border.top = mediumBorder;
         if (row === lastRow) border.bottom = mediumBorder;
         if (col === firstCol) border.left = mediumBorder;
