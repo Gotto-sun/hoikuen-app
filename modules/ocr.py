@@ -24,12 +24,14 @@ TABLE_X_RATIO = 0.04
 TABLE_WIDTH_RATIO = 0.92
 SECTION_BOTTOM_RATIO = 0.92
 MIN_SECTION_HEIGHT_RATIO = 0.08
+# 料理ブロック内の横罫線行だけを読みます。
+# 左40%は食材名、右60%は数値列として固定し、右から2番目を3歳未満列にします。
 FIXED_MENU_COLUMNS = {
-    "food_name": (0.00, 0.30),
-    "total": (0.30, 0.48),
-    "over_three": (0.48, 0.64),
-    "under_three": (0.64, 0.80),
-    "staff": (0.80, 1.00),
+    "food_name": (0.00, 0.40),
+    "total": (0.40, 0.55),
+    "over_three": (0.55, 0.70),
+    "under_three": (0.70, 0.85),
+    "staff": (0.85, 1.00),
 }
 DEBUG_TARGET_COLUMNS = ("food_name", "under_three")
 DEBUG_COLUMN_LABELS = {
@@ -48,6 +50,21 @@ SECTION_DEBUG_COLORS = {
 FIXED_ROW_MARKER = "固定表行"
 FIXED_OCR_DPI = 300
 NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9.])")
+FORCED_INGREDIENT_NAMES = (
+    "牛乳",
+    "ひじき",
+    "豚ひき肉",
+    "木綿豆腐",
+    "たまねぎ",
+    "片栗粉",
+    "もやし",
+    "きゅうり",
+    "カットわかめ",
+    "じゃがいも",
+    "にんじん",
+    "食パン",
+    "いちごジャム",
+)
 
 
 def _preprocess_image(image: Image.Image) -> Image.Image:
@@ -243,14 +260,9 @@ def _detect_table_row_ranges(table: Image.Image) -> list[tuple[int, int]]:
         bottom = end - 2
         if bottom - top >= max(10, int(gray.height * 0.035)):
             ranges.append((top, bottom))
-    if ranges:
-        return ranges
-
-    fallback_count = max(1, round(gray.height / 38))
-    return [
-        (round(gray.height * index / fallback_count), round(gray.height * (index + 1) / fallback_count))
-        for index in range(fallback_count)
-    ]
+    # 横罫線で上下が区切られている行だけを食材行の候補にします。
+    # 罫線が見つからない場合の等分割は、料理名や文章を拾う原因になるため行いません。
+    return ranges
 
 
 def _fixed_cell_box(
@@ -301,6 +313,46 @@ def _quantity_from_under_three_text(text: str) -> str:
     normalized = normalized.replace(",", "")
     match = NUMBER_RE.search(normalized)
     return match.group(0) if match else ""
+
+
+
+def _is_recipe_note_or_instruction(text: str) -> bool:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    if not compact or compact.startswith("※"):
+        return True
+    if re.fullmatch(r"[0-9０-９]+[.)）．、]?", compact):
+        return True
+    return bool(
+        re.search(
+            r"作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|してください|します|です",
+            compact,
+        )
+    )
+
+
+def _is_recipe_title_row(food_name: str, quantity: str) -> bool:
+    compact = re.sub(r"\s+", "", str(food_name or ""))
+    if quantity or _is_recipe_note_or_instruction(compact):
+        return False
+    if NUMBER_RE.search(compact):
+        return False
+    return bool(re.search(r"[ぁ-んァ-ヶ一-龯々〆〇]{2,}", compact))
+
+
+def _is_ingredient_list_row(food_name: str, quantity: str) -> bool:
+    compact = re.sub(r"\s+", "", str(food_name or ""))
+    if not compact or not quantity:
+        return False
+    if _is_recipe_note_or_instruction(compact):
+        return False
+    if NUMBER_RE.search(compact):
+        return False
+    return bool(re.search(r"[ぁ-んァ-ヶ一-龯々〆〇]{2,}", compact))
+
+
+def _is_forced_ingredient_name(food_name: str) -> bool:
+    compact = re.sub(r"\s+", "", str(food_name or ""))
+    return any(name in compact for name in FORCED_INGREDIENT_NAMES)
 
 
 def _compact_heading_text(text: str) -> str:
@@ -536,10 +588,11 @@ def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
         table = source.crop(area.box)
         row_ranges = _detect_table_row_ranges(table)
         if not row_ranges:
-            lines.append(f"区分\t{area.label}\t検出行なし\t{area.source}")
+            lines.append(f"区分\t{area.label}\t横罫線行なし\t{area.source}")
             continue
 
         section_row_count = 0
+        in_recipe_block = False
         lines.append(f"区分\t{area.label}\t{area.source}\t{len(row_ranges)}行")
         for top, bottom in row_ranges:
             row_top = area.box[1] + top
@@ -557,14 +610,22 @@ def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
                 confidences.append(name_confidence)
             if quantity_confidence > 0:
                 confidences.append(quantity_confidence)
-            if food_name:
-                section_row_count += 1
-                lines.append(
-                    f"{FIXED_ROW_MARKER}\t{area.label}\t{food_name}\t{quantity or '数量要確認'}\tg"
-                )
+
+            if _is_recipe_title_row(food_name, quantity):
+                in_recipe_block = True
+                lines.append(f"料理ブロック\t{area.label}\t{food_name}")
+                continue
+
+            if not _is_ingredient_list_row(food_name, quantity):
+                continue
+            if not in_recipe_block and not _is_forced_ingredient_name(food_name):
+                continue
+
+            section_row_count += 1
+            lines.append(f"{FIXED_ROW_MARKER}\t{area.label}\t{food_name}\t{quantity}\tg")
 
         if section_row_count == 0:
-            lines.append(f"{FIXED_ROW_MARKER}\t{area.label}\t食材名要確認\t数量要確認\tg")
+            lines.append(f"区分\t{area.label}\t食材行なし\t{area.source}")
 
     average_confidence = round(sum(confidences) / len(confidences), 1) if confidences else 0.0
     return OCRResult(

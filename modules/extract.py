@@ -41,24 +41,23 @@ EXCLUDE_WORDS = [
 ]
 SENTENCE_MARKERS = ["。", "、", "です", "ます", "してください", "ため", "こと", "もの"]
 NOISE_KANA = {"を", "ゑ", "ゐ"}
-CORRECTIONS = {
-    "豚ひき内": "豚ひき肉",
-    "玉ねぎ": "たまねぎ",
-    "玉葱": "たまねぎ",
-    "ジャガイモ": "じゃがいも",
-    "じゃが芋": "じゃがいも",
-    "とゃがいも": "じゃがいも",
-    "人参": "にんじん",
-    "にんん": "にんじん",
-    "にんヒじん": "にんじん",
-    "カットわかめ": "カットわかめ",
-    "わかめ": "カットわかめ",
-    "牛乳": "牛乳",
-    "ひじき": "ひじき",
-    "でちこジャ": "いちごジャム",
-    "きゆうり": "きゅうり",
-    "せんい": "しょうゆせんべい",
+FORCED_INGREDIENT_CORRECTIONS = {
+    "牛乳": ("牛乳", "乳", "ぎゅうにゅう", "ミルク"),
+    "ひじき": ("ひじき", "ひじ", "ヒジキ"),
+    "豚ひき肉": ("豚ひき肉", "豚挽き肉", "豚ひき内", "豚ミンチ"),
+    "木綿豆腐": ("木綿豆腐", "木綿とうふ", "木綿豆富"),
+    "たまねぎ": ("たまねぎ", "玉ねぎ", "玉葱", "タマネギ", "玉ネギ"),
+    "片栗粉": ("片栗粉", "片栗", "片困粉"),
+    "もやし": ("もやし",),
+    "きゅうり": ("きゅうり", "きゆうり", "胡瓜"),
+    "カットわかめ": ("カットわかめ", "カット若布", "わかめ", "若布"),
+    "じゃがいも": ("じゃがいも", "ジャガイモ", "じゃが芋", "とゃがいも", "馬鈴薯"),
+    "にんじん": ("にんじん", "にんん", "にんヒじん", "人参", "ニンジン"),
+    "食パン": ("食パン",),
+    "いちごジャム": ("いちごジャム", "苺ジャム", "でちこジャ"),
 }
+CORRECTIONS = {alias: label for label, aliases in FORCED_INGREDIENT_CORRECTIONS.items() for alias in aliases}
+CORRECTIONS["せんい"] = "しょうゆせんべい"
 COLUMNS = [
     "区分",
     "行番号",
@@ -106,7 +105,7 @@ def _correct_name(name: str) -> str:
     if compact.startswith("ひじ"):
         return "ひじき"
     for wrong, corrected in CORRECTIONS.items():
-        if wrong in compact:
+        if wrong and wrong in compact:
             return corrected
     return name.strip()
 
@@ -240,22 +239,17 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
             continue
 
         quantity_text = _normalize_line(fixed_cells[3]).replace(",", "")
-        quantity: float | str
+        if not NUMBER_RE.fullmatch(quantity_text):
+            excluded_rows.append(_excluded_row(line_number, line, raw_food_name, "食材名と数値の両方がありません"))
+            continue
+        quantity: float | str = float(quantity_text)
         forced_review_note = ""
-        if NUMBER_RE.fullmatch(quantity_text):
-            quantity = float(quantity_text)
-        else:
-            quantity = "数量要確認"
-            forced_review_note = "数量がありません。食材候補として先に表示します"
 
         unit = _normalize_line(fixed_cells[4])
-        if quantity != "数量要確認":
-            unit_reason = _unit_exclusion_reason(unit)
-            if unit_reason:
-                excluded_rows.append(_excluded_row(line_number, line, raw_food_name, unit_reason))
-                continue
-        elif not unit:
-            unit = ""
+        unit_reason = _unit_exclusion_reason(unit)
+        if unit_reason:
+            excluded_rows.append(_excluded_row(line_number, line, raw_food_name, unit_reason))
+            continue
 
         rows.append(
             _row_from_values(
