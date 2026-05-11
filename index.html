@@ -1468,10 +1468,11 @@
       const normalized = header.map(cell => String(cell || "").replace(/\s/g, ""));
       let day = normalized.findIndex(cell => /曜日|使用日|日付|献立日/.test(cell));
       let name = normalized.findIndex(cell => /食材|食品|材料|品名|食料|料理名/.test(cell));
-      if (name < 0) name = 0;
       let quantity = normalized.findIndex(cell => /(3歳未満|３歳未満|未満児|乳児|未満).*?(分量|使用量|数量|量|g|ｇ|グラム)/.test(cell));
       if (quantity < 0) quantity = normalized.findIndex(cell => /(分量|使用量|数量|量).*(3歳未満|３歳未満|未満児|乳児|未満)/.test(cell));
       if (quantity < 0) quantity = normalized.findIndex(cell => /(3歳未満|３歳未満|未満児|乳児)/.test(cell) && !/人数|対象|区分|年齢/.test(cell));
+      if (name < 0 && quantity > 0) name = 0;
+      if (quantity < 0 || name < 0 || name >= quantity) return { day, name: -1, quantity: -1, unit: -1 };
       let unit = normalized.findIndex((cell, index) => index > name && /単位/.test(cell));
       if (unit < 0 && quantity >= 0 && /単位/.test(normalized[quantity + 1] || "")) unit = quantity + 1;
       if (unit < 0 && quantity >= 0 && isKnownUnit(header[quantity + 1])) unit = quantity + 1;
@@ -1653,49 +1654,6 @@
         .filter(Boolean);
     }
 
-    function parseMarkerNumericRow(line, preferredNumericIndex = -1, preferredNumericValue = "") {
-      const normalized = normalizeOcrLine(line).replace(/^[0-9０-９]+[.)）．、\s]+/, "");
-      if (!normalized || isIgnoredPdfLine(normalized) || isSentenceNoise(normalized)) return null;
-      const unitPattern = unitNames().map(unit => escapeRegExp(unit)).join("|");
-      const tokenPattern = new RegExp("([0-9０-９]+(?:[.,．][0-9０-９]+)?)(?:\\s*(" + unitPattern + "))?", "gi");
-      const matches = Array.from(normalized.matchAll(tokenPattern));
-      if (matches.length < 2) return null;
-      const firstIndex = matches[0].index || 0;
-      const name = cleanIngredientName(normalized.slice(0, firstIndex));
-      if (!name) return null;
-      let rowUnit = "";
-      const numericValues = [];
-      matches.forEach((match, position) => {
-        const value = normalizeQuantity(match[1]);
-        const unit = normalizeUnit(match[2] || "");
-        if (unit && !rowUnit) rowUnit = unit;
-        const numeric = numberValue(value);
-        if (numeric > 0) numericValues.push({ position, value, unit: unit || rowUnit || "g" });
-      });
-      if (!numericValues.length) return null;
-      const preferredValue = preferredNumericValue ? normalizeQuantity(preferredNumericValue) : "";
-      if (preferredValue) {
-        const preferred = numericValues.find(item => item.value === preferredValue);
-        if (preferred) return { name, quantity: preferred.value, unit: preferred.unit || rowUnit || "g" };
-      }
-      if (preferredNumericIndex >= 0) {
-        const firstNumberEnd = (matches[0].index || 0) + matches[0][0].length;
-        const beforeFirstNumber = normalized.slice(0, firstNumberEnd);
-        const numericPosition = /(?:kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前)$/i.test(beforeFirstNumber) ? preferredNumericIndex - 1 : preferredNumericIndex;
-        const preferred = numericValues.find(item => item.position === numericPosition);
-        if (preferred) return { name, quantity: preferred.value, unit: preferred.unit || rowUnit || "g" };
-      }
-      for (const item of numericValues) {
-        const previous = matches[item.position - 1];
-        const previousHasUnit = previous && Boolean(previous[2]);
-        const previousIsZero = previous && numberValue(normalizeQuantity(previous[1])) === 0;
-        if (previousHasUnit && previousIsZero) return { name, quantity: item.value, unit: item.unit || rowUnit || "g" };
-        if (!matches[item.position][2]) return { name, quantity: item.value, unit: item.unit || rowUnit || "g" };
-      }
-      const first = numericValues[0];
-      return { name, quantity: first.value, unit: first.unit || rowUnit || "g" };
-    }
-
     function addUniqueSourceRow(target, seen, row) {
       const cleanName = cleanIngredientName(row.name);
       const cleanUnit = normalizeUnit(row.unit || "g");
@@ -1735,8 +1693,8 @@
           return;
         }
 
-        if (columns && cells.length <= Math.max(columns.name, columns.quantity)) return;
-        const row = columns ? rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText) : rowFromSimpleMealTable(cells, currentWeekday, rowText);
+        if (!columns || cells.length <= Math.max(columns.name, columns.quantity)) return;
+        const row = rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText);
         if (row) rows.push(row);
       });
 
@@ -1760,32 +1718,28 @@
     function rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText) {
       const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
       const weekday = detectedWeekday || currentWeekday;
-      const directName = cells[columns.name] || "";
-      const directQuantity = cells[columns.quantity];
-      const directUnit = cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity);
-      if (directName && isQuantity(directQuantity) && isKnownUnit(directUnit)) {
-        return { name: directName, quantity: directQuantity, unit: directUnit, weekday, sourceLine: rowText, source: "3歳未満児" };
-      }
-      const markerRow = parseMarkerNumericRow(cells.join("\t"), columns.quantity, cells[columns.quantity] || "");
-      const name = cells[columns.name] || (markerRow && markerRow.name) || "";
-      const quantity = markerRow ? markerRow.quantity : cells[columns.quantity];
-      const unit = markerRow ? markerRow.unit : cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity);
-      if (!name || !isQuantity(quantity) || !isKnownUnit(unit)) return null;
+      const dayCell = columns.day >= 0 ? String(cells[columns.day] || "").trim() : "";
+      if (dayCell && !detectedWeekday) return null;
+      const name = cells[columns.name] || "";
+      const quantity = cells[columns.quantity] || "";
+      const unit = cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity);
+      if (!isValidUnderThreeIngredientRow(name, quantity, unit, columns)) return null;
       return { name, quantity, unit, weekday, sourceLine: rowText, source: "3歳未満児" };
     }
 
-    function rowFromSimpleMealTable(cells, currentWeekday, rowText) {
-      const detectedWeekday = detectWeekday(rowText);
-      const weekday = detectedWeekday || currentWeekday;
-      for (let index = 0; index < cells.length - 2; index++) {
-        const name = cells[index];
-        const quantity = cells[index + 1];
-        const unit = cells[index + 2];
-        if (isQuantity(quantity) && isKnownUnit(unit) && !isMealSectionHeading(name)) {
-          return { name, quantity, unit, weekday, sourceLine: rowText, source: "3歳未満児" };
-        }
-      }
-      return null;
+    function isValidUnderThreeIngredientRow(name, quantity, unit, columns) {
+      return columns
+        && columns.name >= 0
+        && columns.quantity >= 0
+        && columns.name < columns.quantity
+        && cleanIngredientName(name)
+        && isQuantity(quantity)
+        && numberValue(quantity) > 0
+        && isKnownUnit(unit)
+        && !isSentenceNoise(name)
+        && !isIgnoredPdfLine(name)
+        && !isMealSectionHeading(name)
+        && !isMealSectionStop(name);
     }
 
     function collectUnderThreeRows(lines) {
@@ -1802,45 +1756,11 @@
           const detectedWeekday = detectWeekday(cells[columns.day] || rowText);
           if (detectedWeekday) currentWeekday = detectedWeekday;
           if (cells.length <= Math.max(columns.name, columns.quantity)) continue;
-          const markerRow = parseMarkerNumericRow(cells.join("\t"), columns.quantity, cells[columns.quantity] || "");
-          rows.push({
-            name: cells[columns.name] || (markerRow && markerRow.name) || "",
-            quantity: markerRow ? markerRow.quantity : cells[columns.quantity],
-            unit: markerRow ? markerRow.unit : cells[columns.unit] || guessUnitNearQuantity(cells, columns.quantity),
-            weekday: detectedWeekday || currentWeekday,
-            sourceLine: cells.join(" "),
-            source: "3歳未満児"
-          });
+          const row = rowFromDetectedMealColumns(cells, columns, currentWeekday, rowText);
+          if (row) rows.push(row);
         }
       }
 
-      const markerPattern = /(3歳未満児?|３歳未満児?|未満児|乳児)/;
-      const unitPattern = unitNames().map(unit => escapeRegExp(unit)).join("|");
-      const inlinePattern = new RegExp("^(.{1,80}?)" + markerPattern.source + ".*?([0-9０-９]+(?:[.,．][0-9０-９]+)?)\\s*(" + unitPattern + ")", "i");
-      lines.forEach(line => {
-        const normalized = normalizeOcrLine(line);
-        const detectedWeekday = detectWeekday(normalized);
-        if (detectedWeekday) currentWeekday = detectedWeekday;
-        const markerRow = parseMarkerNumericRow(normalized);
-        if (markerRow) {
-          rows.push({
-            ...markerRow,
-            weekday: detectedWeekday || currentWeekday,
-            sourceLine: normalized,
-            source: "3歳未満児"
-          });
-          return;
-        }
-        const match = normalized.match(inlinePattern);
-        if (match) rows.push({
-          name: stripNonIngredientPrefix(match[1]),
-          quantity: match[2],
-          unit: match[3],
-          weekday: detectedWeekday || currentWeekday,
-          sourceLine: normalized,
-          source: "3歳未満児"
-        });
-      });
       return rows;
     }
 
