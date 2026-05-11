@@ -3,14 +3,32 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from importlib import import_module, util
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageOps
 
 from modules.preprocess import candidate_rotations, preprocess_image
+
+
+FIXED_MENU_TABLE_AREAS = [
+    ("午前おやつ", 0.04, 0.18, 0.92, 0.16),
+    ("昼食", 0.04, 0.34, 0.92, 0.36),
+    ("午後おやつ", 0.04, 0.70, 0.92, 0.18),
+]
+FIXED_MENU_COLUMNS = {
+    "food_name": (0.00, 0.30),
+    "total": (0.30, 0.48),
+    "over_three": (0.48, 0.64),
+    "under_three": (0.64, 0.80),
+    "staff": (0.80, 1.00),
+}
+FIXED_ROW_MARKER = "固定表行"
+FIXED_OCR_DPI = 300
+NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9.])")
 
 
 @dataclass
@@ -111,19 +129,139 @@ def run_tesseract(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
     return best_result
 
 
+def _ratio_crop_box(image: Image.Image, x: float, y: float, width: float, height: float) -> tuple[int, int, int, int]:
+    left = round(image.width * x)
+    top = round(image.height * y)
+    right = round(image.width * (x + width))
+    bottom = round(image.height * (y + height))
+    return max(0, left), max(0, top), min(image.width, right), min(image.height, bottom)
+
+
+def _group_line_positions(values: list[int]) -> list[int]:
+    groups: list[list[int]] = []
+    for value in values:
+        if not groups or value - groups[-1][-1] > 2:
+            groups.append([value])
+        else:
+            groups[-1].append(value)
+    return [round(sum(group) / len(group)) for group in groups]
+
+
+def _detect_table_row_ranges(table: Image.Image) -> list[tuple[int, int]]:
+    gray = ImageOps.grayscale(table)
+    pixels = gray.load()
+    line_positions: list[int] = []
+    for y in range(gray.height):
+        dark = 0
+        for x in range(gray.width):
+            if pixels[x, y] < 105:
+                dark += 1
+        if dark / max(1, gray.width) > 0.32:
+            line_positions.append(y)
+
+    grouped = _group_line_positions(line_positions)
+    ranges: list[tuple[int, int]] = []
+    for start, end in zip(grouped, grouped[1:]):
+        top = start + 2
+        bottom = end - 2
+        if bottom - top >= max(10, int(gray.height * 0.035)):
+            ranges.append((top, bottom))
+    if ranges:
+        return ranges
+
+    fallback_count = max(1, round(gray.height / 38))
+    return [
+        (round(gray.height * index / fallback_count), round(gray.height * (index + 1) / fallback_count))
+        for index in range(fallback_count)
+    ]
+
+
+def _fixed_cell_box(
+    table_box: tuple[int, int, int, int],
+    row_top: int,
+    row_bottom: int,
+    column_name: str,
+) -> tuple[int, int, int, int]:
+    left_ratio, right_ratio = FIXED_MENU_COLUMNS[column_name]
+    table_width = table_box[2] - table_box[0]
+    left = table_box[0] + round(table_width * left_ratio)
+    right = table_box[0] + round(table_width * right_ratio)
+    x_padding = max(1, round(table_width * 0.004))
+    y_padding = max(1, round((row_bottom - row_top) * 0.08))
+    return (
+        min(right - 1, left + x_padding),
+        min(row_bottom - 1, row_top + y_padding),
+        max(left + 1, right - x_padding),
+        max(row_top + 1, row_bottom - y_padding),
+    )
+
+
+def _ocr_fixed_cell(image: Image.Image, lang: str) -> tuple[str, float]:
+    cell = ImageOps.grayscale(image)
+    cell = cell.resize((max(1, cell.width * 3), max(1, cell.height * 3)), Image.Resampling.LANCZOS)
+    processed = preprocess_image(cell)
+    config = f"--oem 3 --psm 7 --dpi {FIXED_OCR_DPI}"
+    text = pytesseract.image_to_string(processed, lang=lang, config=config)
+    data = pytesseract.image_to_data(
+        processed,
+        lang=lang,
+        config=config,
+        output_type=pytesseract.Output.DICT,
+    )
+    return text.strip(), _confidence_from_data(data)
+
+
+def _quantity_from_under_three_text(text: str) -> str:
+    normalized = str(text or "").translate(str.maketrans("０１２３４５６７８９，．", "0123456789,."))
+    normalized = normalized.replace(",", "")
+    match = NUMBER_RE.search(normalized)
+    return match.group(0) if match else ""
+
+
+def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
+    """固定X座標の食材名列と3歳未満列だけを別々にOCRします。"""
+
+    source = ImageOps.exif_transpose(image).convert("L")
+    lines: list[str] = []
+    confidences: list[float] = []
+
+    for area_label, x_ratio, y_ratio, width_ratio, height_ratio in FIXED_MENU_TABLE_AREAS:
+        table_box = _ratio_crop_box(source, x_ratio, y_ratio, width_ratio, height_ratio)
+        table = source.crop(table_box)
+        for top, bottom in _detect_table_row_ranges(table):
+            row_top = table_box[1] + top
+            row_bottom = table_box[1] + bottom
+            if row_bottom <= row_top:
+                continue
+
+            name_box = _fixed_cell_box(table_box, row_top, row_bottom, "food_name")
+            under_three_box = _fixed_cell_box(table_box, row_top, row_bottom, "under_three")
+            name_text, name_confidence = _ocr_fixed_cell(source.crop(name_box), "jpn+eng")
+            quantity_text, quantity_confidence = _ocr_fixed_cell(source.crop(under_three_box), "eng")
+            food_name = " ".join(name_text.split())
+            quantity = _quantity_from_under_three_text(quantity_text)
+            if name_confidence > 0:
+                confidences.append(name_confidence)
+            if quantity_confidence > 0:
+                confidences.append(quantity_confidence)
+            if food_name:
+                lines.append(
+                    f"{FIXED_ROW_MARKER}\t{area_label}\t{food_name}\t{quantity or '数量要確認'}\tg"
+                )
+
+    average_confidence = round(sum(confidences) / len(confidences), 1) if confidences else 0.0
+    return OCRResult(
+        text="\n".join(lines),
+        confidence=average_confidence,
+        engine="Tesseract固定X座標OCR",
+        rotation=0,
+    )
+
+
 def run_ocr_for_image(image: Image.Image) -> OCRResult:
-    """PaddleOCRを優先し、使えない場合はTesseractでOCRします。"""
+    """全文OCRを使わず、固定X座標の列切り出しOCRだけを実行します。"""
 
-    if _paddleocr_available():
-        try:
-            paddle_result = run_paddleocr(image)
-            if paddle_result.text.strip():
-                return paddle_result
-        except Exception:
-            # PaddleOCRはOSや依存関係で失敗することがあるため、MVPではTesseractへ切り替えます。
-            pass
-
-    return run_tesseract(image)
+    return run_fixed_layout_ocr(image)
 
 
 def pdf_to_images(pdf_bytes: bytes) -> list[Image.Image]:

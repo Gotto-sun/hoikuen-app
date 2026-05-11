@@ -21,6 +21,8 @@ EXCLUDE_WORDS = [
     "切る",
     "する",
     "します",
+    "注釈",
+    "文章",
     "スチコン",
     "オーブン",
     "鍋",
@@ -134,7 +136,7 @@ def _row_from_values(
 
 
 def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: float) -> pd.DataFrame:
-    """表の1行を1食材として、3歳未満量だけ候補化します。"""
+    """固定X座標OCR済みの行から、3歳未満列の数量だけ候補化します。"""
 
     rows: list[dict[str, object]] = []
     review_rows: list[dict[str, object]] = []
@@ -146,6 +148,8 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
         fixed_cells = [cell.strip() for cell in raw_line.split("\t")]
         if fixed_cells and fixed_cells[0] == "固定表行" and len(fixed_cells) >= 5:
             raw_food_name = _clean_food_name(fixed_cells[2])
+            if not raw_food_name or _should_exclude(raw_food_name):
+                continue
             quantity_text = fixed_cells[3].strip()
             if raw_food_name and quantity_text == "数量要確認":
                 review_rows.append(
@@ -174,24 +178,6 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
                     )
                 )
                 continue
-
-        numbers = _numbers_from_row(line)
-        if len(numbers) not in (3, 4):
-            continue
-        raw_food_name = _name_left_of_numbers(line)
-        if not raw_food_name or _should_exclude(raw_food_name):
-            continue
-        rows.append(
-            _row_from_values(
-                line_number=line_number,
-                line=line,
-                raw_food_name=raw_food_name,
-                quantity=float(numbers[2]),
-                unit="g",
-                master=master,
-                ocr_confidence=ocr_confidence,
-            )
-        )
 
     if not rows and review_rows:
         rows = review_rows[:10]
