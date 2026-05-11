@@ -146,3 +146,30 @@ ExcelのM列「備考」にも、エラーや要確認の理由が出ます。
 - `requirements.txt`: OCR強化版に必要なPythonライブラリです。
 - `input_images/`: 読み取りたい画像を入れる場所です。
 - `output/`: Excel、補正後画像、ログが保存される場所です。
+
+## Streamlit版 MVP
+
+画像/PDFをアップロードし、OCR全文表示、食材候補の確認・修正、Excel出力までを行う最小版です。
+
+### 実行方法
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+### MVPでできること
+
+- jpg / jpeg / png / pdf のアップロード
+- PaddleOCR（入っている場合）またはTesseract OCRによる全文表示
+- OCR信頼度の表示
+- 数字と単位を含む行から食材候補を抽出
+- `data/food_master.csv` による食材名の表記ゆれ補正
+- 画面上で食材候補を確認・修正
+- 新しいExcelファイルとしてダウンロード
+
+### 安全ルール
+
+- OCR結果をそのまま発注に使わず、必ず確認・修正画面を通します。
+- MVPでは既存Excelを上書きしません。
+- 既存Excelフォーマットへの転記は、実際の発注書ファイルを確認してから対応します。
