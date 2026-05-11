@@ -30,12 +30,14 @@ FIXED_MENU_COLUMNS = {
     "under_three": (0.64, 0.80),
     "staff": (0.80, 1.00),
 }
+DEBUG_TARGET_COLUMNS = ("food_name", "under_three")
 DEBUG_COLUMN_LABELS = {
     "food_name": "食材名",
-    "total": "総使用量",
-    "over_three": "3歳以上",
     "under_three": "3歳未満",
-    "staff": "職員",
+}
+DEBUG_COLUMN_COLORS = {
+    "食材名": (0, 90, 255),
+    "3歳未満": (255, 0, 0),
 }
 SECTION_DEBUG_COLORS = {
     "午前おやつ": (0, 150, 255),
@@ -94,12 +96,25 @@ class DebugBox:
 
 
 @dataclass(frozen=True)
+class DebugCropResult:
+    """OCR位置確認用に切り出した小画像と読み取り結果です。"""
+
+    section: str
+    label: str
+    box: tuple[int, int, int, int]
+    image: Image.Image
+    ocr_text: str
+    confidence: float
+
+
+@dataclass(frozen=True)
 class DebugOverlayResult:
     """切り出し枠を描画したデバッグ画像です。"""
 
     page_number: int
     image: Image.Image
     boxes: list[DebugBox]
+    crops: list[DebugCropResult]
 
 
 def _confidence_from_data(data: dict[str, list[str]]) -> float:
@@ -405,7 +420,7 @@ def _debug_boxes_for_image(image: Image.Image) -> list[DebugBox]:
     boxes: list[DebugBox] = []
     for area in section_areas:
         boxes.append(DebugBox(section=area.label, kind="section", label=area.label, box=area.box, source=area.source))
-        for column_name in FIXED_MENU_COLUMNS:
+        for column_name in DEBUG_TARGET_COLUMNS:
             boxes.append(
                 DebugBox(
                     section=area.label,
@@ -428,6 +443,46 @@ def _draw_text_label(draw: ImageDraw.ImageDraw, position: tuple[int, int], text:
     background = (255, 255, 255)
     draw.rectangle((text_box[0] - 2, text_box[1] - 2, text_box[2] + 2, text_box[3] + 2), fill=background)
     draw.text((x, y), text, fill=fill, font=font)
+
+
+def _ocr_debug_crop(image: Image.Image, label: str) -> tuple[str, float]:
+    gray = ImageOps.grayscale(image)
+    scale = 2 if max(gray.size) >= 1200 else 3
+    enlarged = gray.resize((max(1, gray.width * scale), max(1, gray.height * scale)), Image.Resampling.LANCZOS)
+    processed = _preprocess_image(enlarged)
+    lang = "eng" if label == "3歳未満" else "jpn+eng"
+    config = f"--oem 3 --psm 6 --dpi {FIXED_OCR_DPI}"
+    try:
+        text = pytesseract.image_to_string(processed, lang=lang, config=config).strip()
+        data = pytesseract.image_to_data(
+            processed,
+            lang=lang,
+            config=config,
+            output_type=pytesseract.Output.DICT,
+        )
+    except Exception as exc:  # noqa: BLE001 - デバッグ画面にOCR失敗を表示します。
+        return f"OCRエラー: {exc}", 0.0
+    return text, _confidence_from_data(data)
+
+
+def _debug_crops_for_image(image: Image.Image, boxes: list[DebugBox]) -> list[DebugCropResult]:
+    crops: list[DebugCropResult] = []
+    for box in boxes:
+        if box.kind != "column":
+            continue
+        crop = image.crop(box.box)
+        ocr_text, confidence = _ocr_debug_crop(crop, box.label)
+        crops.append(
+            DebugCropResult(
+                section=box.section,
+                label=box.label,
+                box=box.box,
+                image=crop,
+                ocr_text=ocr_text,
+                confidence=confidence,
+            )
+        )
+    return crops
 
 
 def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverlayResult:
@@ -453,10 +508,12 @@ def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverla
             draw.rectangle(box.box, outline=color, width=5)
             _draw_text_label(draw, (box.box[0] + 6, box.box[1] + 6), f"{box.label}（{box.source}）", color)
         else:
-            draw.rectangle(box.box, outline=(255, 0, 0), width=3)
-            _draw_text_label(draw, (box.box[0] + 4, box.box[1] + 28), box.label, (255, 0, 0))
+            color = DEBUG_COLUMN_COLORS.get(box.label, (255, 0, 0))
+            draw.rectangle(box.box, outline=color, width=4)
+            _draw_text_label(draw, (box.box[0] + 4, box.box[1] + 28), box.label, color)
 
-    return DebugOverlayResult(page_number=page_number, image=annotated, boxes=boxes)
+    crops = _debug_crops_for_image(base, boxes)
+    return DebugOverlayResult(page_number=page_number, image=annotated, boxes=boxes, crops=crops)
 
 
 def debug_overlays_for_upload(file_name: str, file_bytes: bytes) -> list[DebugOverlayResult]:
