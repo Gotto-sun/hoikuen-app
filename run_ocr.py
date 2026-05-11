@@ -76,13 +76,14 @@ SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 ORIENTATIONS = (0,)
 LOW_CONFIDENCE_THRESHOLD = 70.0
 VERY_LOW_CONFIDENCE_THRESHOLD = 45.0
-MAX_IMAGE_WIDTH = 1000
-MAX_IMAGE_HEIGHT = 1400
+MAX_IMAGE_WIDTH = 800
+MAX_IMAGE_HEIGHT = 1200
 MAX_FILE_SIZE_BYTES = 60 * 1024 * 1024
 JPEG_QUALITY = 55
-OCR_TIMEOUT_SECONDS = 30
-TESSERACT_CALL_TIMEOUT_SECONDS = 12
-OCR_CANDIDATE_LIMIT = 4
+OCR_TIMEOUT_SECONDS = 20
+TESSERACT_CALL_TIMEOUT_SECONDS = 18
+OCR_CANDIDATE_LIMIT = 1
+OCR_DPI = 300
 TIMEOUT_MESSAGE = "タイムアウト：画像が重すぎるため処理を中断しました"
 
 HEADERS = [
@@ -180,9 +181,14 @@ def supported_images() -> list[Path]:
 def load_image(path: Path) -> Image.Image:
     file_size = path.stat().st_size
     if file_size > MAX_FILE_SIZE_BYTES:
-        raise ValueError(f"読み込み失敗: ファイルサイズが大きすぎます ({file_size / 1024 / 1024:.1f}MB)")
+        logging.warning(
+            "画像ファイルが大きいため、読み込み後に軽量モードでOCRします: %s size=%.1fMB",
+            path,
+            file_size / 1024 / 1024,
+        )
 
     with Image.open(path) as opened:
+        opened.draft("L", (MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT))
         width, height = opened.size
         logging.info(
             "画像確認: %s size=%.1fMB resolution=%sx%s",
@@ -193,12 +199,12 @@ def load_image(path: Path) -> Image.Image:
         )
         if width <= 0 or height <= 0:
             raise ValueError("読み込み失敗: 画像の解像度を確認できませんでした")
-        image = ImageOps.exif_transpose(opened).convert("RGB")
+        image = ImageOps.exif_transpose(opened).convert("L")
 
-    image = lighten_image_for_ocr(image, path)
-    return image
+    return lighten_image_for_ocr(image, path)
 
 def lighten_image_for_ocr(image: Image.Image, path: Path) -> Image.Image:
+    image = image.convert("L")
     scale = min(1.0, MAX_IMAGE_WIDTH / max(1, image.width), MAX_IMAGE_HEIGHT / max(1, image.height))
     if scale < 1.0:
         image = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))), Image.Resampling.LANCZOS)
@@ -206,10 +212,10 @@ def lighten_image_for_ocr(image: Image.Image, path: Path) -> Image.Image:
 
     safe_stem = re.sub(r"[^0-9A-Za-zぁ-んァ-ン一-龥_-]+", "_", path.stem).strip("_") or "image"
     temp_path = PROCESSED_DIR / f"{safe_stem}_light.jpg"
-    image.save(temp_path, format="JPEG", quality=JPEG_QUALITY, optimize=True)
-    logging.info("OCR前JPEG軽量化: %s quality=%s temp=%s", path, JPEG_QUALITY, temp_path)
+    image.save(temp_path, format="JPEG", quality=JPEG_QUALITY, optimize=True, dpi=(OCR_DPI, OCR_DPI))
+    logging.info("OCR前JPEG軽量化: %s mode=grayscale max_width=%s dpi=%s quality=%s temp=%s", path, MAX_IMAGE_WIDTH, OCR_DPI, JPEG_QUALITY, temp_path)
     with Image.open(temp_path) as reopened:
-        return ImageOps.exif_transpose(reopened).convert("RGB")
+        return ImageOps.exif_transpose(reopened).convert("L")
 
 def trim_margin(image: Image.Image) -> Image.Image:
     gray = ImageOps.grayscale(image)
@@ -264,17 +270,8 @@ def otsu_threshold(gray: Image.Image) -> Image.Image:
     return gray.point(lambda p: 255 if p > threshold else 0)
 
 def pil_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
-    trimmed = trim_margin(image)
-    normal = trimmed.convert("RGB")
-    gray = ImageOps.grayscale(trimmed)
-    binary = otsu_threshold(gray)
-    contrast = ImageEnhance.Contrast(ImageEnhance.Brightness(gray).enhance(1.08)).enhance(1.55)
-    return [
-        ("通常画像", normal),
-        ("グレースケール", gray),
-        ("二値化", binary),
-        ("コントラスト強化", contrast),
-    ][:OCR_CANDIDATE_LIMIT]
+    gray = ImageOps.grayscale(trim_margin(image))
+    return [("軽量グレースケール", gray)]
 
 def opencv_preprocess_variants(image: Image.Image) -> list[tuple[str, Image.Image]]:
     cv2 = optional_module("cv2")
@@ -321,7 +318,7 @@ def tesseract_candidate(image: Image.Image, angle: int, method: str) -> OcrCandi
     if pytesseract is None:
         return OcrCandidate("Tesseract", angle=angle, method=method, notes=["pytesseractが未インストールです"])
 
-    configs = ["--oem 3 --psm 6"]
+    configs = [f"--oem 3 --psm 6 --dpi {OCR_DPI}"]
     lang = "jpn+eng"
     best = OcrCandidate("Tesseract", angle=angle, method=method, image=image)
     for config in configs:
@@ -1007,13 +1004,14 @@ def save_processed_image(candidate: OcrCandidate, original_path: Path) -> str:
     return str(out_path)
 
 def row_for_error(path: Path, message: str) -> list[Any]:
+    failure_text = f"【読み取り失敗】{message}"
     return [
         dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         path.name,
         "",
+        "軽量グレースケール",
         "",
-        "",
-        "",
+        failure_text,
         "",
         "",
         "",
@@ -1071,7 +1069,7 @@ def process_image_inner(path: Path) -> list[Any]:
     print(raw_text if raw_text else "空")
     if not raw_text:
         logging.error("読み取り失敗: %s OCR結果が空", path)
-        return row_for_error(path, "OCR結果が空です。Excelは作成しません")
+        return row_for_error(path, "OCR結果が空です。軽量モードでも文字を読み取れませんでした")
     ingredient_rows = build_order_rows(extract_ingredient_rows(raw_text))
     fields = extract_fields(raw_text)
     reasons = confirmation_reasons(best, candidates, fields)
@@ -1154,12 +1152,11 @@ def main() -> int:
         rows.append(process_image(path))
         percent_after = 100 if total == 0 else round((index / total) * 100)
         logging.info("進捗: %s%% (%s/%s)", percent_after, index, total)
-    valid_rows = [row for row in rows if len(row) >= len(HEADERS) and str(row[5]).strip() and str(row[6]).strip()]
+    valid_rows = [row for row in rows if len(row) >= len(HEADERS) and str(row[5]).strip()]
     if not valid_rows:
-        logging.error("Excel作成中止: OCR結果または食材抽出結果が空です")
-        if EXCEL_PATH.exists():
-            EXCEL_PATH.unlink()
-        print("読み取り失敗: OCR結果または食材抽出結果が空のため、Excelは作成しません。")
+        message = "読み取り失敗: 処理対象画像がないか、失敗理由を作成できませんでした"
+        logging.error(message)
+        print(message)
         print(f"ログ: {LOG_PATH}")
         return 1
     write_excel(valid_rows)
