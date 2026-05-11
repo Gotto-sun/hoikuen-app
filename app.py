@@ -35,7 +35,8 @@ if uploaded_file is None:
     st.info("まず画像またはPDFを選んでください。")
     st.stop()
 
-file_bytes = uploaded_file.getvalue()
+uploaded_file.seek(0)
+file_bytes = uploaded_file.read()
 st.write(f"アップロード済み: `{uploaded_file.name}`")
 
 current_upload_key = (uploaded_file.name, len(file_bytes))
@@ -46,7 +47,9 @@ if st.session_state.get("upload_key") != current_upload_key:
 if st.button("切り出し枠を表示する", type="primary"):
     with st.spinner("切り出し枠を作成しています。少しお待ちください..."):
         try:
-            st.session_state["debug_overlays"] = debug_overlays_for_upload(uploaded_file.name, file_bytes)
+            st.session_state["debug_overlays"] = debug_overlays_for_upload(
+                uploaded_file.name, file_bytes, mime_type=uploaded_file.type
+            )
         except Exception as exc:  # noqa: BLE001 - 画面で利用者にわかりやすく表示します。
             st.error(str(exc))
             st.stop()
