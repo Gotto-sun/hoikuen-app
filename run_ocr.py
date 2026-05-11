@@ -682,7 +682,7 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
         candidates_for_log.append(line)
         name = loose_ingredient_name(line)
         corrected_name = corrected_ingredient_from_text(line)
-        number_source = under_three_quantity_near_ingredient(lines, index)
+        number_source = under_three_quantity_near_ingredient(lines, index, corrected_name or name)
         if number_source:
             quantity, unit = number_source
             add_ingredient_row(rows, seen, corrected_name or name, quantity, unit, weekday or current_weekday)
@@ -726,13 +726,35 @@ def nearby_ocr_row_indexes(index: int, line_count: int) -> list[int]:
     return [row_index for row_index in candidates if 0 <= row_index < line_count]
 
 
-def under_three_quantity_near_ingredient(lines: list[str], index: int) -> tuple[str, str] | None:
-    for row_index in nearby_ocr_row_indexes(index, len(lines)):
-        cells = split_ocr_cells(lines[row_index])
-        quantity_index = choose_under_three_quantity_index(cells, find_under_three_column(cells))
-        if quantity_index >= 0 and is_numeric_cell(cells[quantity_index]):
-            quantity = normalize_value(cells[quantity_index]).replace(",", "")
-            return quantity, guess_unit_near_quantity(cells, quantity_index)
+def under_three_quantity_near_ingredient(lines: list[str], index: int, ingredient_name: str = "") -> tuple[str, str] | None:
+    search_indexes = [index]
+    if index + 1 < len(lines):
+        search_indexes.append(index + 1)
+
+    for row_index in search_indexes:
+        line = lines[row_index]
+        if row_index != index and is_loose_ingredient_candidate(line) and not row_mentions_ingredient(line, ingredient_name):
+            continue
+        found = under_three_quantity_from_cells(split_ocr_cells(line))
+        if found:
+            return found
+    return None
+
+
+def row_mentions_ingredient(line: str, ingredient_name: str) -> bool:
+    corrected = corrected_ingredient_from_text(line)
+    if corrected and ingredient_name:
+        return corrected == ingredient_name
+    compact_line = re.sub(r"\s+", "", normalize_ocr_line(line))
+    compact_name = re.sub(r"\s+", "", normalize_ocr_line(ingredient_name))
+    return bool(compact_name and compact_name in compact_line)
+
+
+def under_three_quantity_from_cells(cells: list[str]) -> tuple[str, str] | None:
+    quantity_index = choose_under_three_quantity_index(cells, find_under_three_column(cells))
+    if quantity_index >= 0 and is_numeric_cell(cells[quantity_index]):
+        quantity = normalize_value(cells[quantity_index]).replace(",", "")
+        return quantity, guess_unit_near_quantity(cells, quantity_index)
     return None
 
 
@@ -808,12 +830,14 @@ def choose_under_three_quantity_index(cells: list[str], under_three_column: int)
     numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
     if not numeric_indexes:
         return -1
+    if len(numeric_indexes) >= 4:
+        return numeric_indexes[2]
+    if len(numeric_indexes) >= 3:
+        return numeric_indexes[1]
     if under_three_column >= 0:
         right_side = [index for index in numeric_indexes if index >= under_three_column]
         if right_side:
             return right_side[0]
-    if len(numeric_indexes) >= 4:
-        return numeric_indexes[2]
     if len(numeric_indexes) >= 2:
         return numeric_indexes[1]
     return numeric_indexes[0]
