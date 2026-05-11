@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import logging
 import re
 from importlib import import_module, util
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import pytesseract
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageSequence
 
 
 
@@ -47,6 +48,8 @@ SECTION_DEBUG_COLORS = {
 }
 FIXED_ROW_MARKER = "固定表行"
 FIXED_OCR_DPI = 300
+logger = logging.getLogger(__name__)
+
 NUMBER_RE = re.compile(r"(?<![0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9.])")
 
 
@@ -517,10 +520,14 @@ def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverla
     return DebugOverlayResult(page_number=page_number, image=annotated, boxes=boxes, crops=crops)
 
 
-def debug_overlays_for_upload(file_name: str, file_bytes: bytes) -> list[DebugOverlayResult]:
+def debug_overlays_for_upload(
+    file_name: str,
+    file_bytes: bytes,
+    mime_type: str | None = None,
+) -> list[DebugOverlayResult]:
     """アップロードファイルから切り出し枠確認用の画像を作ります。"""
 
-    images = images_from_upload(file_name, file_bytes)
+    images = images_from_upload(file_name, file_bytes, mime_type=mime_type)
     return [build_debug_overlay(image, page_number=index + 1) for index, image in enumerate(images)]
 
 
@@ -611,20 +618,69 @@ def _image_from_upload_bytes(file_bytes: bytes) -> Image.Image:
         raise RuntimeError("画像を読み込めませんでした。") from exc
 
 
-def images_from_upload(file_name: str, file_bytes: bytes) -> list[Image.Image]:
+def _is_tiff_upload(suffix: str, mime_type: str | None) -> bool:
+    """拡張子またはMIMEタイプでTIFFアップロードか判定します。"""
+
+    normalized_mime_type = (mime_type or "").lower()
+    return suffix in {".tif", ".tiff"} or normalized_mime_type in {"image/tif", "image/tiff"}
+
+
+def _tiff_image_from_upload_bytes(
+    file_bytes: bytes,
+    suffix: str,
+    mime_type: str | None,
+) -> Image.Image:
+    """TIFFをPillow + BytesIO + ImageSequenceで読み込み、1ページ目をRGB画像にします。"""
+
+    try:
+        with Image.open(BytesIO(file_bytes)) as image:
+            frames = [frame.convert("RGB") for frame in ImageSequence.Iterator(image)]
+    except Exception as exc:  # noqa: BLE001 - Pillowの詳細エラーをログへ残します。
+        logger.exception(
+            "TIFF読み込み失敗: extension=%s mime_type=%s pillow_error=%s",
+            suffix or "(none)",
+            mime_type or "(unknown)",
+            exc,
+        )
+        raise RuntimeError("TIFF画像を読み込めませんでした。") from exc
+
+    if not frames:
+        logger.error(
+            "TIFF読み込み失敗: extension=%s mime_type=%s pillow_error=%s",
+            suffix or "(none)",
+            mime_type or "(unknown)",
+            "no frames",
+        )
+        raise RuntimeError("TIFF画像を読み込めませんでした。")
+
+    return frames[0]
+
+
+def images_from_upload(
+    file_name: str,
+    file_bytes: bytes,
+    mime_type: str | None = None,
+) -> list[Image.Image]:
     """アップロードされた画像/PDFをPIL画像の一覧にします。"""
 
     suffix = Path(file_name).suffix.lower()
     if suffix == ".pdf":
         return [image.convert("RGB") for image in pdf_to_images(file_bytes)]
 
+    if _is_tiff_upload(suffix, mime_type):
+        return [_tiff_image_from_upload_bytes(file_bytes, suffix, mime_type)]
+
     return [_image_from_upload_bytes(file_bytes)]
 
 
-def run_ocr_for_upload(file_name: str, file_bytes: bytes) -> OCRResult:
+def run_ocr_for_upload(
+    file_name: str,
+    file_bytes: bytes,
+    mime_type: str | None = None,
+) -> OCRResult:
     """アップロードファイル全体をOCRします。"""
 
-    images = images_from_upload(file_name, file_bytes)
+    images = images_from_upload(file_name, file_bytes, mime_type=mime_type)
     results = [run_ocr_for_image(image) for image in images]
 
     combined_text = "\n\n".join(result.text for result in results if result.text)
