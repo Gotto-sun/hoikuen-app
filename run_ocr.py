@@ -671,10 +671,11 @@ def is_suspicious_ingredient_name(value: str) -> bool:
 
 
 def extract_fixed_layout_ingredient_rows(image: Image.Image) -> tuple[list[IngredientRow], str]:
-    """固定レイアウトの表エリアだけを座標で切り出して食材行を読む。"""
+    """固定レイアウト表を「1行=1食材」として読み、3歳未満量だけを採用する。"""
     rows: list[IngredientRow] = []
     seen: set[str] = set()
     fixed_text_lines: list[str] = []
+    review_candidates: list[str] = []
     pytesseract = optional_module("pytesseract")
     if pytesseract is None:
         logging.warning("固定表OCRをスキップ: pytesseractが未インストールです")
@@ -689,32 +690,61 @@ def extract_fixed_layout_ingredient_rows(image: Image.Image) -> tuple[list[Ingre
             row_bottom = box[1] + bottom
             row_height = max(2, row_bottom - row_top)
             table_width = box[2] - box[0]
+
             name_box = (
-                box[0] + round(table_width * 0.02),
+                box[0],
                 row_top,
-                box[0] + round(table_width * 0.50),
+                box[0] + round(table_width * 0.30),
                 row_top + row_height,
             )
-            numbers_x = box[0] + round(table_width * 0.52)
-            number_width = round(table_width * 0.12)
-            under_three_box = (
-                numbers_x + number_width * 2,
+            numbers_box = (
+                box[0] + round(table_width * 0.30),
                 row_top,
-                numbers_x + number_width * 3,
+                box[2],
                 row_top + row_height,
             )
-            name_text = ocr_fixed_cell(pytesseract, source.crop(name_box), "jpn+eng")
-            quantity_text = ocr_fixed_cell(pytesseract, source.crop(under_three_box), "eng")
-            name = clean_ingredient_name(name_text)
-            quantity = normalize_value(quantity_text).replace(",", "")
-            if not name or not is_numeric_cell(quantity):
+
+            name = clean_ingredient_name(ocr_fixed_cell(pytesseract, source.crop(name_box), "jpn+eng"))
+            numbers_text = ocr_fixed_cell(pytesseract, source.crop(numbers_box), "eng")
+            numbers = numeric_values_from_table_row(numbers_text)
+            row_log = f"固定表行\t{area_label}\t{name or '要確認'}\t数量要確認\t"
+
+            if not name or is_excluded_ingredient(name) or is_suspicious_ingredient_name(name):
                 continue
-            if is_excluded_ingredient(name) or is_suspicious_ingredient_name(name):
+            if len(numbers) not in (3, 4):
+                review_candidates.append(row_log)
+                add_ingredient_row(rows, seen, name, "数量要確認", "", "月")
                 continue
+
+            quantity = numbers[2]
+            if not is_numeric_cell(quantity):
+                review_candidates.append(row_log)
+                add_ingredient_row(rows, seen, name, "数量要確認", "", "月")
+                continue
+
             fixed_text_lines.append(f"固定表行\t{area_label}\t{name}\t{quantity}\tg")
             add_ingredient_row(rows, seen, name, quantity, "g", "月")
+
+    if not fixed_text_lines and review_candidates:
+        fixed_text_lines.extend(review_candidates[:10])
     return rows, "\n".join(fixed_text_lines)
 
+
+
+def numeric_values_from_table_row(value: str) -> list[str]:
+    """数値列OCRから、同じ行に並ぶ数値だけを取り出す。"""
+    normalized = normalize_ocr_line(value).replace(",", "")
+    matches = re.findall(r"(?<![0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9.])", normalized)
+    values: list[str] = []
+    for match in matches:
+        try:
+            number = float(match)
+        except ValueError:
+            continue
+        if number < 0:
+            continue
+        values.append(match)
+    return values
 
 def ratio_crop_box(image: Image.Image, x: float, y: float, width: float, height: float) -> tuple[int, int, int, int]:
     left = round(image.width * x)

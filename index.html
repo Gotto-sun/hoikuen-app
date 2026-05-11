@@ -863,6 +863,7 @@
 
     async function extractFixedMenuTableText(sourceCanvas, options = {}) {
       const rows = [];
+      const reviewRows = [];
       const baseProgress = Number(options.baseProgress) || 0;
       const progressRange = Number(options.progressRange) || 70;
       const label = options.label || "固定表OCR";
@@ -874,16 +875,25 @@
         const startProgress = baseProgress + Math.round((index / Math.max(1, rowTargets.length)) * progressRange);
         updateImportProgress(startProgress, label + "中です（" + row.areaLabel + " " + (index + 1) + "/" + rowTargets.length + "行）。");
         const nameText = await recognizeSingleFixedCell(row.nameCanvas, label + " 食材名");
-        const quantityText = await recognizeSingleFixedCell(row.underThreeCanvas, label + " 3歳未満量", "eng");
+        const numbersText = await recognizeSingleFixedCell(row.numbersCanvas, label + " 数値列", "eng");
         const name = cleanIngredientName(nameText);
-        const quantity = normalizeQuantity(quantityText).replace(/,/g, "");
-        if (name && isNumericCell(quantity) && !isExcludedIngredient(name) && !isSuspiciousIngredientName(name)) {
-          rows.push([fixedMenuRowMarker, row.areaLabel, name, quantity, "g"].join("\t"));
+        const numbers = numericValuesFromTableRow(numbersText);
+        const rowLog = [fixedMenuRowMarker, row.areaLabel, name || "要確認", "数量要確認", ""].join("\t");
+
+        if (!name || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) continue;
+        if (numbers.length !== 3 && numbers.length !== 4) {
+          reviewRows.push(rowLog);
+          continue;
         }
+
+        const quantity = numbers[2];
+        if (isNumericCell(quantity)) rows.push([fixedMenuRowMarker, row.areaLabel, name, quantity, "g"].join("\t"));
+        else reviewRows.push(rowLog);
       }
 
+      const outputRows = rows.length ? rows : reviewRows.slice(0, 10);
       updateImportProgress(baseProgress + progressRange, label + "完了。固定表から" + rows.length + "行抽出しました。");
-      return rows.join("\n");
+      return outputRows.join("\n");
     }
 
     async function recognizeSingleFixedCell(canvas, label, lang = "jpn+eng") {
@@ -900,16 +910,19 @@
       return rowRanges.map(range => {
         const y = box.y + range.top;
         const height = Math.max(2, range.bottom - range.top);
-        const nameX = box.x + Math.round(box.width * 0.02);
-        const nameW = Math.round(box.width * 0.48);
-        const numbersX = box.x + Math.round(box.width * 0.52);
-        const numberW = Math.round(box.width * 0.12);
+        const nameWidth = Math.round(box.width * 0.30);
         return {
           areaLabel: area.label,
-          nameCanvas: cropCanvas(sourceCanvas, nameX, y, nameW, height),
-          underThreeCanvas: cropCanvas(sourceCanvas, numbersX + numberW * 2, y, numberW, height)
+          nameCanvas: cropCanvas(sourceCanvas, box.x, y, nameWidth, height),
+          numbersCanvas: cropCanvas(sourceCanvas, box.x + nameWidth, y, box.width - nameWidth, height)
         };
       });
+    }
+
+    function numericValuesFromTableRow(value) {
+      const normalized = normalizeQuantity(normalizeOcrLine(value)).replace(/,/g, "");
+      const matches = normalized.match(/[0-9]+(?:\.[0-9]+)?/g) || [];
+      return matches.filter(value => Number(value) >= 0);
     }
 
     function ratioBox(canvas, area) {
