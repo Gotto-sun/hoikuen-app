@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import datetime as dt
 from pathlib import Path
 
 import streamlit as st
 
-from modules.export_excel import build_order_dataframe, dataframe_to_excel_bytes
 from modules.extract import extract_food_candidates
 from modules.normalize import load_food_master
 from modules.ocr import run_ocr_for_upload
@@ -15,16 +13,17 @@ FOOD_MASTER_PATH = Path("data/food_master.csv")
 st.set_page_config(page_title="献立表OCR MVP", page_icon="🍱", layout="wide")
 
 st.title("🍱 献立表OCR MVP")
-st.caption("画像/PDFの固定列を読み取り、食材候補を確認してExcel出力します。")
+st.caption("画像/PDFを見出しごとに分割し、食材候補を画面に表示します。")
 
 st.warning(
     "OCR結果は間違う可能性があります。発注前に必ず確認・修正してください。"
 )
 
 with st.sidebar:
-    st.header("基本情報")
-    order_date = st.date_input("発注日", value=dt.date.today())
-    use_date = st.date_input("使用日", value=dt.date.today())
+    st.header("読み取り対象")
+    st.write("- 午前おやつ")
+    st.write("- 昼食")
+    st.write("- 午後おやつ")
     st.divider()
     st.write("対応ファイル")
     st.write("- 画像: jpg / jpeg / png")
@@ -55,63 +54,35 @@ ocr_result = st.session_state.get("ocr_result")
 if not ocr_result:
     st.stop()
 
-st.subheader("1. 固定列OCR結果")
+st.subheader("1. 見出し別OCR結果")
 col1, col2, col3 = st.columns(3)
 col1.metric("OCRエンジン", ocr_result.engine)
 col2.metric("平均信頼度", f"{ocr_result.confidence}%")
 col3.metric("採用した向き", "自動判定" if ocr_result.rotation == -1 else f"{ocr_result.rotation}度")
 
 ocr_text = st.text_area(
-    "固定列OCR結果（必要ならここで直接修正できます）",
+    "見出し別OCR結果（区分 / 食材名列 / 3歳未満列）",
     value=ocr_result.text,
     height=280,
 )
 
-if st.button("食材候補を抽出する"):
-    master = load_food_master(FOOD_MASTER_PATH)
-    st.session_state["candidates"] = extract_food_candidates(
-        ocr_text,
-        master,
-        ocr_result.confidence,
-    )
+master = load_food_master(FOOD_MASTER_PATH)
+candidates = extract_food_candidates(
+    ocr_text,
+    master,
+    ocr_result.confidence,
+)
+st.session_state["candidates"] = candidates
 
-candidates = st.session_state.get("candidates")
-if candidates is None:
-    st.stop()
-
-st.subheader("2. 食材候補の確認・修正")
+st.subheader("2. 全食材候補")
 if candidates.empty:
-    st.warning("食材候補が見つかりませんでした。OCR全文を確認してください。")
+    st.warning("食材候補が見つかりませんでした。見出し別OCR結果を確認してください。")
     st.stop()
 
-edited_candidates = st.data_editor(
+st.dataframe(
     candidates,
-    num_rows="dynamic",
     use_container_width=True,
-    column_config={
-        "要確認": st.column_config.CheckboxColumn("要確認"),
-        "数量": st.column_config.NumberColumn("数量", min_value=0.0, step=0.1),
-        "OCR信頼度": st.column_config.NumberColumn("OCR信頼度", min_value=0.0, max_value=100.0),
-    },
+    hide_index=True,
 )
 
-st.subheader("3. Excel出力")
-st.write("このMVPでは、確認・修正した表を新しいExcelとして出力します。既存Excelは上書きしません。")
-
-order_df = build_order_dataframe(
-    edited_candidates,
-    order_date=order_date.isoformat(),
-    use_date=use_date.isoformat(),
-)
-
-with st.expander("出力前プレビュー", expanded=True):
-    st.dataframe(order_df, use_container_width=True)
-
-excel_bytes = dataframe_to_excel_bytes(order_df)
-file_name = f"order_{use_date.strftime('%Y%m%d')}.xlsx"
-st.download_button(
-    "Excelをダウンロードする",
-    data=excel_bytes,
-    file_name=file_name,
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-)
+st.info("計算処理とExcel出力は停止中です。まず読み取り結果だけ確認してください。")

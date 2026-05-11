@@ -38,6 +38,7 @@ CORRECTIONS = {
     "せんい": "しょうゆせんべい",
 }
 COLUMNS = [
+    "区分",
     "行番号",
     "元の行",
     "食材名",
@@ -106,6 +107,7 @@ def _row_from_values(
     master: pd.DataFrame,
     ocr_confidence: float,
     forced_review_note: str = "",
+    section: str = "",
 ) -> dict[str, object]:
     normalized = normalize_food_name(raw_food_name, master)
     notes: list[str] = []
@@ -121,6 +123,7 @@ def _row_from_values(
         notes.append("食材マスタにありません")
 
     return {
+        "区分": section,
         "行番号": line_number,
         "元の行": line,
         "食材名": raw_food_name,
@@ -162,6 +165,7 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
                         master=master,
                         ocr_confidence=ocr_confidence,
                         forced_review_note="3歳未満量を確認してください",
+                        section=fixed_cells[1],
                     )
                 )
                 continue
@@ -175,10 +179,10 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
                         unit=fixed_cells[4] or "g",
                         master=master,
                         ocr_confidence=ocr_confidence,
+                        section=fixed_cells[1],
                     )
                 )
                 continue
 
-    if not rows and review_rows:
-        rows = review_rows[:10]
+    rows.extend(review_rows)
     return pd.DataFrame(rows, columns=COLUMNS)
