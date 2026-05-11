@@ -557,8 +557,8 @@ def extract_fields(text: str) -> ExtractedFields:
 
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
-SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
-EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
+SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
+EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
 FIXED_ORDER_RULES = []
 ROUNDING_ORDER_RULES = [
@@ -576,18 +576,29 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("しょうせんべい", re.compile(r"しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい")),
     ("牛乳", re.compile(r"牛乳|ミルク")),
     ("ひじき", re.compile(r"ひじき")),
-    ("豚ひき肉", re.compile(r"豚\s*(?:ひき|挽き|挽)\s*肉|豚ミンチ")),
-    ("木綿豆腐", re.compile(r"木綿\s*豆腐")),
+    ("豚ひき肉", re.compile(r"豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ン一-龥])ひき\s*内|豚ミンチ")),
+    ("木綿豆腐", re.compile(r"木綿\s*豆腐|豆\s*(?:褒|腐)")),
     ("たまねぎ", re.compile(r"たまねぎ|玉ねぎ|玉葱")),
-    ("片栗粉", re.compile(r"片栗粉")),
+    ("片栗粉", re.compile(r"片栗粉|片\s*(?:困|栗)\s*粉")),
     ("もやし", re.compile(r"もやし")),
-    ("きゅうり", re.compile(r"きゅうり|胡瓜")),
+    ("きゅうり", re.compile(r"きゅうり|きゆうり|胡瓜")),
     ("カットわかめ", re.compile(r"カット\s*わかめ|わかめ|若布")),
-    ("じゃがいも", re.compile(r"じゃがいも|馬鈴薯")),
-    ("にんじん", re.compile(r"にんじん|人参")),
+    ("じゃがいも", re.compile(r"じゃがいも|とゃがいも|馬鈴薯")),
+    ("にんじん", re.compile(r"にんじん|にんん|人参")),
     ("食パン", re.compile(r"食パン")),
-    ("いちごジャム", re.compile(r"いちご\s*ジャム|苺\s*ジャム")),
+    ("いちごジャム", re.compile(r"いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム")),
 ]
+
+
+
+def corrected_ingredient_from_text(value: str) -> str:
+    compact = re.sub(r"\s+", "", normalize_ocr_line(value))
+    if not compact or SENTENCE_NOISE_PATTERN.search(compact) or is_excluded_ingredient(compact):
+        return ""
+    for canonical, pattern in CANONICAL_INGREDIENT_PATTERNS:
+        if pattern.search(compact):
+            return canonical
+    return ""
 
 def normalize_ocr_line(value: str) -> str:
     table = str.maketrans("０１２３４５６７８９，．ｋＫｇＧｍＭｌＬ", "0123456789,.kkggmmll")
@@ -628,13 +639,8 @@ def clean_ingredient_name(value: str) -> str:
     return correct_ingredient_name(re.sub(r"\s+", " ", name).strip())
 
 def correct_ingredient_name(name: str) -> str:
-    compact = re.sub(r"\s+", "", str(name or ""))
-    if not compact or SENTENCE_NOISE_PATTERN.search(compact) or is_excluded_ingredient(compact):
-        return str(name or "").strip()
-    for canonical, pattern in CANONICAL_INGREDIENT_PATTERNS:
-        if pattern.search(compact):
-            return canonical
-    return str(name or "").strip()
+    corrected = corrected_ingredient_from_text(name)
+    return corrected or str(name or "").strip()
 
 def strip_non_ingredient_prefix(value: str) -> str:
     name = normalize_ocr_line(value)
@@ -673,13 +679,13 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
             continue
 
         candidates_for_log.append(line)
-        number_source = nearest_number_source(lines, index)
-        if not number_source:
-            continue
-
-        quantity, unit = number_source
         name = loose_ingredient_name(line)
-        add_ingredient_row(rows, seen, name, quantity, unit, weekday or current_weekday)
+        number_source = last_quantity_in_line(line)
+        if number_source:
+            quantity, unit = number_source
+            add_ingredient_row(rows, seen, name, quantity, unit, weekday or current_weekday)
+        elif corrected_ingredient_from_text(line):
+            add_ingredient_row(rows, seen, name, "数量要確認", "要確認", weekday or current_weekday)
 
     if not rows and candidates_for_log:
         logging.info("食材候補のみ抽出: %s", " / ".join(candidates_for_log[:30]))
@@ -694,9 +700,9 @@ def is_loose_ingredient_candidate(line: str) -> bool:
     japanese = len(re.findall(r"[ぁ-んァ-ン一-龥]", compact))
     if japanese < 2:
         return False
-    if PRIORITY_FOOD_PATTERN.search(compact):
+    if corrected_ingredient_from_text(text):
         return True
-    if any(pattern.search(compact) for _canonical, pattern in CANONICAL_INGREDIENT_PATTERNS):
+    if PRIORITY_FOOD_PATTERN.search(compact):
         return True
     return bool(re.search(r"[ぁ-んァ-ン一-龥]{2,}", compact))
 
@@ -727,6 +733,9 @@ def last_quantity_in_line(line: str) -> tuple[str, str] | None:
 
 
 def loose_ingredient_name(line: str) -> str:
+    corrected = corrected_ingredient_from_text(line)
+    if corrected:
+        return corrected
     name = normalize_ocr_line(line)
     name = re.sub(r"(?:" + UNIT_PATTERN + r")", " ", name, flags=re.IGNORECASE)
     name = re.sub(r"[0-9]+(?:\.[0-9]+)?", " ", name)
@@ -904,12 +913,20 @@ def add_ingredient_row(rows: list[IngredientRow], seen: set[str], name_value: st
     name = clean_ingredient_name(name_value)
     qty = normalize_value(quantity_value).replace(",", "")
     unit = normalize_unit(unit_value)
+    if is_suspicious_ingredient_name(name) or is_excluded_ingredient(name):
+        return
+    if quantity_value == "数量要確認":
+        key = f"{weekday}|{normalize_ingredient_for_grouping(name)}|数量要確認|要確認"
+        if key not in seen:
+            seen.add(key)
+            rows.append(IngredientRow(name, "数量要確認", "要確認", weekday))
+        return
     try:
         numeric_qty = float(qty)
     except ValueError:
         return
     key = f"{weekday}|{normalize_ingredient_for_grouping(name)}|{qty}|{unit}"
-    if key in seen or numeric_qty <= 0 or weekday not in WEEKDAY_PEOPLE or is_suspicious_ingredient_name(name) or is_excluded_ingredient(name):
+    if key in seen or numeric_qty <= 0 or weekday not in WEEKDAY_PEOPLE:
         return
     seen.add(key)
     rows.append(IngredientRow(name, qty, unit, weekday))
@@ -969,7 +986,15 @@ def format_order_quantity(quantity: float, unit: str) -> tuple[str, str]:
 
 def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
     aggregate: dict[tuple[str, str], dict[str, Any]] = {}
+    uncertain_rows: list[IngredientRow] = []
+    uncertain_seen: set[str] = set()
     for row in source_rows:
+        if row.quantity == "数量要確認":
+            key = normalize_ingredient_for_grouping(row.name)
+            if key and key not in uncertain_seen and not is_excluded_ingredient(row.name):
+                uncertain_seen.add(key)
+                uncertain_rows.append(IngredientRow(row.name, "数量要確認", "要確認"))
+            continue
         if is_excluded_ingredient(row.name) or row.weekday not in WEEKDAY_PEOPLE:
             continue
         people = WEEKDAY_PEOPLE[row.weekday]
@@ -1002,7 +1027,7 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
         formatted_quantity, formatted_unit = format_order_quantity(quantity, unit)
         if name and formatted_quantity != "0":
             order_rows.append(IngredientRow(name, formatted_quantity, formatted_unit))
-    return sorted(order_rows, key=lambda row: row.name)
+    return sorted(order_rows, key=lambda row: row.name) + uncertain_rows
 
 def format_ingredient_column(rows: list[IngredientRow], field_name: str) -> str:
     return " / ".join(str(getattr(row, field_name)) for row in rows)

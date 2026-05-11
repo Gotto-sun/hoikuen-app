@@ -581,20 +581,20 @@
       { label: "しょうせんべい", tests: [/しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい/] },
       { label: "牛乳", tests: [/牛乳|ミルク/] },
       { label: "ひじき", tests: [/ひじき/] },
-      { label: "豚ひき肉", tests: [/豚\s*(?:ひき|挽き|挽)\s*肉|豚ミンチ/] },
-      { label: "木綿豆腐", tests: [/木綿\s*豆腐/] },
+      { label: "豚ひき肉", tests: [/豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ヶ一-龠々])ひき\s*内|豚ミンチ/] },
+      { label: "木綿豆腐", tests: [/木綿\s*豆腐|豆\s*(?:褒|腐)/] },
       { label: "たまねぎ", tests: [/たまねぎ|玉ねぎ|玉葱/] },
-      { label: "片栗粉", tests: [/片栗粉/] },
+      { label: "片栗粉", tests: [/片栗粉|片\s*(?:困|栗)\s*粉/] },
       { label: "もやし", tests: [/もやし/] },
-      { label: "きゅうり", tests: [/きゅうり|胡瓜/] },
+      { label: "きゅうり", tests: [/きゅうり|きゆうり|胡瓜/] },
       { label: "カットわかめ", tests: [/カット\s*わかめ|わかめ|若布/] },
-      { label: "じゃがいも", tests: [/じゃがいも|馬鈴薯/] },
-      { label: "にんじん", tests: [/にんじん|人参/] },
+      { label: "じゃがいも", tests: [/じゃがいも|とゃがいも|馬鈴薯/] },
+      { label: "にんじん", tests: [/にんじん|にんん|人参/] },
       { label: "食パン", tests: [/食パン/] },
-      { label: "いちごジャム", tests: [/いちご\s*ジャム|苺\s*ジャム/] }
+      { label: "いちごジャム", tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] }
     ];
-    const excludedIngredientPattern = /(スチコン|オーブン|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
-    const recipeInstructionPattern = /(作り方|つくり方|手順|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
+    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
+    const recipeInstructionPattern = /(作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 800;
     const imageLoadTimeoutMs = 6000;
@@ -1605,7 +1605,10 @@
 
     function parseIngredients(text) {
       const sourceRows = extractUnderThreeSourceRows(text);
-      return mapMenuRowsToOrderRows(sourceRows, "OCR");
+      const pendingRows = sourceRows
+        .filter(row => row.quantity === "数量要確認")
+        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "要確認", source: row.source || "OCR" }));
+      return mapMenuRowsToOrderRows(sourceRows, "OCR").concat(pendingRows);
     }
 
     function applyParsedRows(parsedRows, options = {}) {
@@ -1636,6 +1639,7 @@
       const quantity = String(row && row.quantity !== undefined ? row.quantity : "").trim();
       const unit = String(row && row.unit ? row.unit : "").trim();
       if (!name || !quantity || !unit || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) return false;
+      if (quantity === "数量要確認") return true;
       if (/^0+(?:[.,．]0+)?$/.test(quantity)) return false;
       return /^([0-9０-９]+(?:[.,．][0-9０-９]+)?|[0-9０-９]+\/[0-9０-９]+)$/.test(quantity);
     }
@@ -1657,17 +1661,19 @@
         if (!isLooseIngredientCandidate(line)) return;
 
         candidatesForLog.push(line);
-        const numberSource = nearestNumberSource(lines, index);
-        if (!numberSource) return;
+        const name = looseIngredientName(line);
+        const numberSource = lastQuantityInLine(line);
 
-        addUniqueSourceRow(extracted, seen, {
-          name: looseIngredientName(line),
-          quantity: numberSource.quantity,
-          unit: numberSource.unit,
-          weekday: detectedWeekday || currentWeekday,
-          sourceLine: line,
-          source: "3歳未満児"
-        });
+        if (numberSource || correctedIngredientFromText(line)) {
+          addUniqueSourceRow(extracted, seen, {
+            name,
+            quantity: numberSource ? numberSource.quantity : "数量要確認",
+            unit: numberSource ? numberSource.unit : "要確認",
+            weekday: detectedWeekday || currentWeekday,
+            sourceLine: line,
+            source: "3歳未満児"
+          });
+        }
       });
 
       if (!extracted.length && candidatesForLog.length) logOcrStep("食材候補のみ", candidatesForLog.slice(0, 30).join(" / "));
@@ -1689,8 +1695,8 @@
       const compact = text.replace(/\s/g, "");
       if (isIgnoredSourceRow(compact) || /^[月火水木金](?:曜日|曜)?$/.test(compact)) return false;
       if (countJapaneseCharacters(compact) < 2) return false;
+      if (correctedIngredientFromText(text)) return true;
       if (priorityFoodPattern.test(compact)) return true;
-      if (canonicalIngredientPatterns.some(rule => rule.tests.some(pattern => pattern.test(compact)))) return true;
       return /[ぁ-んァ-ヶ一-龠々]{2,}/.test(compact);
     }
 
@@ -1718,6 +1724,8 @@
     }
 
     function looseIngredientName(line) {
+      const corrected = correctedIngredientFromText(line);
+      if (corrected) return corrected;
       const unitPattern = unitNames().map(escapeRegExp).join("|");
       return cleanIngredientName(normalizeOcrLine(line)
         .replace(new RegExp("(?:" + unitPattern + ")", "gi"), " ")
@@ -1732,7 +1740,15 @@
       const quantity = normalizeQuantity(row.quantity);
       const numericQuantity = numberValue(quantity);
       const weekday = row.weekday || detectWeekday(row.sourceLine || "");
-      if (!cleanName || !cleanUnit || !isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0 || !peopleForWeekday(weekday) || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
+      if (!cleanName || !cleanUnit || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
+      if (quantity === "数量要確認") {
+        const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
+        if (seen.has(key)) return;
+        seen.add(key);
+        target.push({ name: cleanName, quantity: "数量要確認", unit: "要確認", weekday, source: row.source || "3歳未満児" });
+        return;
+      }
+      if (!isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0 || !peopleForWeekday(weekday)) return;
       const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
       if (seen.has(key)) return;
       seen.add(key);
@@ -1966,10 +1982,14 @@
     }
 
     function correctIngredientName(name) {
-      const compact = String(name || "").replace(/\s/g, "");
-      if (!compact || isSentenceNoise(compact) || isExcludedIngredient(compact)) return String(name || "").trim();
+      return correctedIngredientFromText(name) || String(name || "").trim();
+    }
+
+    function correctedIngredientFromText(value) {
+      const compact = normalizeOcrLine(value).replace(/\s/g, "");
+      if (!compact || isSentenceNoise(compact) || isExcludedIngredient(compact)) return "";
       const matched = canonicalIngredientPatterns.find(rule => rule.tests.some(pattern => pattern.test(compact)));
-      return matched ? matched.label : String(name || "").trim();
+      return matched ? matched.label : "";
     }
 
     function stripNonIngredientPrefix(value) {
