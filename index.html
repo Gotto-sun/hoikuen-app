@@ -2135,11 +2135,11 @@
           '<tr class="blank"><td colspan="10"></td></tr>' +
           '<tr class="ingredient-row">' + orderSheetHeaders.map(header => '<th>' + escapeHtml(header) + '</th>').join("") + '</tr>' +
           detailRows.map(row => '<tr class="ingredient-row">' + row.map((cell, index) => '<td class="' + (index === 1 || index === 4 ? 'left' : '') + '">' + escapeHtml(cell) + '</td>').join("") + '</tr>').join("") +
-          '<tr class="summary-row checker-label-row"><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td colspan="6"></td></tr>' +
-          '<tr class="summary-row total-row"><td colspan="2"></td><td colspan="2" rowspan="3">' + escapeHtml(checkerName.value || "") + '</td><td></td><td class="total-label" colspan="2">合計金額</td><td class="total-amount" colspan="2">' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr class="summary-row total-row"><td colspan="2"></td><td></td><td class="total-label" colspan="2">消費税</td><td class="total-amount" colspan="2">' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="summary-row checker-label-row total-row"><td colspan="2"></td><td class="total-label" colspan="2">検品者</td><td></td><td class="total-label" colspan="2">合計金額</td><td class="total-amount" colspan="2">' + escapeHtml(totals.total || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="summary-row total-row"><td colspan="2"></td><td colspan="2" rowspan="3">' + escapeHtml(checkerName.value || "") + '</td><td></td><td class="total-label" colspan="2">消費税</td><td class="total-amount" colspan="2">' + escapeHtml(totals.tax || "") + '</td><td class="no-border"></td></tr>' +
           '<tr class="summary-row total-row"><td colspan="2"></td><td></td><td class="total-label" colspan="2">課税合計</td><td class="total-amount" colspan="2">' + escapeHtml(totals.taxable || "") + '</td><td class="no-border"></td></tr>' +
-          '<tr class="summary-row total-row"><td colspan="5"></td><td class="total-label" colspan="2">請求金額</td><td class="total-amount" colspan="2">' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="summary-row total-row"><td colspan="2"></td><td></td><td class="total-label" colspan="2">請求金額</td><td class="total-amount" colspan="2">' + escapeHtml(totals.billed || "") + '</td><td class="no-border"></td></tr>' +
+          '<tr class="blank"><td colspan="10"></td></tr>' +
         '</tbody>' +
       '</table>';
     }
@@ -2188,11 +2188,11 @@
         ...detailRows,
         blank,
         blank,
-        ["", "", "検品者", "", "", "", "", "", "", ""],
-        ["", "", checkerName.value || "", "", "", "合計金額", "", totals.total || "", "", ""],
-        ["", "", "", "", "", "消費税", "", totals.tax || "", "", ""],
+        ["", "", "検品者", "", "", "合計金額", "", totals.total || "", "", ""],
+        ["", "", checkerName.value || "", "", "", "消費税", "", totals.tax || "", "", ""],
         ["", "", "", "", "", "課税合計", "", totals.taxable || "", "", ""],
-        ["", "", "", "", "", "請求金額", "", totals.billed || "", "", ""]
+        ["", "", "", "", "", "請求金額", "", totals.billed || "", "", ""],
+        blank
       ];
     }
 
@@ -2219,8 +2219,8 @@
         totalRows: detailRowCount + 14,
         detailStart: 7,
         detailEnd: detailRowCount + 6,
-        totalStart: detailRowCount + 10,
-        totalEnd: detailRowCount + 13,
+        totalStart: detailRowCount + 9,
+        totalEnd: detailRowCount + 12,
         checkerStart: detailRowCount + 9,
         checkerEnd: detailRowCount + 12
       };
@@ -2247,7 +2247,7 @@
         { s: { r: layout.totalStart + 2, c: 7 }, e: { r: layout.totalStart + 2, c: 8 } },
         { s: { r: layout.totalStart + 3, c: 7 }, e: { r: layout.totalStart + 3, c: 8 } },
         { s: { r: layout.checkerStart, c: 2 }, e: { r: layout.checkerStart, c: 3 } },
-        { s: { r: layout.checkerStart + 1, c: 2 }, e: { r: layout.checkerStart + 3, c: 3 } }
+        { s: { r: layout.checkerStart + 1, c: 2 }, e: { r: layout.checkerEnd, c: 3 } }
       ];
       worksheet["!margins"] = {
         left: cmToInch(1.5),
