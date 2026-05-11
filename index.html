@@ -576,13 +576,13 @@
       { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
       { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] }
     ];
-    const priorityFoodPattern = /にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
+    const priorityFoodPattern = /にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|コンソメ|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
     const canonicalIngredientPatterns = [
-      { label: "しょうせんべい", tests: [/しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい/] },
+      { label: "しょうゆせんべい", tests: [/しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい|せんい/] },
       { label: "牛乳", tests: [/牛乳|ミルク/] },
       { label: "ひじき", tests: [/ひじき/] },
       { label: "豚ひき肉", tests: [/豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ヶ一-龠々])ひき\s*内|豚ミンチ/] },
-      { label: "木綿豆腐", tests: [/木綿\s*豆腐|豆\s*(?:褒|腐)/] },
+      { label: "木綿豆腐", tests: [/木綿\s*豆腐|震記一一意|豆\s*(?:褒|腐)/] },
       { label: "たまねぎ", tests: [/たまねぎ|玉ねぎ|玉葱/] },
       { label: "片栗粉", tests: [/片栗粉|片\s*(?:困|栗)\s*粉/] },
       { label: "もやし", tests: [/もやし/] },
@@ -591,9 +591,10 @@
       { label: "じゃがいも", tests: [/じゃがいも|とゃがいも|馬鈴薯/] },
       { label: "にんじん", tests: [/にんじん|にんん|人参/] },
       { label: "食パン", tests: [/食パン/] },
-      { label: "いちごジャム", tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] }
+      { label: "いちごジャム", tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] },
+      { label: "コンソメ", tests: [/コンソメ|ョヨンツメ/] }
     ];
-    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉)/;
+    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
     const recipeInstructionPattern = /(作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 800;
@@ -1661,14 +1662,16 @@
         if (!isLooseIngredientCandidate(line)) return;
 
         candidatesForLog.push(line);
-        const name = looseIngredientName(line);
+        const correctedName = correctedIngredientFromText(line);
+        const name = correctedName || looseIngredientName(line);
         const numberSource = lastQuantityInLine(line);
+        const hasWeekday = Boolean(detectedWeekday || currentWeekday);
 
-        if (numberSource || correctedIngredientFromText(line)) {
+        if ((numberSource && hasWeekday) || correctedName) {
           addUniqueSourceRow(extracted, seen, {
             name,
-            quantity: numberSource ? numberSource.quantity : "数量要確認",
-            unit: numberSource ? numberSource.unit : "要確認",
+            quantity: numberSource && hasWeekday ? numberSource.quantity : "数量要確認",
+            unit: numberSource && hasWeekday ? numberSource.unit : "要確認",
             weekday: detectedWeekday || currentWeekday,
             sourceLine: line,
             source: "3歳未満児"
@@ -1987,7 +1990,7 @@
 
     function correctedIngredientFromText(value) {
       const compact = normalizeOcrLine(value).replace(/\s/g, "");
-      if (!compact || isSentenceNoise(compact) || isExcludedIngredient(compact)) return "";
+      if (!compact || isSentenceNoise(compact)) return "";
       const matched = canonicalIngredientPatterns.find(rule => rule.tests.some(pattern => pattern.test(compact)));
       return matched ? matched.label : "";
     }

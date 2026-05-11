@@ -558,7 +558,7 @@ def extract_fields(text: str) -> ExtractedFields:
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
 SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
-EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|コンソメ|中華だし|カレー粉")
+EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
 FIXED_ORDER_RULES = []
 ROUNDING_ORDER_RULES = [
@@ -570,14 +570,14 @@ ROUNDING_ORDER_RULES = [
     ("ヨーグルト", "パック", 1.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
 ]
 
-PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
+PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|コンソメ|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
 LOOSE_NUMBER_PATTERN = re.compile(r"(?<![0-9])([0-9]+(?:\.[0-9]+)?)(?:\s*(" + UNIT_PATTERN + r"))?", re.IGNORECASE)
 CANONICAL_INGREDIENT_PATTERNS = [
-    ("しょうせんべい", re.compile(r"しょう\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい")),
+    ("しょうゆせんべい", re.compile(r"しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい|せんい")),
     ("牛乳", re.compile(r"牛乳|ミルク")),
     ("ひじき", re.compile(r"ひじき")),
     ("豚ひき肉", re.compile(r"豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ン一-龥])ひき\s*内|豚ミンチ")),
-    ("木綿豆腐", re.compile(r"木綿\s*豆腐|豆\s*(?:褒|腐)")),
+    ("木綿豆腐", re.compile(r"木綿\s*豆腐|震記一一意|豆\s*(?:褒|腐)")),
     ("たまねぎ", re.compile(r"たまねぎ|玉ねぎ|玉葱")),
     ("片栗粉", re.compile(r"片栗粉|片\s*(?:困|栗)\s*粉")),
     ("もやし", re.compile(r"もやし")),
@@ -587,13 +587,14 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("にんじん", re.compile(r"にんじん|にんん|人参")),
     ("食パン", re.compile(r"食パン")),
     ("いちごジャム", re.compile(r"いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム")),
+    ("コンソメ", re.compile(r"コンソメ|ョヨンツメ")),
 ]
 
 
 
 def corrected_ingredient_from_text(value: str) -> str:
     compact = re.sub(r"\s+", "", normalize_ocr_line(value))
-    if not compact or SENTENCE_NOISE_PATTERN.search(compact) or is_excluded_ingredient(compact):
+    if not compact or SENTENCE_NOISE_PATTERN.search(compact):
         return ""
     for canonical, pattern in CANONICAL_INGREDIENT_PATTERNS:
         if pattern.search(compact):
@@ -680,12 +681,13 @@ def extract_ingredient_rows(text: str) -> list[IngredientRow]:
 
         candidates_for_log.append(line)
         name = loose_ingredient_name(line)
+        corrected_name = corrected_ingredient_from_text(line)
         number_source = last_quantity_in_line(line)
-        if number_source:
+        if number_source and (weekday or current_weekday):
             quantity, unit = number_source
-            add_ingredient_row(rows, seen, name, quantity, unit, weekday or current_weekday)
-        elif corrected_ingredient_from_text(line):
-            add_ingredient_row(rows, seen, name, "数量要確認", "要確認", weekday or current_weekday)
+            add_ingredient_row(rows, seen, corrected_name or name, quantity, unit, weekday or current_weekday)
+        elif corrected_name:
+            add_ingredient_row(rows, seen, corrected_name, "数量要確認", "要確認", weekday or current_weekday)
 
     if not rows and candidates_for_log:
         logging.info("食材候補のみ抽出: %s", " / ".join(candidates_for_log[:30]))
