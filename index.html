@@ -1665,7 +1665,7 @@
         candidatesForLog.push(line);
         const correctedName = correctedIngredientFromText(line);
         const name = correctedName || looseIngredientName(line);
-        const numberSource = underThreeQuantityNearIngredient(lines, index);
+        const numberSource = underThreeQuantityNearIngredient(lines, index, name);
 
         if (numberSource || correctedName) {
           addUniqueSourceRow(extracted, seen, {
@@ -1718,16 +1718,34 @@
         .filter(rowIndex => rowIndex >= 0 && rowIndex < lineCount);
     }
 
-    function underThreeQuantityNearIngredient(lines, index) {
-      for (const rowIndex of nearbyOcrRowIndexes(index, lines.length)) {
-        const cells = splitIngredientCells(lines[rowIndex]);
-        const quantityIndex = chooseUnderThreeQuantityIndex(cells, findUnderThreeColumn(cells));
-        if (quantityIndex >= 0 && isNumericCell(cells[quantityIndex])) {
-          return {
-            quantity: normalizeQuantity(cells[quantityIndex]).replace(/,/g, ""),
-            unit: guessUnitNearQuantity(cells, quantityIndex)
-          };
-        }
+    function underThreeQuantityNearIngredient(lines, index, ingredientName) {
+      const searchIndexes = [index];
+      if (index + 1 < lines.length) searchIndexes.push(index + 1);
+
+      for (const rowIndex of searchIndexes) {
+        const line = lines[rowIndex];
+        if (rowIndex !== index && isLooseIngredientCandidate(line) && !rowMentionsIngredient(line, ingredientName)) continue;
+        const found = underThreeQuantityFromCells(splitIngredientCells(line));
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function rowMentionsIngredient(line, ingredientName) {
+      const corrected = correctedIngredientFromText(line);
+      if (corrected && ingredientName) return corrected === ingredientName;
+      const compactLine = normalizeOcrLine(line).replace(/\s/g, "");
+      const compactName = normalizeOcrLine(ingredientName).replace(/\s/g, "");
+      return !!compactName && compactLine.includes(compactName);
+    }
+
+    function underThreeQuantityFromCells(cells) {
+      const quantityIndex = chooseUnderThreeQuantityIndex(cells, findUnderThreeColumn(cells));
+      if (quantityIndex >= 0 && isNumericCell(cells[quantityIndex])) {
+        return {
+          quantity: normalizeQuantity(cells[quantityIndex]).replace(/,/g, ""),
+          unit: guessUnitNearQuantity(cells, quantityIndex)
+        };
       }
       return null;
     }
@@ -1832,11 +1850,12 @@
     function chooseUnderThreeQuantityIndex(cells, underThreeColumn) {
       const numericIndexes = cells.map((cell, index) => isNumberCell(cell) ? index : -1).filter(index => index >= 0);
       if (!numericIndexes.length) return -1;
+      if (numericIndexes.length >= 4) return numericIndexes[2];
+      if (numericIndexes.length >= 3) return numericIndexes[1];
       if (underThreeColumn >= 0) {
         const rightSide = numericIndexes.find(index => index >= underThreeColumn);
         if (rightSide !== undefined) return rightSide;
       }
-      if (numericIndexes.length >= 4) return numericIndexes[2];
       if (numericIndexes.length >= 2) return numericIndexes[1];
       return numericIndexes[0];
     }
