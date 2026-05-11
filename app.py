@@ -1,27 +1,32 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import streamlit as st
 
+from modules.extract import extract_food_candidates
+from modules.normalize import load_food_master
 from modules.ocr import raw_ocr_pages_for_upload
 
 st.set_page_config(page_title="OCRエンジン直読み確認モード", page_icon="🍱", layout="wide")
 
-st.title("🍱 OCRエンジン直読み確認モード")
-st.caption("Pillowで読み込んだ原画像を表示し、原画像をそのままOCRへ渡します。")
+st.title("🍱 原画像OCR全文から食材抽出")
+st.caption("固定表OCRは使わず、原画像OCR全文から食材名を補正し、3歳未満の数量を抽出します。")
 
-st.warning("固定表OCR・切り出し・二値化・トリミング・回転補正は一旦OFFです。原画像OCRで文字が出るか先に確認します。")
+st.info("原画像OCR全文 → 食材名補正 → 数値抽出の順で処理します。")
 
 logger = logging.getLogger(__name__)
+FOOD_MASTER_PATH = "data/food_master.csv"
 
 with st.sidebar:
     st.header("確認順")
     st.write("1. 画像表示OK")
     st.write("2. OCR全文表示OK")
-    st.write("3. 固定表OCR再開")
+    st.write("3. 食材名補正")
+    st.write("4. 3歳未満数量抽出")
     st.divider()
-    st.write("現在OFF")
+    st.write("使わない処理")
     st.write("- 固定表切り出し")
     st.write("- 二値化")
     st.write("- トリミング")
@@ -48,8 +53,8 @@ if st.session_state.get("upload_key") != current_upload_key:
     st.session_state["upload_key"] = current_upload_key
     st.session_state.pop("raw_ocr_pages", None)
 
-if st.button("原画像を表示してOCR全文を確認する", type="primary"):
-    with st.spinner("Pillowで原画像を読み込み、原画像のままOCRしています..."):
+if st.button("原画像OCR全文から食材を抽出する", type="primary"):
+    with st.spinner("原画像OCR全文を取得し、食材と数量を抽出しています..."):
         try:
             st.session_state["raw_ocr_pages"] = raw_ocr_pages_for_upload(
                 uploaded_file.name, file_bytes, mime_type=uploaded_file.type
@@ -65,7 +70,7 @@ if not raw_ocr_pages:
     st.stop()
 
 st.subheader("原画像OCR確認")
-st.info("この画面では固定表OCRを実行しません。Pillowで読み込んだ原画像をそのままOCRしています。")
+st.info("この画面では固定表OCR・表切り出しを実行しません。取得済みOCR全文だけから抽出します。")
 
 for page in raw_ocr_pages:
     st.markdown(f"### {page.page_number}ページ目")
@@ -87,3 +92,14 @@ for page in raw_ocr_pages:
         height=360,
         key=f"raw-ocr-{page.page_number}",
     )
+
+    candidates = extract_food_candidates(page.ocr_text, load_food_master(Path(FOOD_MASTER_PATH)), page.ocr_confidence)
+    st.markdown("#### 抽出結果")
+    if candidates.empty:
+        st.warning("食材を抽出できませんでした。")
+    else:
+        st.dataframe(
+            candidates[["補正後食材名", "数量", "単位", "元の行", "備考"]],
+            use_container_width=True,
+            hide_index=True,
+        )

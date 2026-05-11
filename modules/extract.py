@@ -1,4 +1,4 @@
-"""固定レイアウト表OCRから食材候補を抽出します。"""
+"""原画像OCR全文から食材候補を抽出します。"""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ ASCII_RE = re.compile(r"[A-Za-z]")
 SYMBOL_ONLY_RE = re.compile(r"[\W_ー－―]+", re.UNICODE)
 EXCLUDE_WORDS = [
     "作り方",
+    "つくり方",
     "手順",
     "炒め",
     "煮る",
@@ -31,6 +32,7 @@ EXCLUDE_WORDS = [
     "ください",
     "です",
     "ます",
+    "※",
     "注釈",
     "文章",
     "スチコン",
@@ -38,26 +40,34 @@ EXCLUDE_WORDS = [
     "鍋",
     "フライパン",
     "機器",
+    "コンソメ",
+    "水",
+    "塩",
+    "食塩",
+    "砂糖",
+    "酢",
+    "米",
+    "精白米",
 ]
 SENTENCE_MARKERS = ["。", "、", "です", "ます", "してください", "ため", "こと", "もの"]
 NOISE_KANA = {"を", "ゑ", "ゐ"}
 FORCED_INGREDIENT_CORRECTIONS = {
-    "牛乳": ("牛乳", "乳", "ぎゅうにゅう", "ミルク"),
+    "しょうゆせんべい": ("しょうゆせんべい", "しょうゆせんし", "せんい"),
+    "牛乳": ("牛乳", "乳", "ぎゅうにゅう", "ミルク", "Fh"),
     "ひじき": ("ひじき", "ひじ", "ヒジキ"),
-    "豚ひき肉": ("豚ひき肉", "豚挽き肉", "豚ひき内", "豚ミンチ"),
-    "木綿豆腐": ("木綿豆腐", "木綿とうふ", "木綿豆富"),
-    "たまねぎ": ("たまねぎ", "玉ねぎ", "玉葱", "タマネギ", "玉ネギ"),
-    "片栗粉": ("片栗粉", "片栗", "片困粉"),
-    "もやし": ("もやし",),
-    "きゅうり": ("きゅうり", "きゆうり", "胡瓜"),
+    "豚ひき肉": ("豚ひき肉", "豚挽き肉", "豚ひき内", "豚ミンチ", "評Oき琴", "評0き琴"),
+    "木綿豆腐": ("木綿豆腐", "木綿とうふ", "木綿豆富", "豆放"),
+    "たまねぎ": ("たまねぎ", "玉ねぎ", "玉葱", "タマネギ", "玉ネギ", "たまねを", "療半と"),
+    "片栗粉": ("片栗粉", "片栗", "片困粉", "用本明", "有本塊"),
+    "もやし": ("もやし", "もや"),
+    "きゅうり": ("きゅうり", "きゆうり", "胡瓜", "きゅうの"),
     "カットわかめ": ("カットわかめ", "カット若布", "わかめ", "若布"),
-    "じゃがいも": ("じゃがいも", "ジャガイモ", "じゃが芋", "とゃがいも", "馬鈴薯"),
-    "にんじん": ("にんじん", "にんん", "にんヒじん", "人参", "ニンジン"),
-    "食パン": ("食パン",),
-    "いちごジャム": ("いちごジャム", "苺ジャム", "でちこジャ"),
+    "じゃがいも": ("じゃがいも", "ジャガイモ", "じゃが芋", "とゃがいも", "馬鈴薯", "がし"),
+    "にんじん": ("にんじん", "にんん", "にんヒじん", "人参", "ニンジン", "0 80 66 9", "080669"),
+    "食パン": ("食パン", "a emw", "aemw"),
+    "いちごジャム": ("いちごジャム", "苺ジャム", "でちこジャ", "60 42 7", "60427"),
 }
 CORRECTIONS = {alias: label for label, aliases in FORCED_INGREDIENT_CORRECTIONS.items() for alias in aliases}
-CORRECTIONS["せんい"] = "しょうゆせんべい"
 COLUMNS = [
     "区分",
     "行番号",
@@ -215,53 +225,102 @@ def _row_from_values(
     }
 
 
+def _ocr_lines(text: str) -> list[tuple[int, str]]:
+    rows: list[tuple[int, str]] = []
+    for line_number, raw_line in enumerate(str(text or "").splitlines(), start=1):
+        line = _normalize_line(raw_line)
+        if line:
+            rows.append((line_number, line))
+    return rows
+
+
+def _compact_for_match(value: str) -> str:
+    return re.sub(r"\s+", "", _normalize_line(value))
+
+
+def _correct_name_from_ocr_line(line: str) -> str:
+    compact = _compact_for_match(line)
+    if not compact:
+        return ""
+    for alias, corrected in sorted(CORRECTIONS.items(), key=lambda item: len(_compact_for_match(item[0])), reverse=True):
+        alias_compact = _compact_for_match(alias)
+        if not alias_compact:
+            continue
+        if alias_compact.isdigit():
+            if compact == alias_compact:
+                return corrected
+            continue
+        if alias_compact in compact:
+            return corrected
+    return ""
+
+
+def _under_three_quantity_from_numbers(numbers: list[str]) -> str:
+    if len(numbers) >= 4:
+        return numbers[2]
+    if len(numbers) >= 3:
+        return numbers[1]
+    if len(numbers) >= 2:
+        return numbers[1]
+    if numbers:
+        return numbers[0]
+    return ""
+
+
+def _quantity_near_ocr_line(lines: list[tuple[int, str]], index: int) -> str:
+    for row_index in (index, index + 1):
+        if row_index >= len(lines):
+            continue
+        numbers = _numbers_from_row(lines[row_index][1])
+        quantity = _under_three_quantity_from_numbers(numbers)
+        if not quantity:
+            continue
+        try:
+            if float(quantity) > 0:
+                return quantity
+        except ValueError:
+            continue
+    return ""
+
+
 def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: float) -> pd.DataFrame:
-    """固定X座標OCR済みの行から、3歳未満列の数量だけ候補化します。"""
+    """固定表OCRを使わず、原画像OCR全文から補正辞書で食材と3歳未満量を抽出します。"""
 
     rows: list[dict[str, object]] = []
     excluded_rows: list[dict[str, object]] = []
-    for line_number, raw_line in enumerate(text.splitlines(), start=1):
-        line = _normalize_line(raw_line)
-        line_reason = _line_exclusion_reason(line)
-        if line_reason:
+    seen: set[str] = set()
+    lines = _ocr_lines(text)
+
+    for index, (line_number, line) in enumerate(lines):
+        corrected_name = _correct_name_from_ocr_line(line)
+        if not corrected_name:
+            line_reason = _line_exclusion_reason(line) or "補正辞書に一致しません"
             excluded_rows.append(_excluded_row(line_number, line, line, line_reason))
             continue
 
-        fixed_cells = [cell.strip() for cell in raw_line.split("\t")]
-        if not (fixed_cells and fixed_cells[0] == "固定表行" and len(fixed_cells) >= 5):
-            excluded_rows.append(_excluded_row(line_number, line, line, "固定表行ではありません"))
+        if _line_exclusion_reason(corrected_name) or any(word == corrected_name for word in EXCLUDE_WORDS):
+            excluded_rows.append(_excluded_row(line_number, line, corrected_name, "除外対象の食材です"))
             continue
 
-        raw_food_name = _clean_food_name(fixed_cells[2])
-        food_reason = _food_name_exclusion_reason(raw_food_name)
-        if food_reason:
-            excluded_rows.append(_excluded_row(line_number, line, raw_food_name, food_reason))
-            continue
-
-        quantity_text = _normalize_line(fixed_cells[3]).replace(",", "")
+        quantity_text = _quantity_near_ocr_line(lines, index)
         if not NUMBER_RE.fullmatch(quantity_text):
-            excluded_rows.append(_excluded_row(line_number, line, raw_food_name, "食材名と数値の両方がありません"))
-            continue
-        quantity: float | str = float(quantity_text)
-        forced_review_note = ""
-
-        unit = _normalize_line(fixed_cells[4])
-        unit_reason = _unit_exclusion_reason(unit)
-        if unit_reason:
-            excluded_rows.append(_excluded_row(line_number, line, raw_food_name, unit_reason))
+            excluded_rows.append(_excluded_row(line_number, line, corrected_name, "3歳未満の数値を取得できません"))
             continue
 
+        key = f"{corrected_name}|{quantity_text}|g"
+        if key in seen:
+            continue
+        seen.add(key)
         rows.append(
             _row_from_values(
                 line_number=line_number,
                 line=line,
-                raw_food_name=raw_food_name,
-                quantity=quantity,
-                unit=unit,
+                raw_food_name=corrected_name,
+                quantity=float(quantity_text),
+                unit="g",
                 master=master,
                 ocr_confidence=ocr_confidence,
-                forced_review_note=forced_review_note,
-                section=fixed_cells[1],
+                section="OCR全文",
             )
         )
 
