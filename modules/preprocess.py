@@ -6,21 +6,12 @@ from PIL import Image, ImageOps
 
 
 def preprocess_image(image: Image.Image) -> Image.Image:
-    """OCR前処理はグレースケール化だけにします。
+    """OCR前処理は一旦OFFにし、PillowでRGB化した原画像を返します。"""
 
-    二値化・ノイズ除去・コントラスト強化で白飛び/真っ黒になる可能性を避けるため、
-    いったんOFFにしています。
-    """
-
-    return ImageOps.exif_transpose(image).convert("L")
+    return ImageOps.exif_transpose(image).convert("RGB")
 
 
 def candidate_rotations(image: Image.Image) -> list[tuple[int, Image.Image]]:
-    """0/90/180/270度の候補画像を返します。"""
+    """回転補正は一旦OFFにし、0度の原画像だけを返します。"""
 
-    return [
-        (0, image),
-        (90, image.rotate(90, expand=True)),
-        (180, image.rotate(180, expand=True)),
-        (270, image.rotate(270, expand=True)),
-    ]
+    return [(0, image)]

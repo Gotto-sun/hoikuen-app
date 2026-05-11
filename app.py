@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import io
+import logging
+
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 from modules.ocr import debug_overlays_for_upload
 
 st.set_page_config(page_title="献立表OCR MVP", page_icon="🍱", layout="wide")
 
 st.title("🍱 献立表OCR MVP")
-st.caption("原画像そのままOCRと前処理後画像を確認します。計算・Excel出力・抽出処理は停止中です。")
+st.caption("Pillowで読み込んだ原画像を画面表示してから、原画像そのままOCRを確認します。")
 
-st.warning("まず原画像そのままOCRを確認します。二値化はOFF、前処理はグレースケールのみです。")
+st.warning("PNG/JPEG/TIFFはPillowで読み込みます。原画像が表示されるまでOCRへ進みません。二値化・トリミング・回転補正はOFFです。")
+
+logger = logging.getLogger(__name__)
 
 with st.sidebar:
     st.header("表示する枠")
@@ -35,9 +41,24 @@ if uploaded_file is None:
     st.info("まず画像またはPDFを選んでください。")
     st.stop()
 
-uploaded_file.seek(0)
-file_bytes = uploaded_file.read()
+file_bytes = uploaded_file.getvalue()
 st.write(f"アップロード済み: `{uploaded_file.name}`")
+
+suffix = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+if suffix != "pdf":
+    try:
+        with Image.open(io.BytesIO(file_bytes)) as opened_image:
+            img = opened_image.convert("RGB")
+    except Exception:  # noqa: BLE001 - OCR前に画像表示できない場合は止めます。
+        st.error("画像を読み込めませんでした。")
+        logger.exception("Pillow画像読み込み失敗: file_name=%s", uploaded_file.name)
+        st.stop()
+
+    logger.info("アップロード原画像サイズ: file_name=%s width=%s height=%s", uploaded_file.name, img.width, img.height)
+    st.image(img, caption=f"読み込んだ原画像（{img.width}x{img.height}）", use_column_width=True)
+    st.info(f"画像サイズ: {img.width} x {img.height}")
+else:
+    st.info("PDFはボタン押下後に画像化して表示します。")
 
 current_upload_key = (uploaded_file.name, len(file_bytes))
 if st.session_state.get("upload_key") != current_upload_key:
@@ -69,7 +90,7 @@ for overlay in debug_overlays:
     with original_col:
         st.image(overlay.original_image, caption="読み込んだ原画像（RGB変換のみ）", use_column_width=True)
     with preprocessed_col:
-        st.image(overlay.preprocessed_image, caption="前処理後画像（グレースケールのみ・二値化OFF）", use_column_width=True)
+        st.image(overlay.preprocessed_image, caption="OCR入力画像（原画像RGB・前処理OFF）", use_column_width=True)
 
     for diagnostic in overlay.diagnostics:
         if diagnostic.startswith("⚠️"):
@@ -113,7 +134,7 @@ for overlay in debug_overlays:
                 st.image(crop.image, caption=f"{crop.label} 原画像", use_column_width=True)
                 st.image(
                     crop.processed_image,
-                    caption=f"{crop.label} 前処理後（グレースケールのみ・二値化OFF） / 信頼度 {crop.confidence}",
+                    caption=f"{crop.label} OCR入力（前処理OFF） / 信頼度 {crop.confidence}",
                     use_column_width=True,
                 )
                 for diagnostic in crop.diagnostics:
