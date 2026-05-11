@@ -859,6 +859,13 @@
       { label: "昼食", x: 0.04, y: 0.34, width: 0.92, height: 0.36 },
       { label: "午後おやつ", x: 0.04, y: 0.70, width: 0.92, height: 0.18 }
     ];
+    const fixedMenuColumns = {
+      foodName: [0.00, 0.30],
+      total: [0.30, 0.48],
+      overThree: [0.48, 0.64],
+      underThree: [0.64, 0.80],
+      staff: [0.80, 1.00]
+    };
     const fixedMenuRowMarker = "固定表行";
 
     async function extractFixedMenuTableText(sourceCanvas, options = {}) {
@@ -875,18 +882,12 @@
         const startProgress = baseProgress + Math.round((index / Math.max(1, rowTargets.length)) * progressRange);
         updateImportProgress(startProgress, label + "中です（" + row.areaLabel + " " + (index + 1) + "/" + rowTargets.length + "行）。");
         const nameText = await recognizeSingleFixedCell(row.nameCanvas, label + " 食材名");
-        const numbersText = await recognizeSingleFixedCell(row.numbersCanvas, label + " 数値列", "eng");
+        const quantityText = await recognizeSingleFixedCell(row.underThreeCanvas, label + " 3歳未満列", "eng");
         const name = cleanIngredientName(nameText);
-        const numbers = numericValuesFromTableRow(numbersText);
+        const quantity = quantityFromUnderThreeCell(quantityText);
         const rowLog = [fixedMenuRowMarker, row.areaLabel, name || "要確認", "数量要確認", ""].join("\t");
 
         if (!name || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) continue;
-        if (numbers.length !== 3 && numbers.length !== 4) {
-          reviewRows.push(rowLog);
-          continue;
-        }
-
-        const quantity = numbers[2];
         if (isNumericCell(quantity)) rows.push([fixedMenuRowMarker, row.areaLabel, name, quantity, "g"].join("\t"));
         else reviewRows.push(rowLog);
       }
@@ -910,19 +911,26 @@
       return rowRanges.map(range => {
         const y = box.y + range.top;
         const height = Math.max(2, range.bottom - range.top);
-        const nameWidth = Math.round(box.width * 0.30);
         return {
           areaLabel: area.label,
-          nameCanvas: cropCanvas(sourceCanvas, box.x, y, nameWidth, height),
-          numbersCanvas: cropCanvas(sourceCanvas, box.x + nameWidth, y, box.width - nameWidth, height)
+          nameCanvas: cropFixedMenuCell(sourceCanvas, box, y, height, fixedMenuColumns.foodName),
+          underThreeCanvas: cropFixedMenuCell(sourceCanvas, box, y, height, fixedMenuColumns.underThree)
         };
       });
     }
 
-    function numericValuesFromTableRow(value) {
+    function quantityFromUnderThreeCell(value) {
       const normalized = normalizeQuantity(normalizeOcrLine(value)).replace(/,/g, "");
-      const matches = normalized.match(/[0-9]+(?:\.[0-9]+)?/g) || [];
-      return matches.filter(value => Number(value) >= 0);
+      const match = normalized.match(/[0-9]+(?:\.[0-9]+)?/);
+      return match ? match[0] : "";
+    }
+
+    function cropFixedMenuCell(sourceCanvas, box, y, height, columnRange) {
+      const left = box.x + Math.round(box.width * columnRange[0]);
+      const right = box.x + Math.round(box.width * columnRange[1]);
+      const xPadding = Math.max(1, Math.round(box.width * 0.004));
+      const yPadding = Math.max(1, Math.round(height * 0.08));
+      return cropCanvas(sourceCanvas, left + xPadding, y + yPadding, Math.max(1, right - left - xPadding * 2), Math.max(1, height - yPadding * 2));
     }
 
     function ratioBox(canvas, area) {
@@ -1654,7 +1662,8 @@
     }
 
     function isExcludedIngredient(name) {
-      return excludedIngredientPattern.test(String(name || "").replace(/\s/g, ""));
+      const compact = String(name || "").replace(/\s/g, "");
+      return /^[A-Za-z]{1,3}$/.test(compact) || recipeInstructionPattern.test(compact) || excludedIngredientPattern.test(compact);
     }
 
     function mapMenuRowsToOrderRows(sourceRows, sourceLabel = "献立CSV") {

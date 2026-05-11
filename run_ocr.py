@@ -565,6 +565,13 @@ FIXED_MENU_TABLE_AREAS = [
     ("昼食", 0.04, 0.34, 0.92, 0.36),
     ("午後おやつ", 0.04, 0.70, 0.92, 0.18),
 ]
+FIXED_MENU_COLUMNS = {
+    "food_name": (0.00, 0.30),
+    "total": (0.30, 0.48),
+    "over_three": (0.48, 0.64),
+    "under_three": (0.64, 0.80),
+    "staff": (0.80, 1.00),
+}
 FIXED_ORDER_RULES = []
 ROUNDING_ORDER_RULES = [
     ("牛乳", "本", 1.0, {"ml": 450.0, "g": 450.0}, re.compile(r"牛乳|ミルク")),
@@ -689,34 +696,16 @@ def extract_fixed_layout_ingredient_rows(image: Image.Image) -> tuple[list[Ingre
             row_top = box[1] + top
             row_bottom = box[1] + bottom
             row_height = max(2, row_bottom - row_top)
-            table_width = box[2] - box[0]
-
-            name_box = (
-                box[0],
-                row_top,
-                box[0] + round(table_width * 0.30),
-                row_top + row_height,
-            )
-            numbers_box = (
-                box[0] + round(table_width * 0.30),
-                row_top,
-                box[2],
-                row_top + row_height,
-            )
+            name_box = fixed_cell_box(box, row_top, row_top + row_height, "food_name")
+            under_three_box = fixed_cell_box(box, row_top, row_top + row_height, "under_three")
 
             name = clean_ingredient_name(ocr_fixed_cell(pytesseract, source.crop(name_box), "jpn+eng"))
-            numbers_text = ocr_fixed_cell(pytesseract, source.crop(numbers_box), "eng")
-            numbers = numeric_values_from_table_row(numbers_text)
+            quantity_text = ocr_fixed_cell(pytesseract, source.crop(under_three_box), "eng")
+            quantity = quantity_from_under_three_cell(quantity_text)
             row_log = f"固定表行\t{area_label}\t{name or '要確認'}\t数量要確認\t"
 
             if not name or is_excluded_ingredient(name) or is_suspicious_ingredient_name(name):
                 continue
-            if len(numbers) not in (3, 4):
-                review_candidates.append(row_log)
-                add_ingredient_row(rows, seen, name, "数量要確認", "", "月")
-                continue
-
-            quantity = numbers[2]
             if not is_numeric_cell(quantity):
                 review_candidates.append(row_log)
                 add_ingredient_row(rows, seen, name, "数量要確認", "", "月")
@@ -787,6 +776,32 @@ def group_line_positions(values: list[int]) -> list[int]:
             groups[-1].append(value)
     return [round(sum(group) / len(group)) for group in groups]
 
+
+
+def fixed_cell_box(
+    table_box: tuple[int, int, int, int],
+    row_top: int,
+    row_bottom: int,
+    column_name: str,
+) -> tuple[int, int, int, int]:
+    left_ratio, right_ratio = FIXED_MENU_COLUMNS[column_name]
+    table_width = table_box[2] - table_box[0]
+    left = table_box[0] + round(table_width * left_ratio)
+    right = table_box[0] + round(table_width * right_ratio)
+    x_padding = max(1, round(table_width * 0.004))
+    y_padding = max(1, round((row_bottom - row_top) * 0.08))
+    return (
+        min(right - 1, left + x_padding),
+        min(row_bottom - 1, row_top + y_padding),
+        max(left + 1, right - x_padding),
+        max(row_top + 1, row_bottom - y_padding),
+    )
+
+
+def quantity_from_under_three_cell(value: str) -> str:
+    normalized = normalize_ocr_line(value).replace(",", "")
+    match = re.search(r"(?<![0-9.])[0-9]+(?:\.[0-9]+)?(?![0-9.])", normalized)
+    return match.group(0) if match else ""
 
 def ocr_fixed_cell(pytesseract: Any, image: Image.Image, lang: str) -> str:
     cell = ImageOps.grayscale(image)

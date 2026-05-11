@@ -15,7 +15,7 @@ FOOD_MASTER_PATH = Path("data/food_master.csv")
 st.set_page_config(page_title="献立表OCR MVP", page_icon="🍱", layout="wide")
 
 st.title("🍱 献立表OCR MVP")
-st.caption("画像/PDFからOCR全文を表示し、食材候補を確認してExcel出力します。")
+st.caption("画像/PDFの固定列を読み取り、食材候補を確認してExcel出力します。")
 
 st.warning(
     "OCR結果は間違う可能性があります。発注前に必ず確認・修正してください。"
@@ -55,14 +55,14 @@ ocr_result = st.session_state.get("ocr_result")
 if not ocr_result:
     st.stop()
 
-st.subheader("1. OCR全文")
+st.subheader("1. 固定列OCR結果")
 col1, col2, col3 = st.columns(3)
 col1.metric("OCRエンジン", ocr_result.engine)
 col2.metric("平均信頼度", f"{ocr_result.confidence}%")
 col3.metric("採用した向き", "自動判定" if ocr_result.rotation == -1 else f"{ocr_result.rotation}度")
 
 ocr_text = st.text_area(
-    "OCR結果全文（必要ならここで直接修正できます）",
+    "固定列OCR結果（必要ならここで直接修正できます）",
     value=ocr_result.text,
     height=280,
 )
