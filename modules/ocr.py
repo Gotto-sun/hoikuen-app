@@ -146,6 +146,17 @@ class OCRResult:
 
 
 @dataclass(frozen=True)
+class RawOCRPageResult:
+    """原画像OCR確認モードで表示するページ単位の結果です。"""
+
+    page_number: int
+    original_image: Image.Image
+    ocr_text: str
+    ocr_confidence: float
+    diagnostics: list[str]
+
+
+@dataclass(frozen=True)
 class SectionArea:
     """見出しごとに分割したOCR対象エリアです。"""
 
@@ -286,24 +297,27 @@ def run_tesseract(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
     return best_result
 
 
-
-def run_raw_pillow_rgb_ocr(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
+def run_raw_pillow_rgb_ocr(image: Image.Image, lang: str = "jpn+eng", context: str = "原画像そのままOCR") -> OCRResult:
     """Pillowで読み込んだ原画像をRGB化し、そのままTesseractへ渡します。"""
 
     rgb = ImageOps.exif_transpose(image).convert("RGB")
-    _assert_valid_ocr_image(rgb, "原画像そのままOCR")
-    _image_blankness_message(rgb, "原画像そのままOCR")
+    _assert_valid_ocr_image(rgb, context)
+    _image_blankness_message(rgb, context)
     config = f"--oem 3 --psm 6 --dpi {FIXED_OCR_DPI}"
-    text = pytesseract.image_to_string(rgb, lang=lang, config=config)
+    text = pytesseract.image_to_string(rgb, lang=lang, config=config).strip()
     data = pytesseract.image_to_data(
         rgb,
         lang=lang,
         config=config,
         output_type=pytesseract.Output.DICT,
     )
+    confidence = _confidence_from_data(data)
+    logger.info("OCR全文 START: context=%s engine=Tesseract原画像RGB confidence=%s", context, confidence)
+    logger.info("%s", text or "（空）")
+    logger.info("OCR全文 END: context=%s", context)
     return OCRResult(
-        text=text.strip(),
-        confidence=_confidence_from_data(data),
+        text=text,
+        confidence=confidence,
         engine="Tesseract原画像RGB",
         rotation=0,
     )
@@ -684,6 +698,45 @@ def build_debug_overlay(image: Image.Image, page_number: int = 1) -> DebugOverla
     )
 
 
+def build_raw_ocr_page(image: Image.Image, page_number: int = 1) -> RawOCRPageResult:
+    """固定表処理を使わず、Pillow原画像をそのまま表示・OCRします。"""
+
+    base = ImageOps.exif_transpose(image).convert("RGB")
+    context = f"{page_number}ページ目 原画像そのままOCR"
+    _assert_valid_ocr_image(base, context)
+    diagnostics = [_image_blankness_message(base, context)]
+    try:
+        ocr_result = run_raw_pillow_rgb_ocr(base, context=context)
+        ocr_text = ocr_result.text
+        ocr_confidence = ocr_result.confidence
+    except Exception as exc:  # noqa: BLE001 - 画面にOCR失敗を表示します。
+        logger.exception("原画像そのままOCR失敗: page=%s", page_number)
+        ocr_text = f"OCRエラー: {exc}"
+        ocr_confidence = 0.0
+        logger.info("OCR全文 START: context=%s engine=Tesseract原画像RGB confidence=%s", context, ocr_confidence)
+        logger.info("%s", ocr_text)
+        logger.info("OCR全文 END: context=%s", context)
+
+    return RawOCRPageResult(
+        page_number=page_number,
+        original_image=base,
+        ocr_text=ocr_text,
+        ocr_confidence=ocr_confidence,
+        diagnostics=diagnostics,
+    )
+
+
+def raw_ocr_pages_for_upload(
+    file_name: str,
+    file_bytes: bytes,
+    mime_type: str | None = None,
+) -> list[RawOCRPageResult]:
+    """アップロードファイルを原画像のままOCRする確認モードです。"""
+
+    images = images_from_upload(file_name, file_bytes, mime_type=mime_type)
+    return [build_raw_ocr_page(image, page_number=index + 1) for index, image in enumerate(images)]
+
+
 def debug_overlays_for_upload(
     file_name: str,
     file_bytes: bytes,
@@ -696,63 +749,10 @@ def debug_overlays_for_upload(
 
 
 def run_fixed_layout_ocr(image: Image.Image) -> OCRResult:
-    """見出しごとのエリア内で、食材名列と3歳未満列だけをOCRします。"""
+    """固定表OCRは一旦停止し、原画像そのままOCRだけを返します。"""
 
-    source = ImageOps.exif_transpose(image).convert("L")
-    section_areas = _section_areas_from_headings(source)
-    lines: list[str] = []
-    confidences: list[float] = []
-
-    for area in section_areas:
-        table = source.crop(area.box)
-        row_ranges = _detect_table_row_ranges(table)
-        if not row_ranges:
-            lines.append(f"区分\t{area.label}\t横罫線行なし\t{area.source}")
-            continue
-
-        section_row_count = 0
-        in_recipe_block = False
-        lines.append(f"区分\t{area.label}\t{area.source}\t{len(row_ranges)}行")
-        for top, bottom in row_ranges:
-            row_top = area.box[1] + top
-            row_bottom = area.box[1] + bottom
-            if row_bottom <= row_top:
-                continue
-
-            name_box = _fixed_cell_box(area.box, row_top, row_bottom, "food_name")
-            under_three_box = _fixed_cell_box(area.box, row_top, row_bottom, "under_three")
-            name_text, name_confidence = _ocr_fixed_cell(source.crop(name_box), "jpn+eng")
-            quantity_text, quantity_confidence = _ocr_fixed_cell(source.crop(under_three_box), "eng")
-            food_name = " ".join(name_text.split())
-            quantity = _quantity_from_under_three_text(quantity_text)
-            if name_confidence > 0:
-                confidences.append(name_confidence)
-            if quantity_confidence > 0:
-                confidences.append(quantity_confidence)
-
-            if _is_recipe_title_row(food_name, quantity):
-                in_recipe_block = True
-                lines.append(f"料理ブロック\t{area.label}\t{food_name}")
-                continue
-
-            if not _is_ingredient_list_row(food_name, quantity):
-                continue
-            if not in_recipe_block and not _is_forced_ingredient_name(food_name):
-                continue
-
-            section_row_count += 1
-            lines.append(f"{FIXED_ROW_MARKER}\t{area.label}\t{food_name}\t{quantity}\tg")
-
-        if section_row_count == 0:
-            lines.append(f"区分\t{area.label}\t食材行なし\t{area.source}")
-
-    average_confidence = round(sum(confidences) / len(confidences), 1) if confidences else 0.0
-    return OCRResult(
-        text="\n".join(lines),
-        confidence=average_confidence,
-        engine="Tesseract見出し分割・固定X座標OCR",
-        rotation=0,
-    )
+    logger.info("固定表OCR停止中: 原画像そのままOCRへ切り替えます")
+    return run_raw_pillow_rgb_ocr(image, context="固定表OCR停止中の原画像OCR")
 
 
 def run_ocr_for_image(image: Image.Image) -> OCRResult:
