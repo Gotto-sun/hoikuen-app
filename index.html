@@ -722,9 +722,10 @@
         renderManualTable();
         renderOrderPreview();
         updateExcelButtonState();
-        updateImportProgress(100, "原画像OCR全文の確認完了");
-        notice.textContent = "原画像OCR全文を表示しました。固定表OCRと表切り出しは停止中です。";
-        pdfStatus.textContent = "原画像OCR全文を表示しました。";
+        updateImportProgress(100, "原画像OCR全文の確認完了。抽出を開始します。");
+        const parsedRows = parseIngredients(extractedText);
+        logOcrStep("抽出結果", parsedRows.length ? parsedRows.map(row => [row.name, row.quantity, row.unit].join(" ")).join(" / ") : "0件");
+        applyParsedRows(parsedRows, { append: false, statusPrefix: "原画像OCR全文から抽出完了" });
       } catch (error) {
         const reason = error && error.message ? error.message : String(error || "不明なエラー");
         console.error("file import error", { fileName: file.name, reason });
@@ -1138,15 +1139,14 @@
             if (!originalWidth || !originalHeight) {
               throw new Error("画像の解像度を確認できませんでした。");
             }
-            const scale = Math.min(1, maxImageOcrDimension / originalWidth);
-            const width = Math.max(1, Math.round(originalWidth * scale));
-            const height = Math.max(1, Math.round(originalHeight * scale));
-            console.info("image resolution check", { fileName: file.name, originalWidth, originalHeight, width, height });
+            const width = originalWidth;
+            const height = originalHeight;
+            console.info("image resolution check", { fileName: file.name, originalWidth, originalHeight, width, height, resizing: false });
             const canvas = document.createElement("canvas");
             canvas.width = width;
             canvas.height = height;
             const context = canvas.getContext("2d", { willReadFrequently: true });
-            context.drawImage(image, 0, 0, width, height);
+            context.drawImage(image, 0, 0);
             resolve(canvas);
           } catch (error) {
             reject(error);
@@ -1838,11 +1838,11 @@
     }
 
     function parseIngredients(text) {
-      const sourceRows = extractFixedMenuSourceRows(text);
+      const sourceRows = extractUnderThreeSourceRows(text);
       const pendingRows = sourceRows
         .filter(row => row.quantity === "数量要確認")
-        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "", source: row.source || "固定表OCR" }));
-      return mapMenuRowsToOrderRows(sourceRows, "固定表OCR").concat(pendingRows);
+        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "", source: row.source || "原画像OCR" }));
+      return mapMenuRowsToOrderRows(sourceRows, "原画像OCR").concat(pendingRows);
     }
 
     function extractFixedMenuSourceRows(text) {
@@ -1995,7 +1995,7 @@
     }
 
     function underThreeQuantityFromCells(cells) {
-      const quantityIndex = chooseUnderThreeQuantityIndex(cells, findUnderThreeColumn(cells));
+      const quantityIndex = chooseSameRowQuantityIndex(cells);
       if (quantityIndex >= 0 && isNumericCell(cells[quantityIndex])) {
         return {
           quantity: normalizeQuantity(cells[quantityIndex]).replace(/,/g, ""),
@@ -2034,7 +2034,7 @@
       const cleanUnit = normalizeUnit(row.unit || "g");
       const quantity = normalizeQuantity(row.quantity);
       const numericQuantity = numberValue(quantity);
-      const weekday = row.weekday || detectWeekday(row.sourceLine || "");
+      const weekday = row.weekday || detectWeekday(row.sourceLine || "") || "月";
       if (!cleanName || !cleanUnit || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
       if (quantity === "数量要確認") {
         const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
@@ -2111,6 +2111,15 @@
         const rightSide = numericIndexes.find(index => index >= underThreeColumn);
         if (rightSide !== undefined) return rightSide;
       }
+      if (numericIndexes.length >= 2) return numericIndexes[1];
+      return numericIndexes[0];
+    }
+
+    function chooseSameRowQuantityIndex(cells) {
+      const numericIndexes = cells.map((cell, index) => isNumberCell(cell) ? index : -1).filter(index => index >= 0);
+      if (!numericIndexes.length) return -1;
+      if (numericIndexes.length >= 4) return numericIndexes[2];
+      if (numericIndexes.length >= 3) return numericIndexes[1];
       if (numericIndexes.length >= 2) return numericIndexes[1];
       return numericIndexes[0];
     }
