@@ -565,6 +565,23 @@
     const ocrLog = document.getElementById("ocrLog");
 
     const orderSheetHeaders = ["チェック", "材料名", "総使用量", "単位", "摘要", "納品数", "単位", "単価", "金額", "産地"];
+    const orderSheetColumns = {
+      check: 0,
+      ingredientName: 1,
+      orderQuantity: 2,
+      orderUnit: 3,
+      note: 4,
+      deliveredQuantity: 5,
+      deliveredUnit: 6,
+      unitPrice: 7,
+      amount: 8,
+      origin: 9
+    };
+    const protectedBlankOrderColumns = [
+      orderSheetColumns.note,
+      orderSheetColumns.deliveredQuantity,
+      orderSheetColumns.deliveredUnit
+    ];
     const orderSheetDetailRows = 30;
     const weekdayPeople = { 月: 5, 火: 7, 水: 7, 木: 7, 金: 7 };
     const fixedOrderRules = [];
@@ -2280,21 +2297,23 @@
 
     function getExportRows() {
       return getFilledRows()
-        .map(row => {
-          const quantity = exportQuantityValue(row.quantity);
-          return [
-            "□",
-            String(row.name || "").trim(),
-            quantity,
-            String(row.unit || "").trim(),
-            "",
-            "",
-            "",
-            "",
-            "",
-            ""
-          ];
-        });
+        .map(row => buildOrderExportRow(row));
+    }
+
+    function buildOrderExportRow(row) {
+      const exportRow = Array(orderSheetHeaders.length).fill("");
+      exportRow[orderSheetColumns.check] = "□";
+      exportRow[orderSheetColumns.ingredientName] = String(row.name || "").trim();
+      exportRow[orderSheetColumns.orderQuantity] = exportQuantityValue(row.quantity);
+      exportRow[orderSheetColumns.orderUnit] = String(row.unit || "").trim();
+      return keepProtectedOrderColumnsBlank(exportRow);
+    }
+
+    function keepProtectedOrderColumnsBlank(row) {
+      protectedBlankOrderColumns.forEach(columnIndex => {
+        row[columnIndex] = "";
+      });
+      return row;
     }
 
     function exportQuantityValue(value) {
@@ -2383,7 +2402,7 @@
     }
 
     function paddedOrderRows(exportRows, detailRowCount) {
-      const padded = exportRows.slice();
+      const padded = exportRows.map(row => keepProtectedOrderColumnsBlank(row.slice()));
       while (padded.length < detailRowCount) padded.push(Array(orderSheetHeaders.length).fill(""));
       return padded;
     }
@@ -2453,6 +2472,8 @@
       worksheet["!printOptions"] = { gridLines: false, horizontalCentered: false, verticalCentered: true };
       worksheet["!ref"] = "A1:J" + layout.totalRows;
 
+      clearProtectedOrderColumns(worksheet, layout);
+
       const range = XLSX.utils.decode_range(worksheet["!ref"]);
       for (let row = range.s.r; row <= range.e.r; row++) {
         for (let col = range.s.c; col <= range.e.c; col++) {
@@ -2460,6 +2481,16 @@
           if (!worksheet[address]) worksheet[address] = { t: "s", v: "" };
           worksheet[address].s = excelCellStyle(row, col, layout);
         }
+      }
+    }
+
+
+    function clearProtectedOrderColumns(worksheet, layout) {
+      for (let row = layout.detailStart; row <= layout.detailEnd; row++) {
+        protectedBlankOrderColumns.forEach(col => {
+          const address = XLSX.utils.encode_cell({ r: row, c: col });
+          worksheet[address] = { t: "s", v: "" };
+        });
       }
     }
 
