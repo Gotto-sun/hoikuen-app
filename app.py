@@ -8,17 +8,14 @@ from modules.ocr import debug_overlays_for_upload
 st.set_page_config(page_title="献立表OCR MVP", page_icon="🍱", layout="wide")
 
 st.title("🍱 献立表OCR MVP")
-st.caption("OCR前に、画像上で読み取り予定の切り出し枠を確認します。")
+st.caption("OCR対象範囲だけを確認します。計算・Excel出力・抽出処理は停止中です。")
 
-st.warning("現在は計算処理・Excel出力・食材OCRを停止中です。まず読み取る場所だけ確認してください。")
+st.warning("枠が正しい位置に来るまで、食材抽出・計算・Excel出力は実行しません。")
 
 with st.sidebar:
     st.header("表示する枠")
-    st.write("- 食材名列：赤線")
-    st.write("- 総使用量列：赤線")
-    st.write("- 3歳以上列：赤線")
-    st.write("- 3歳未満列：赤線")
-    st.write("- 職員列：赤線")
+    st.write("- 食材名列：青")
+    st.write("- 3歳未満列：赤")
     st.divider()
     st.write("区分範囲")
     st.write("- 午前おやつ：青")
@@ -59,7 +56,7 @@ if not debug_overlays:
     st.stop()
 
 st.subheader("切り出し枠プレビュー")
-st.info("赤線が各列の読み取り予定範囲です。OCR・計算・Excel出力はまだ実行しません。")
+st.info("青が食材名列、赤が3歳未満列です。抽出・計算・Excel出力は実行しません。")
 
 for overlay in debug_overlays:
     st.markdown(f"### {overlay.page_number}ページ目")
@@ -79,3 +76,20 @@ for overlay in debug_overlays:
         for box in overlay.boxes
     ]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    st.markdown("#### OCR対象の切り出し小画像")
+    for section in ["午前おやつ", "昼食", "午後おやつ"]:
+        section_crops = [crop for crop in overlay.crops if crop.section == section]
+        if not section_crops:
+            continue
+        st.markdown(f"##### {section}")
+        columns = st.columns(len(section_crops))
+        for column, crop in zip(columns, section_crops, strict=False):
+            with column:
+                st.image(crop.image, caption=f"{crop.label} / 信頼度 {crop.confidence}", use_column_width=True)
+                st.text_area(
+                    f"OCR結果：{section} / {crop.label}",
+                    crop.ocr_text or "（空）",
+                    height=140,
+                    key=f"ocr-{overlay.page_number}-{section}-{crop.label}",
+                )
