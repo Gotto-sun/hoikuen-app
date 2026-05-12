@@ -3,8 +3,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import pandas as pd
 import streamlit as st
 
+from modules.calculate import aggregate_candidates
+from modules.export_excel import build_order_dataframe, dataframe_to_excel_bytes
 from modules.extract import extract_food_candidates
 from modules.normalize import load_food_master
 from modules.ocr import raw_ocr_pages_for_upload
@@ -72,6 +75,8 @@ if not raw_ocr_pages:
 st.subheader("原画像OCR確認")
 st.info("この画面では固定表OCR・表切り出しを実行しません。取得済みOCR全文だけから抽出します。")
 
+all_candidates = []
+
 for page in raw_ocr_pages:
     st.markdown(f"### {page.page_number}ページ目")
     st.image(
@@ -94,6 +99,8 @@ for page in raw_ocr_pages:
     )
 
     candidates = extract_food_candidates(page.ocr_text, load_food_master(Path(FOOD_MASTER_PATH)), page.ocr_confidence)
+    if not candidates.empty:
+        all_candidates.append(candidates)
     st.markdown("#### 抽出結果")
     if candidates.empty:
         st.warning("食材を抽出できませんでした。")
@@ -102,4 +109,19 @@ for page in raw_ocr_pages:
             candidates[["補正後食材名", "数量", "単位", "元の行", "備考"]],
             use_container_width=True,
             hide_index=True,
+        )
+
+if all_candidates:
+    aggregated = aggregate_candidates(pd.concat(all_candidates, ignore_index=True))
+    st.markdown("### 発注書出力")
+    if aggregated.empty:
+        st.warning("発注書へ出力できる食材がありません。")
+    else:
+        st.dataframe(aggregated[["食材名", "発注数量", "発注単位"]], use_container_width=True, hide_index=True)
+        order_df = build_order_dataframe(aggregated, "", "")
+        st.download_button(
+            "発注書Excelをダウンロード",
+            data=dataframe_to_excel_bytes(order_df),
+            file_name="発注書.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )

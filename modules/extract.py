@@ -78,6 +78,15 @@ FORCED_INGREDIENT_CORRECTIONS = {
     "にんじん": ("にんじん", "にんん", "にんヒじん", "人参", "ニンジン", "0 80 66 9", "080669"),
     "食パン": ("食パン", "a emw", "aemw"),
     "いちごジャム": ("いちごジャム", "苺ジャム", "でちこジャ", "60 42 7", "60427"),
+    "キャベツ": ("キャベツ", "きゃべつ"),
+    "白菜": ("白菜", "はくさい"),
+    "しめじ": ("しめじ", "シメジ"),
+    "えのき": ("えのき", "エノキ"),
+    "しいたけ": ("しいたけ", "椎茸", "シイタケ"),
+    "まいたけ": ("まいたけ", "舞茸", "マイタケ"),
+    "エリンギ": ("エリンギ",),
+    "ヨーグルト": ("ヨーグルト", "牧場の朝"),
+    "缶詰": ("缶詰", "ツナ", "コーン缶", "みかん缶", "桃缶", "パイン缶"),
 }
 CORRECTIONS = {alias: label for label, aliases in FORCED_INGREDIENT_CORRECTIONS.items() for alias in aliases}
 COLUMNS = [
@@ -274,13 +283,13 @@ def _under_three_quantity_from_numbers(numbers: list[str]) -> str:
         return numbers[1]
     if len(numbers) >= 2:
         return numbers[1]
-    if numbers:
-        return numbers[0]
     return ""
 
 
 def _quantity_near_ocr_line(lines: list[tuple[int, str]], index: int) -> str:
-    for row_index in (index, index + 1):
+    current_numbers = _numbers_from_row(lines[index][1]) if index < len(lines) else []
+    search_indexes = (index,) if current_numbers else (index, index + 1)
+    for row_index in search_indexes:
         if row_index >= len(lines):
             continue
         numbers = _numbers_from_row(lines[row_index][1])
@@ -304,10 +313,14 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
     lines = _ocr_lines(text)
 
     for index, (line_number, line) in enumerate(lines):
+        line_reason = _line_exclusion_reason(line)
+        if line_reason:
+            excluded_rows.append(_excluded_row(line_number, line, line, line_reason))
+            continue
+
         corrected_name = _correct_name_from_ocr_line(line)
         if not corrected_name:
-            line_reason = _line_exclusion_reason(line) or "補正辞書に一致しません"
-            excluded_rows.append(_excluded_row(line_number, line, line, line_reason))
+            excluded_rows.append(_excluded_row(line_number, line, line, "補正辞書に一致しません"))
             continue
 
         if _line_exclusion_reason(corrected_name) or any(word == corrected_name for word in EXCLUDE_WORDS):

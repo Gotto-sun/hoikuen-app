@@ -602,15 +602,16 @@ FIXED_MENU_COLUMNS = {
 }
 FIXED_ORDER_RULES = []
 ROUNDING_ORDER_RULES = [
-    ("牛乳", "本", 1.0, {"ml": 450.0, "g": 450.0}, re.compile(r"牛乳|ミルク")),
+    ("牛乳", "本", 2.0, {"ml": 450.0, "g": 450.0}, re.compile(r"牛乳|ミルク")),
     ("キャベツ", "個", 0.25, {"g": 1200.0}, re.compile(r"キャベツ")),
     ("白菜", "個", 0.125, {"g": 2000.0}, re.compile(r"白菜")),
     ("にんじん", "本", 0.5, {"g": 150.0}, re.compile(r"にんじん|人参")),
     ("きのこ類", "袋", 1.0, {"g": 100.0}, re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
-    ("ヨーグルト", "パック", 1.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
+    ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
+    ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
 ]
 
-PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
+PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|缶詰|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
 LOOSE_NUMBER_PATTERN = re.compile(r"(?<![0-9])([0-9]+(?:\.[0-9]+)?)(?:\s*(" + UNIT_PATTERN + r"))?", re.IGNORECASE)
 CANONICAL_INGREDIENT_PATTERNS = [
     ("しょうゆせんべい", re.compile(r"しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|しょうゆせんし|醤油\s*せんべい|せんい")),
@@ -627,6 +628,15 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("にんじん", re.compile(r"にんじん|にんん|人参|(?<![0-9])0\s*80\s*66\s*9(?![0-9])")),
     ("食パン", re.compile(r"食パン|a\s*emw", re.IGNORECASE)),
     ("いちごジャム", re.compile(r"いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム|(?<![0-9])60\s*42\s*7(?![0-9])")),
+    ("キャベツ", re.compile(r"キャベツ|きゃべつ")),
+    ("白菜", re.compile(r"白菜|はくさい")),
+    ("しめじ", re.compile(r"しめじ|シメジ")),
+    ("えのき", re.compile(r"えのき|エノキ")),
+    ("しいたけ", re.compile(r"しいたけ|椎茸|シイタケ")),
+    ("まいたけ", re.compile(r"まいたけ|舞茸|マイタケ")),
+    ("エリンギ", re.compile(r"エリンギ")),
+    ("ヨーグルト", re.compile(r"ヨーグルト|牧場の朝")),
+    ("缶詰", re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
 ]
 
 
@@ -1295,7 +1305,7 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
         formatted_quantity, formatted_unit = format_order_quantity(quantity, unit)
         if name and formatted_quantity != "0":
             order_rows.append(IngredientRow(name, formatted_quantity, formatted_unit))
-    return sorted(order_rows, key=lambda row: row.name) + uncertain_rows
+    return sorted(order_rows, key=lambda row: row.name)
 
 def format_ingredient_column(rows: list[IngredientRow], field_name: str) -> str:
     return " / ".join(str(getattr(row, field_name)) for row in rows)

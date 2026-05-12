@@ -29,18 +29,23 @@ def build_order_dataframe(candidates: pd.DataFrame, order_date: str, use_date: s
     rows: list[dict[str, object]] = []
     order_targets = candidates[candidates["要確認"] != True] if "要確認" in candidates.columns else candidates
     for _, row in order_targets.iterrows():
+        food_name = row.get("食材名", row.get("補正後食材名", ""))
+        required_amount = row.get("必要量", row.get("数量", ""))
+        order_quantity = row.get("発注数量", row.get("数量", ""))
+        if not food_name or str(order_quantity).strip() in {"", "0", "数量要確認", "nan", "NaN"}:
+            continue
         rows.append(
             {
                 "発注日": order_date,
                 "使用日": use_date,
-                "食材名": row.get("補正後食材名", ""),
-                "必要量": row.get("数量", ""),
+                "食材名": food_name,
+                "必要量": required_amount,
                 "発注単位": row.get("発注単位", row.get("単位", "")) or row.get("単位", ""),
-                "発注数量": row.get("数量", ""),
+                "発注数量": order_quantity,
                 "仕入先": row.get("仕入先", ""),
                 "備考": row.get("備考", ""),
                 "OCR信頼度": row.get("OCR信頼度", ""),
-                "要確認フラグ": "要確認" if bool(row.get("要確認", False)) else "",
+                "要確認フラグ": "",
             }
         )
 
