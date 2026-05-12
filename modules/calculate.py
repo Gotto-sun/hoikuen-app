@@ -11,7 +11,9 @@ def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
     if candidates.empty:
         return candidates.copy()
 
-    work = candidates.copy()
+    work = candidates[candidates["要確認"] != True].copy() if "要確認" in candidates.columns else candidates.copy()
+    if work.empty:
+        return work
     work["数量"] = pd.to_numeric(work["数量"], errors="coerce")
     grouped = (
         work.groupby(["補正後食材名", "単位", "発注単位", "仕入先"], dropna=False, as_index=False)
