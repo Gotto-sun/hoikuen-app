@@ -622,7 +622,7 @@
       { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
       { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] }
     ];
-    const priorityFoodPattern = /にんじん|にんん|にんヒじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯|カットわかめ|わかめ|若布|ひじき|ひじ|牛乳|ミルク|キャベツ|白菜|きゅうり|胡瓜|もやし|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|コンソメ|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
+    const priorityFoodPattern = /にんじん|にんん|にんヒじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯|カットわかめ|わかめ|若布|ひじき|ひじ|牛乳|ミルク|キャベツ|白菜|きゅうり|胡瓜|もやし|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
     const canonicalIngredientPatterns = [
       { label: "しょうゆせんべい", aliases: ["しょうゆせんべい", "醤油せんべい", "せんい"], tests: [/しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい|せんい/] },
       { label: "牛乳", aliases: ["牛乳", "乳", "ぎゅうにゅう", "ミルク"], tests: [/牛乳|ミルク|^乳$/] },
@@ -637,11 +637,10 @@
       { label: "じゃがいも", aliases: ["じゃがいも", "ジャガイモ", "じゃが芋", "とゃがいも", "馬鈴薯"], tests: [/じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯/] },
       { label: "にんじん", aliases: ["にんじん", "にんん", "にんヒじん", "人参", "ニンジン"], tests: [/にんじん|にんん|にんヒじん|人参/] },
       { label: "食パン", aliases: ["食パン"], tests: [/食パン/] },
-      { label: "いちごジャム", aliases: ["いちごジャム", "でちこジャ", "苺ジャム"], tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] },
-      { label: "コンソメ", aliases: ["コンソメ", "ョヨンツメ"], tests: [/コンソメ|ョヨンツメ/] }
+      { label: "いちごジャム", aliases: ["いちごジャム", "でちこジャ", "苺ジャム"], tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] }
     ];
-    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
-    const recipeInstructionPattern = /(作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|する)/;
+    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|コンソメ|ョヨンツメ|ヨ肥外|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|調味料全般|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
+    const recipeInstructionPattern = /(作り方|つくり方|手順|注釈|説明|説明文|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|味を調える|味をととのえる|味を整える|する)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 800;
     const imageLoadTimeoutMs = 6000;
@@ -650,6 +649,7 @@
     const maxOcrCandidatePatterns = 1;
     const lightImageJpegQuality = 0.55;
     const ocrTimeoutMessage = "タイムアウト：画像が重すぎるため処理を中断しました";
+    const foodMasterNames = new Set(canonicalIngredientPatterns.map(rule => rule.label));
     let rows = [];
 
     menuCsvBtn.addEventListener("click", event => {
@@ -1662,7 +1662,7 @@
         skipped = sourceRows.length ? 0 : lines.length;
       }
 
-      return { rows: mapMenuRowsToOrderRows(sourceRows), skipped };
+      return { rows: buildDisplayRows(sourceRows, "献立CSV"), skipped };
     }
 
     function parseDelimitedRows(lines) {
@@ -1731,9 +1731,35 @@
       const cleanName = cleanIngredientName(name);
       const cleanUnit = normalizeUnit(unit || "g");
       const numericQuantity = numberValue(quantity);
-      if (!cleanName || !isNumericCell(quantity) || !numericQuantity || !cleanUnit || !peopleForWeekday(weekday) || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
+      if (!cleanName || !cleanUnit || !peopleForWeekday(weekday) || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
+      if (!isInFoodMaster(cleanName)) {
+        target.push({ name: cleanName, quantity: "数量要確認", unit: "", weekday, source: "要確認" });
+        return true;
+      }
+      if (!isNumericCell(quantity) || !numericQuantity) return false;
       target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: "献立CSV" });
       return true;
+    }
+
+
+    function buildDisplayRows(sourceRows, sourceLabel) {
+      const orderRows = mapMenuRowsToOrderRows(sourceRows, sourceLabel);
+      const pendingRows = [];
+      const seen = new Set();
+      sourceRows.forEach(row => {
+        const name = cleanIngredientName(row.name);
+        if (!name || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) return;
+        if (row.quantity !== "数量要確認" && isInFoodMaster(name)) return;
+        const key = normalizeIngredientForGrouping(name);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        pendingRows.push({ name, quantity: "数量要確認", unit: "", source: row.source || "要確認" });
+      });
+      return orderRows.concat(pendingRows);
+    }
+
+    function isInFoodMaster(name) {
+      return foodMasterNames.has(normalizeIngredientForGrouping(name));
     }
 
     function isExcludedIngredient(name) {
@@ -1745,7 +1771,7 @@
       const aggregate = new Map();
 
       sourceRows.forEach(row => {
-        if (isExcludedIngredient(row.name)) return;
+        if (isExcludedIngredient(row.name) || !isInFoodMaster(row.name) || row.quantity === "数量要確認") return;
         const people = peopleForWeekday(row.weekday);
         if (!people) return;
         const converted = convertMenuQuantity(row.quantity, row.unit);
@@ -1839,10 +1865,7 @@
 
     function parseIngredients(text) {
       const sourceRows = extractUnderThreeSourceRows(text);
-      const pendingRows = sourceRows
-        .filter(row => row.quantity === "数量要確認")
-        .map(row => ({ name: cleanIngredientName(row.name), quantity: "数量要確認", unit: "", source: row.source || "原画像OCR" }));
-      return mapMenuRowsToOrderRows(sourceRows, "原画像OCR").concat(pendingRows);
+      return buildDisplayRows(sourceRows, "原画像OCR");
     }
 
     function extractFixedMenuSourceRows(text) {
@@ -2036,11 +2059,11 @@
       const numericQuantity = numberValue(quantity);
       const weekday = row.weekday || detectWeekday(row.sourceLine || "") || "月";
       if (!cleanName || !cleanUnit || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
-      if (quantity === "数量要確認") {
-        const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
+      if (quantity === "数量要確認" || !isInFoodMaster(cleanName)) {
+        const key = [normalizeIngredientForGrouping(cleanName), "数量要確認"].join("|");
         if (seen.has(key)) return;
         seen.add(key);
-        target.push({ name: cleanName, quantity: "数量要確認", unit: "", weekday, source: row.source || "3歳未満児" });
+        target.push({ name: cleanName, quantity: "数量要確認", unit: "", weekday, source: row.source || "要確認" });
         return;
       }
       if (!isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0) return;
@@ -2211,7 +2234,7 @@
     }
 
     function isSentenceNoise(line) {
-      return recipeInstructionPattern.test(String(line || "")) || /を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます/.test(String(line || ""));
+      return recipeInstructionPattern.test(String(line || "")) || /を塗って|してください|しましょう|します|しました|です|ます|もう|食べる|食べます|野菜がやわらかくなったら/.test(String(line || ""));
     }
 
     function scoreOcrText(result) {
@@ -2455,6 +2478,7 @@
 
     function getExportRows() {
       return getFilledRows()
+        .filter(row => row.quantity !== "数量要確認" && isInFoodMaster(row.name))
         .map(row => buildOrderExportRow(row));
     }
 

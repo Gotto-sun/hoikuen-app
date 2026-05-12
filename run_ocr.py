@@ -19,6 +19,7 @@ import queue
 import re
 import statistics
 import sys
+import csv
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -584,8 +585,8 @@ def extract_fields(text: str) -> ExtractedFields:
 
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
-SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|注釈|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
-EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|コンソメ|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉")
+SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|注釈|説明|説明文|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|味を調える|味をととのえる|味を整える|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
+EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|コンソメ|ョヨンツメ|ヨ肥外|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|調味料全般|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
 FIXED_MENU_TABLE_AREAS = [
     ("午前おやつ", 0.04, 0.18, 0.92, 0.16),
@@ -609,7 +610,7 @@ ROUNDING_ORDER_RULES = [
     ("ヨーグルト", "パック", 1.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
 ]
 
-PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|コンソメ|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
+PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
 LOOSE_NUMBER_PATTERN = re.compile(r"(?<![0-9])([0-9]+(?:\.[0-9]+)?)(?:\s*(" + UNIT_PATTERN + r"))?", re.IGNORECASE)
 CANONICAL_INGREDIENT_PATTERNS = [
     ("しょうゆせんべい", re.compile(r"しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|しょうゆせんし|醤油\s*せんべい|せんい")),
@@ -626,7 +627,6 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("にんじん", re.compile(r"にんじん|にんん|人参|(?<![0-9])0\s*80\s*66\s*9(?![0-9])")),
     ("食パン", re.compile(r"食パン|a\s*emw", re.IGNORECASE)),
     ("いちごジャム", re.compile(r"いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム|(?<![0-9])60\s*42\s*7(?![0-9])")),
-    ("コンソメ", re.compile(r"コンソメ|ョヨンツメ")),
 ]
 
 
@@ -1177,6 +1177,34 @@ def is_excluded_ingredient(name: str) -> bool:
 def normalize_ingredient_for_grouping(name: str) -> str:
     return re.sub(r"^(冷凍|国産|生|千切り|皮むき)", "", re.sub(r"[（(].*?[）)]", "", clean_ingredient_name(name))).strip()
 
+
+_FOOD_MASTER_NAMES: set[str] | None = None
+
+
+def food_master_names() -> set[str]:
+    global _FOOD_MASTER_NAMES
+    if _FOOD_MASTER_NAMES is not None:
+        return _FOOD_MASTER_NAMES
+    path = Path("data/food_master.csv")
+    names: set[str] = set()
+    if not path.exists():
+        return names
+    try:
+        with path.open(encoding="utf-8-sig", newline="") as csv_file:
+            for row in csv.DictReader(csv_file):
+                name = normalize_ingredient_for_grouping(row.get("正式名称", ""))
+                if name:
+                    names.add(name)
+    except OSError as exc:
+        logging.warning("食材マスタを読めませんでした: %s", exc)
+    _FOOD_MASTER_NAMES = names
+    return names
+
+
+def is_in_food_master(name: str) -> bool:
+    key = normalize_ingredient_for_grouping(name)
+    return bool(key and key in food_master_names())
+
 def fixed_order_key(name: str) -> str | None:
     for _label, key, pattern in FIXED_ORDER_RULES:
         if pattern.search(name):
@@ -1229,7 +1257,7 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
     uncertain_rows: list[IngredientRow] = []
     uncertain_seen: set[str] = set()
     for row in source_rows:
-        if row.quantity == "数量要確認":
+        if row.quantity == "数量要確認" or not is_in_food_master(row.name):
             key = normalize_ingredient_for_grouping(row.name)
             if key and key not in uncertain_seen and not is_excluded_ingredient(row.name):
                 uncertain_seen.add(key)

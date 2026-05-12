@@ -27,7 +27,8 @@ def build_order_dataframe(candidates: pd.DataFrame, order_date: str, use_date: s
     """発注書Excelの列に合わせたデータを作ります。"""
 
     rows: list[dict[str, object]] = []
-    for _, row in candidates.iterrows():
+    order_targets = candidates[candidates["要確認"] != True] if "要確認" in candidates.columns else candidates
+    for _, row in order_targets.iterrows():
         rows.append(
             {
                 "発注日": order_date,
