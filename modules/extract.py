@@ -69,10 +69,23 @@ FORCED_INGREDIENT_CORRECTIONS = {
     "ひじき": ("ひじき", "ひじ", "ヒジキ"),
     "豚ひき肉": ("豚ひき肉", "豚挽き肉", "豚ひき内", "豚ミンチ", "評Oき琴", "評0き琴"),
     "木綿豆腐": ("木綿豆腐", "木綿とうふ", "木綿豆富", "豆放"),
+    "ブロッコリー": ("ブロッコリー", "ブロコリー", "ブロッコリ", "プロッコリー", "ブロツコリー"),
+    "クリームコーン缶": ("クリームコーン缶", "クリームコーン", "コーン缶", "クリームコーンかん"),
+    "豆乳": ("豆乳", "とうにゅう", "トウニュウ", "豆孔", "豆礼"),
+    "オレンジ濃縮果汁": ("オレンジ濃縮果汁", "オレンジ果汁", "オレンジ濃縮", "濃縮オレンジ果汁"),
+    "粉かんてん": ("粉かんてん", "粉寒天", "かんてん", "寒天", "粉かんでん"),
+    "みかん缶": ("みかん缶", "みかんかん", "ミカン缶", "蜜柑缶"),
+    "豚肉(もも)": ("豚肉(もも)", "豚肉（もも）", "豚もも肉", "豚肉もも", "豚もも", "豚肉もも肉"),
+    "SBカレーフレーク": ("SBカレーフレーク", "S&Bカレーフレーク", "ＳＢカレーフレーク", "Ｓ＆Ｂカレーフレーク", "カレーフレーク", "SBカレー"),
+    "だいこん": ("だいこん", "大根", "ダイコン", "だいこ", "たいこん"),
+    "ツナ油漬": ("ツナ油漬", "ツナ油漬け", "ツナ油づけ", "ツナ", "ツナ缶"),
+    "パイン缶": ("パイン缶", "パイン", "パイナップル缶", "パインかん", "パイナップル"),
+    "スパゲティ": ("スパゲティ", "スパゲッティ", "スパゲテイ", "パスタ"),
     "たまねぎ": ("たまねぎ", "玉ねぎ", "玉葱", "タマネギ", "玉ネギ", "たまねを", "療半と"),
     "片栗粉": ("片栗粉", "片栗", "片困粉", "用本明", "有本塊"),
-    "もやし": ("もやし", "もや"),
+    "もやし": ("もやし", "もや", "よやし"),
     "きゅうり": ("きゅうり", "きゆうり", "胡瓜", "きゅうの"),
+    "パイシート(冷凍)": ("パイシート(冷凍)", "パイシート（冷凍）", "パイシート", "冷凍パイシート", "バイシート"),
     "カットわかめ": ("カットわかめ", "カット若布", "わかめ", "若布"),
     "じゃがいも": ("じゃがいも", "ジャガイモ", "じゃが芋", "とゃがいも", "馬鈴薯", "がし"),
     "にんじん": ("にんじん", "にんん", "にんヒじん", "人参", "ニンジン", "0 80 66 9", "080669"),
@@ -86,7 +99,7 @@ FORCED_INGREDIENT_CORRECTIONS = {
     "まいたけ": ("まいたけ", "舞茸", "マイタケ"),
     "エリンギ": ("エリンギ",),
     "ヨーグルト": ("ヨーグルト", "牧場の朝"),
-    "缶詰": ("缶詰", "ツナ", "コーン缶", "みかん缶", "桃缶", "パイン缶"),
+    "缶詰": ("缶詰", "桃缶"),
 }
 CORRECTIONS = {alias: label for label, aliases in FORCED_INGREDIENT_CORRECTIONS.items() for alias in aliases}
 COLUMNS = [
@@ -259,11 +272,58 @@ def _compact_for_match(value: str) -> str:
     return re.sub(r"\s+", "", _normalize_line(value))
 
 
+def _levenshtein_distance(left: str, right: str) -> int:
+    if left == right:
+        return 0
+    if not left:
+        return len(right)
+    if not right:
+        return len(left)
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        for right_index, right_char in enumerate(right, start=1):
+            insert_cost = current[right_index - 1] + 1
+            delete_cost = previous[right_index] + 1
+            replace_cost = previous[right_index - 1] + (left_char != right_char)
+            current.append(min(insert_cost, delete_cost, replace_cost))
+        previous = current
+    return previous[-1]
+
+
+def _similarity_key(value: str) -> str:
+    normalized = _compact_for_match(value)
+    normalized = re.sub(r"[ァ-ヶ]", lambda match: chr(ord(match.group(0)) - 0x60), normalized)
+    normalized = normalized.replace("Ｓ", "S").replace("Ｂ", "B")
+    return re.sub(r"[^A-Za-z0-9ぁ-ん一-龯々〆〇]", "", normalized).lower()
+
+
+def _line_contains_similar_alias(line: str, alias: str) -> bool:
+    alias_key = _similarity_key(alias)
+    line_key = _similarity_key(line)
+    if len(alias_key) < 2 or len(line_key) < 2:
+        return False
+    if alias_key in line_key or line_key in alias_key:
+        return True
+    max_allowed = min(2, max(1, len(alias_key) // 3))
+    if abs(len(line_key) - len(alias_key)) <= max_allowed and _levenshtein_distance(line_key, alias_key) <= max_allowed:
+        return True
+    window_min = max(2, len(alias_key) - max_allowed)
+    window_max = len(alias_key) + max_allowed
+    for size in range(window_min, window_max + 1):
+        if size > len(line_key):
+            continue
+        for start in range(0, len(line_key) - size + 1):
+            if _levenshtein_distance(line_key[start : start + size], alias_key) <= max_allowed:
+                return True
+    return False
+
 def _correct_name_from_ocr_line(line: str) -> str:
     compact = _compact_for_match(line)
     if not compact:
         return ""
-    for alias, corrected in sorted(CORRECTIONS.items(), key=lambda item: len(_compact_for_match(item[0])), reverse=True):
+    aliases = sorted(CORRECTIONS.items(), key=lambda item: len(_compact_for_match(item[0])), reverse=True)
+    for alias, corrected in aliases:
         alias_compact = _compact_for_match(alias)
         if not alias_compact:
             continue
@@ -272,6 +332,9 @@ def _correct_name_from_ocr_line(line: str) -> str:
                 return corrected
             continue
         if alias_compact in compact:
+            return corrected
+    for alias, corrected in aliases:
+        if _line_contains_similar_alias(line, alias):
             return corrected
     return ""
 

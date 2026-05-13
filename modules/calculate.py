@@ -23,7 +23,13 @@ STANDARD_NAME_RULES = [
     ("にんじん", re.compile(r"にんじん|人参|ニンジン")),
     ("きのこ類", re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
     ("ヨーグルト", re.compile(r"ヨーグルト|牧場の朝")),
-    ("缶詰", re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
+    ("豚肉(もも)", re.compile(r"豚肉[（(]もも[）)]|豚もも肉|豚肉もも|豚もも")),
+    ("パイシート(冷凍)", re.compile(r"パイシート[（(]冷凍[）)]|冷凍パイシート|パイシート")),
+    ("ツナ油漬", re.compile(r"ツナ油漬|ツナ缶|ツナ")),
+    ("クリームコーン缶", re.compile(r"クリームコーン缶|クリームコーン|コーン缶")),
+    ("みかん缶", re.compile(r"みかん缶|ミカン缶|蜜柑缶")),
+    ("パイン缶", re.compile(r"パイン缶|パイナップル缶|パイン")),
+    ("缶詰", re.compile(r"缶詰|桃缶")),
 ]
 ROUNDING_RULES = [
     ("牛乳", "本", 2.0, {"ml": 450.0, "g": 450.0, "L": 0.45, "l": 0.45}),
@@ -32,6 +38,10 @@ ROUNDING_RULES = [
     ("にんじん", "本", 0.5, {"g": 150.0, "kg": 0.15}),
     ("きのこ類", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}),
+    ("ツナ油漬", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
+    ("クリームコーン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
+    ("みかん缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
+    ("パイン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
     ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
 ]
 
@@ -41,7 +51,12 @@ def _compact(value: object) -> str:
 
 
 def _standard_name(name: object) -> str:
-    cleaned = re.sub(r"[（(].*?[）)]", "", str(name or "")).strip()
+    original = str(name or "").strip()
+    original_compact = _compact(original)
+    for standard, pattern in STANDARD_NAME_RULES:
+        if pattern.search(original_compact):
+            return standard
+    cleaned = re.sub(r"[（(].*?[）)]", "", original).strip()
     compact = _compact(cleaned)
     for standard, pattern in STANDARD_NAME_RULES:
         if pattern.search(compact):
