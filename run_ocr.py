@@ -1032,21 +1032,18 @@ def choose_under_three_quantity_index(cells: list[str], under_three_column: int)
     numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
     if not numeric_indexes:
         return -1
-    if len(numeric_indexes) >= 4:
-        return numeric_indexes[2]
-    if len(numeric_indexes) >= 3:
-        return numeric_indexes[1]
+
+    labeled_index = under_three_quantity_index_by_label(cells)
+    if labeled_index >= 0:
+        return labeled_index
+
     if under_three_column >= 0:
         right_side = [index for index in numeric_indexes if index >= under_three_column]
-        if right_side:
+        if right_side and not is_total_usage_cell(cells[right_side[0] - 1] if right_side[0] > 0 else ""):
             return right_side[0]
-    if len(numeric_indexes) >= 2:
-        return numeric_indexes[1]
-    return numeric_indexes[0]
+        return -1
 
-def choose_same_row_quantity_index(cells: list[str]) -> int:
-    numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
-    if not numeric_indexes:
+    if row_has_total_usage_label(cells):
         return -1
     if len(numeric_indexes) >= 4:
         return numeric_indexes[2]
@@ -1055,6 +1052,50 @@ def choose_same_row_quantity_index(cells: list[str]) -> int:
     if len(numeric_indexes) >= 2:
         return numeric_indexes[1]
     return numeric_indexes[0]
+
+def choose_same_row_quantity_index(cells: list[str]) -> int:
+    numeric_indexes = [index for index, cell in enumerate(cells) if is_number_cell(cell)]
+    if not numeric_indexes:
+        return -1
+    labeled_index = under_three_quantity_index_by_label(cells)
+    if labeled_index >= 0:
+        return labeled_index
+    if row_has_total_usage_label(cells):
+        return -1
+    if len(numeric_indexes) >= 4:
+        return numeric_indexes[2]
+    if len(numeric_indexes) >= 3:
+        return numeric_indexes[1]
+    if len(numeric_indexes) >= 2:
+        return numeric_indexes[1]
+    return numeric_indexes[0]
+
+
+def under_three_quantity_index_by_label(cells: list[str]) -> int:
+    for index, cell in enumerate(cells):
+        if not is_under_three_quantity_cell(cell):
+            continue
+        if is_number_cell(cell):
+            return index
+        for offset in (1, 2):
+            right_index = index + offset
+            if right_index < len(cells) and is_number_cell(cells[right_index]):
+                return right_index
+    return -1
+
+
+def is_under_three_quantity_cell(value: str) -> bool:
+    compact = re.sub(r"\s+", "", normalize_ocr_line(value))
+    return re.search(r"3歳未満|３歳未満|未満児|乳児", compact) is not None and re.search(r"人数|対象|区分|年齢", compact) is None
+
+
+def is_total_usage_cell(value: str) -> bool:
+    compact = re.sub(r"\s+", "", normalize_ocr_line(value))
+    return re.search(r"総使用量|総量|合計|使用量合計|総重量", compact) is not None and re.search(r"3歳未満|３歳未満|未満児|乳児", compact) is None
+
+
+def row_has_total_usage_label(cells: list[str]) -> bool:
+    return any(is_total_usage_cell(cell) for cell in cells)
 
 
 def row_has_number_value(cells: list[str]) -> bool:
@@ -1071,8 +1112,7 @@ def is_ignored_source_row(value: str) -> bool:
 
 def find_under_three_column(cells: list[str]) -> int:
     for index, cell in enumerate(cells):
-        compact = re.sub(r"\s+", "", normalize_ocr_line(cell))
-        if re.search(r"3歳未満|３歳未満|未満児|乳児", compact) and not re.search(r"人数|対象|区分|年齢", compact):
+        if is_under_three_quantity_cell(cell):
             return index
     return -1
 
