@@ -61,11 +61,21 @@ EXCLUDE_WORDS = [
     "米",
     "精白米",
 ]
+EXCLUDED_INGREDIENTS = {"片栗粉", "しょうゆせんべい"}
 SENTENCE_MARKERS = ["。", "、", "です", "ます", "してください", "ため", "こと", "もの", "たら", "なら"]
 NOISE_KANA = {"を", "ゑ", "ゐ"}
 FORCED_INGREDIENT_CORRECTIONS = {
     "しょうゆせんべい": ("しょうゆせんべい", "しょうゆせんし", "せんい"),
+    "鶏モモ肉": ("鶏モモ肉",),
+    "鶏モモ肉(皮なし)": ("鶏モモ肉(皮なし)", "鶏もも肉", "鶏モモ", "鶏肉", "とりもも肉"),
+    "はるさめ": ("はるさめ", "春雨"),
+    "ハム": ("ハム",),
+    "ねぎ": ("ねぎ", "ネギ", "葱"),
+    "コーン缶": ("コーン缶", "コーン", "とうもろこし缶", "トウモロコシ缶"),
+    "ホットケーキミックス": ("ホットケーキミックス", "ホットケーキMIX", "ホットケーキMix", "HM"),
+    "無塩バター": ("無塩バター", "バター"),
     "牛乳": ("牛乳", "乳", "ぎゅうにゅう", "ミルク", "Fh"),
+    "マーマレード": ("マーマレード", "ママレード"),
     "ひじき": ("ひじき", "ひじ", "ヒジキ"),
     "豚ひき肉": ("豚ひき肉", "豚挽き肉", "豚ひき内", "豚ミンチ", "評Oき琴", "評0き琴"),
     "木綿豆腐": ("木綿豆腐", "木綿とうふ", "木綿豆富", "豆放"),
@@ -86,7 +96,7 @@ FORCED_INGREDIENT_CORRECTIONS = {
     "まいたけ": ("まいたけ", "舞茸", "マイタケ"),
     "エリンギ": ("エリンギ",),
     "ヨーグルト": ("ヨーグルト", "牧場の朝"),
-    "缶詰": ("缶詰", "ツナ", "コーン缶", "みかん缶", "桃缶", "パイン缶"),
+    "缶詰": ("缶詰", "ツナ", "みかん缶", "桃缶", "パイン缶"),
 }
 CORRECTIONS = {alias: label for label, aliases in FORCED_INGREDIENT_CORRECTIONS.items() for alias in aliases}
 COLUMNS = [
@@ -323,7 +333,7 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
             excluded_rows.append(_excluded_row(line_number, line, line, "補正辞書に一致しません"))
             continue
 
-        if _line_exclusion_reason(corrected_name) or any(word == corrected_name for word in EXCLUDE_WORDS):
+        if corrected_name in EXCLUDED_INGREDIENTS or any(word == corrected_name for word in EXCLUDE_WORDS):
             excluded_rows.append(_excluded_row(line_number, line, corrected_name, "除外対象の食材です"))
             continue
 
