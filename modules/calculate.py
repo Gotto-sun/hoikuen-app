@@ -17,7 +17,7 @@ SENTENCE_PATTERN = re.compile(
     r"揚げる|混ぜる|加える|入れる|してください|します|です|ます"
 )
 STANDARD_NAME_RULES = [
-    ("鶏モモ肉(皮なし)", re.compile(r"鶏モモ肉皮なし|鶏もも肉|鶏モモ(?!肉)|鶏肉|とりもも肉")),
+    ("鶏もも(皮なし)", re.compile(r"鶏もも\s*(?:肉)?|鶏モモ(?!肉)|鶏肉|とりもも肉|鶏モモ肉(?:皮なし|（皮なし）)")),
     ("鶏モモ肉", re.compile(r"鶏モモ肉")),
     ("コーン缶", re.compile(r"コーン缶|とうもろこし缶|トウモロコシ缶|コーン")),
     ("ホットケーキミックス", re.compile(r"ホットケーキミックス|ホットケーキMIX|HM")),
@@ -32,7 +32,9 @@ STANDARD_NAME_RULES = [
     ("まいたけ", re.compile(r"まいたけ|舞茸|マイタケ")),
     ("エリンギ", re.compile(r"エリンギ")),
     ("ヨーグルト", re.compile(r"ヨーグルト|牧場の朝")),
-    ("缶詰", re.compile(r"缶詰|ツナ|みかん缶|桃缶|パイン缶")),
+    ("みかん缶", re.compile(r"みかん缶|みかんかん|ミカン缶|蜜柑缶")),
+    ("ツナ油漬け缶", re.compile(r"ツナ油漬け缶|ツナ油漬け|ツナ油漬|ツナ油づけ|ツナ缶|ツナ")),
+    ("缶詰", re.compile(r"缶詰|桃缶|パイン缶")),
     ("ほうれんそう", re.compile(r"ほうれんそう|ほうれん草|ホウレンソウ")),
     ("中華めん", re.compile(r"中華めん|中華麺|中華メン")),
     ("豚肉(もも)", re.compile(r"豚肉もも|豚もも肉|豚モモ肉|豚肉")),
@@ -53,6 +55,7 @@ STANDARD_NAME_RULES = [
     ("パプリカ(赤)", re.compile(r"パプリカ赤|赤パプリカ")),
     ("しらす干し", re.compile(r"しらす干し|シラス干し|しらす")),
     ("チンゲンサイ", re.compile(r"チンゲンサイ|青梗菜|チンゲン菜")),
+    ("オレンジ濃縮果汁", re.compile(r"オレンジ濃縮果汁|オレンジ果汁|オレンジ濃縮|濃縮オレンジ果汁|オレンジのうしゅく果汁")),
     ("オレンジ", re.compile(r"オレンジ|みかん")),
     ("マカロニ", re.compile(r"マカロニ|マカロ二")),
     ("きな粉", re.compile(r"きな粉|きなこ|黄粉")),
@@ -66,7 +69,6 @@ ROUNDING_RULES = [
     ("牛乳", "本", 2.0, {"ml": 450.0, "g": 450.0, "L": 0.45, "l": 0.45}),
     ("キャベツ", "個", 0.25, {"g": 1200.0, "kg": 1.2}),
     ("はくさい", "個", 0.125, {"g": 2000.0, "kg": 2.0}),
-    ("にんじん", "本", 0.5, {"g": 150.0, "kg": 0.15}),
     ("しめじ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("えのきたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("しいたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
@@ -74,6 +76,8 @@ ROUNDING_RULES = [
     ("エリンギ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}),
     ("コーン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0, "g": 190.0}),
+    ("ツナ油漬け缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
+    ("みかん缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
     ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
 ]
 
@@ -84,8 +88,8 @@ def _compact(value: object) -> str:
 
 def _standard_name(name: object) -> str:
     original_compact = _compact(name)
-    if "鶏モモ肉(皮なし)" in str(name or "") or "鶏モモ肉皮なし" in original_compact:
-        return "鶏モモ肉(皮なし)"
+    if "鶏もも(皮なし)" in str(name or "") or "鶏モモ肉(皮なし)" in str(name or "") or "鶏モモ肉皮なし" in original_compact or "鶏モモ肉（皮なし）" in original_compact:
+        return "鶏もも(皮なし)"
     cleaned = re.sub(r"[（(].*?[）)]", "", str(name or "")).strip()
     compact = _compact(cleaned)
     for standard, pattern in STANDARD_NAME_RULES:
@@ -116,6 +120,10 @@ def _format_quantity(quantity: float) -> str:
 
 def _convert_purchase_quantity(name: str, quantity: float, unit: str) -> tuple[float, str]:
     normalized_unit = str(unit or "g").strip()
+    if name == "にんじん":
+        if normalized_unit == "kg":
+            return quantity * 1000, "g"
+        return quantity, "g"
     for rule_name, order_unit, step, base_units in ROUNDING_RULES:
         if name != rule_name:
             continue

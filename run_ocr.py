@@ -586,7 +586,7 @@ def extract_fields(text: str) -> ExtractedFields:
 UNIT_PATTERN = r"kg|㎏|キロ|g|グラム|ml|cc|L|リットル|個|本|袋|パック|玉|束|枚|缶|箱|尾|切|片|丁|株|房|杯|膳|食|人前"
 IGNORED_LINE_PATTERN = re.compile(r"OCR全文|発注書|納品書|納品日|使用日|検品者|合計|金額|単価|摘要|チェック|ページ|請求|消費税|小計|担当|取引先|電話|FAX|〒|住所")
 SENTENCE_NOISE_PATTERN = re.compile(r"作り方|つくり方|手順|注釈|説明|説明文|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|味を調える|味をととのえる|味を整える|を塗って|してください|しましょう|します|しました|する|です|ます|もう|食べる|食べます")
-EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|コンソメ|ョヨンツメ|ヨ肥外|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|調味料全般|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉")
+EXCLUDED_INGREDIENT_PATTERN = re.compile(r"スチコン|オーブン|コンビモード|レンジ|機器|器具|コンソメ|ョヨンツメ|ヨ肥外|片栗粉|片栗|片困粉|用本明|有本塊|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|調味料全般|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉")
 WEEKDAY_PEOPLE = {"月": 5, "火": 7, "水": 7, "木": 7, "金": 7}
 FIXED_MENU_TABLE_AREAS = [
     ("午前おやつ", 0.04, 0.18, 0.92, 0.16),
@@ -605,13 +605,16 @@ ROUNDING_ORDER_RULES = [
     ("牛乳", "本", 2.0, {"ml": 450.0, "g": 450.0}, re.compile(r"牛乳|ミルク")),
     ("キャベツ", "個", 0.25, {"g": 1200.0}, re.compile(r"キャベツ")),
     ("白菜", "個", 0.125, {"g": 2000.0}, re.compile(r"白菜")),
-    ("にんじん", "本", 0.5, {"g": 150.0}, re.compile(r"にんじん|人参")),
-    ("きのこ類", "袋", 1.0, {"g": 100.0}, re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
+    ("しめじ", "袋", 1.0, {"g": 100.0}, re.compile(r"しめじ|シメジ")),
+    ("きのこ類", "袋", 1.0, {"g": 100.0}, re.compile(r"きのこ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
     ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
-    ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
+    ("コーン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"コーン缶|とうもろこし缶|トウモロコシ缶")),
+    ("みかん缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"みかん缶|蜜柑缶|ミカン缶|みかんかん")),
+    ("ツナ油漬け缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"ツナ油漬け缶|ツナ油漬け|ツナ油漬|ツナ油づけ|ツナ缶|ツナ")),
+    ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"缶詰|桃缶|パイン缶")),
 ]
 
-PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|缶詰|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
+PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|せんべい|ツナ|ツナ缶|コーン缶|みかん缶|缶詰|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
 LOOSE_NUMBER_PATTERN = re.compile(r"(?<![0-9])([0-9]+(?:\.[0-9]+)?)(?:\s*(" + UNIT_PATTERN + r"))?", re.IGNORECASE)
 CANONICAL_INGREDIENT_PATTERNS = [
     ("しょうゆせんべい", re.compile(r"しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|しょうゆせんし|醤油\s*せんべい|せんい")),
@@ -620,15 +623,14 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("豚ひき肉", re.compile(r"豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ン一-龥])ひき\s*内|豚ミンチ|評[O0]き琴")),
     ("木綿豆腐", re.compile(r"木綿\s*豆腐|震記一一意|豆\s*(?:褒|腐|放)")),
     ("たまねぎ", re.compile(r"たまねぎ|玉ねぎ|玉葱|たまねを|療半と")),
-    ("片栗粉", re.compile(r"片栗粉|片\s*(?:困|栗)\s*粉|用本明|有本塊")),
     ("もやし", re.compile(r"もやし|(?:^|[^ぁ-んァ-ン一-龥])もや(?:$|[^ぁ-んァ-ン一-龥])")),
     ("きゅうり", re.compile(r"きゅうり|きゆうり|きゅうの|胡瓜")),
     ("カットわかめ", re.compile(r"カット\s*わかめ|わかめ|若布")),
     ("じゃがいも", re.compile(r"じゃがいも|とゃがいも|馬鈴薯|(?:^|[^ぁ-んァ-ン一-龥])がし(?:$|[^ぁ-んァ-ン一-龥])")),
-    ("にんじん", re.compile(r"にんじん|にんん|人参|(?<![0-9])0\s*80\s*66\s*9(?![0-9])")),
+    ("にんじん", re.compile(r"にんじん|にんん|にんヒじん|人参|ニンジン|(?<![0-9])0\s*80\s*66\s*9(?![0-9])|(?<![0-9])080669(?![0-9])")),
     ("食パン", re.compile(r"食パン|a\s*emw", re.IGNORECASE)),
     ("いちごジャム", re.compile(r"いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム|(?<![0-9])60\s*42\s*7(?![0-9])")),
-    ("キャベツ", re.compile(r"キャベツ|きゃべつ")),
+    ("キャベツ", re.compile(r"キャベツ|キャヘツ|きゃべつ")),
     ("白菜", re.compile(r"白菜|はくさい")),
     ("しめじ", re.compile(r"しめじ|シメジ")),
     ("えのき", re.compile(r"えのき|エノキ")),
@@ -636,7 +638,13 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("まいたけ", re.compile(r"まいたけ|舞茸|マイタケ")),
     ("エリンギ", re.compile(r"エリンギ")),
     ("ヨーグルト", re.compile(r"ヨーグルト|牧場の朝")),
-    ("缶詰", re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
+    ("鶏もも(皮なし)", re.compile(r"鶏もも\s*(?:肉)?|鶏モモ(?!肉)|鶏肉|とりもも肉|鶏モモ肉(?:\(?皮なし\)?|（皮なし）)")),
+    ("コーン缶", re.compile(r"コーン缶|とうもろこし缶|トウモロコシ缶")),
+    ("ブロッコリー", re.compile(r"ブロッコリー|ブロツコリー|ブロコリー|ブロッコリ|プロッコリー")),
+    ("オレンジ濃縮果汁", re.compile(r"オレンジ濃縮果汁|オレンジ果汁|オレンジ濃縮|濃縮オレンジ果汁|オレンジのうしゅく果汁")),
+    ("みかん缶", re.compile(r"みかん缶|蜜柑缶|ミカン缶|みかんかん")),
+    ("ツナ油漬け缶", re.compile(r"ツナ油漬け缶|ツナ油漬け|ツナ油漬|ツナ油づけ|ツナ缶|ツナ")),
+    ("缶詰", re.compile(r"缶詰|桃缶|パイン缶")),
 ]
 
 
@@ -1253,10 +1261,10 @@ def ceil_to_step(quantity: float, step: float) -> float:
         return quantity
     return int((quantity + step - 0.0000001) / step) * step
 
-def format_order_quantity(quantity: float, unit: str) -> tuple[str, str]:
-    if unit == "g" and quantity >= 1000:
+def format_order_quantity(quantity: float, unit: str, keep_unit: bool = False) -> tuple[str, str]:
+    if not keep_unit and unit == "g" and quantity >= 1000:
         quantity, unit = quantity / 1000, "kg"
-    if unit == "ml" and quantity >= 1000:
+    if not keep_unit and unit == "ml" and quantity >= 1000:
         quantity, unit = quantity / 1000, "L"
     if abs(quantity - round(quantity)) < 0.000001:
         return str(int(round(quantity))), unit
@@ -1302,7 +1310,7 @@ def build_order_rows(source_rows: list[IngredientRow]) -> list[IngredientRow]:
             quantity = ceil_to_step(quantity, float(info["step"]))
         if unit == "缶":
             quantity = int(quantity + 0.999999)
-        formatted_quantity, formatted_unit = format_order_quantity(quantity, unit)
+        formatted_quantity, formatted_unit = format_order_quantity(quantity, unit, keep_unit=(name == "にんじん"))
         if name and formatted_quantity != "0":
             order_rows.append(IngredientRow(name, formatted_quantity, formatted_unit))
     return sorted(order_rows, key=lambda row: row.name)
