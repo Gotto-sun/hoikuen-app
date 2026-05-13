@@ -10,20 +10,25 @@ import pandas as pd
 EXCLUDED_INGREDIENT_PATTERN = re.compile(
     r"米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|水$|塩$|食塩|砂糖|酢$|"
     r"コンソメ|調味料|調味料全般|しょうゆ$|醤油$|みそ|味噌|油$|サラダ油|ごま油|酒$|みりん|"
-    r"こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉"
+    r"こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉|片栗粉|しょうゆせんべい"
 )
 SENTENCE_PATTERN = re.compile(
     r"作り方|つくり方|手順|説明|説明文|調理方法|下処理|切る|切って|煮る|焼く|炒める|蒸す|"
     r"揚げる|混ぜる|加える|入れる|してください|します|です|ます"
 )
 STANDARD_NAME_RULES = [
+    ("鶏モモ肉(皮なし)", re.compile(r"鶏モモ肉皮なし|鶏もも肉|鶏モモ(?!肉)|鶏肉|とりもも肉")),
+    ("鶏モモ肉", re.compile(r"鶏モモ肉")),
+    ("コーン缶", re.compile(r"コーン缶|とうもろこし缶|トウモロコシ缶|コーン")),
+    ("ホットケーキミックス", re.compile(r"ホットケーキミックス|ホットケーキMIX|HM")),
+    ("無塩バター", re.compile(r"無塩バター|バター")),
     ("牛乳", re.compile(r"牛乳|ミルク")),
     ("キャベツ", re.compile(r"キャベツ|きゃべつ")),
     ("白菜", re.compile(r"白菜|はくさい")),
     ("にんじん", re.compile(r"にんじん|人参|ニンジン")),
     ("きのこ類", re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
     ("ヨーグルト", re.compile(r"ヨーグルト|牧場の朝")),
-    ("缶詰", re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
+    ("缶詰", re.compile(r"缶詰|ツナ|みかん缶|桃缶|パイン缶")),
 ]
 ROUNDING_RULES = [
     ("牛乳", "本", 2.0, {"ml": 450.0, "g": 450.0, "L": 0.45, "l": 0.45}),
@@ -32,6 +37,7 @@ ROUNDING_RULES = [
     ("にんじん", "本", 0.5, {"g": 150.0, "kg": 0.15}),
     ("きのこ類", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}),
+    ("コーン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0, "g": 190.0}),
     ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
 ]
 
@@ -41,6 +47,9 @@ def _compact(value: object) -> str:
 
 
 def _standard_name(name: object) -> str:
+    original_compact = _compact(name)
+    if "鶏モモ肉(皮なし)" in str(name or "") or "鶏モモ肉皮なし" in original_compact:
+        return "鶏モモ肉(皮なし)"
     cleaned = re.sub(r"[（(].*?[）)]", "", str(name or "")).strip()
     compact = _compact(cleaned)
     for standard, pattern in STANDARD_NAME_RULES:
