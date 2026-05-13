@@ -17,8 +17,7 @@ SENTENCE_PATTERN = re.compile(
     r"揚げる|混ぜる|加える|入れる|してください|します|です|ます"
 )
 STANDARD_NAME_RULES = [
-    ("鶏モモ肉(皮なし)", re.compile(r"鶏モモ肉皮なし|鶏もも肉|鶏モモ(?!肉)|鶏肉|とりもも肉")),
-    ("鶏モモ肉", re.compile(r"鶏モモ肉")),
+    ("鶏もも(皮なし)", re.compile(r"鶏もも皮なし|鶏もも肉|鶏モモ(?!肉)|鶏モモ肉|鶏肉|とりもも肉")),
     ("クリームコーン缶", re.compile(r"クリームコーン缶|クリームコーン|クリームコーンかん|クリームコーン館")),
     ("コーン缶", re.compile(r"コーン缶|とうもろこし缶|トウモロコシ缶|コーン")),
     ("ホットケーキミックス", re.compile(r"ホットケーキミックス|ホットケーキMIX|HM")),
@@ -37,7 +36,7 @@ STANDARD_NAME_RULES = [
     ("もやし", re.compile(r"もやし|よやし|(?:^|[^ぁ-んァ-ン一-龥])もや(?:$|[^ぁ-んァ-ン一-龥])")),
     ("木綿豆腐", re.compile(r"木綿豆腐|木綿とうふ|木綿豆富|豆放")),
     ("みかん缶", re.compile(r"みかん缶|ミカン缶|蜜柑缶|みかんかん")),
-    ("ツナ油漬", re.compile(r"ツナ油漬け?|ツナ油づけ|ツナ缶|ツナ")),
+    ("ツナ油漬け缶", re.compile(r"ツナ油漬け缶|ツナ油漬け?|ツナ油づけ|ツナ缶|ツナ")),
     ("パイン缶", re.compile(r"パイン缶|パインかん|パイナップル缶|パイン|パイナップル")),
     ("缶詰", re.compile(r"缶詰|桃缶")),
     ("ほうれんそう", re.compile(r"ほうれんそう|ほうれん草|ホウレンソウ")),
@@ -80,7 +79,6 @@ ROUNDING_RULES = [
     ("牛乳", "本", 2.0, {"ml": 450.0, "g": 450.0, "L": 0.45, "l": 0.45}),
     ("キャベツ", "個", 0.25, {"g": 1200.0, "kg": 1.2}),
     ("はくさい", "個", 0.125, {"g": 2000.0, "kg": 2.0}),
-    ("にんじん", "本", 0.5, {"g": 150.0, "kg": 0.15}),
     ("しめじ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("えのきたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("しいたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
@@ -98,8 +96,8 @@ def _compact(value: object) -> str:
 
 def _standard_name(name: object) -> str:
     original_compact = _compact(name)
-    if "鶏モモ肉(皮なし)" in str(name or "") or "鶏モモ肉皮なし" in original_compact:
-        return "鶏モモ肉(皮なし)"
+    if "鶏もも(皮なし)" in str(name or "") or "鶏もも皮なし" in original_compact or "鶏モモ肉皮なし" in original_compact:
+        return "鶏もも(皮なし)"
     cleaned = re.sub(r"[（(].*?[）)]", "", str(name or "")).strip()
     compact = _compact(cleaned)
     for standard, pattern in STANDARD_NAME_RULES:
@@ -130,6 +128,10 @@ def _format_quantity(quantity: float) -> str:
 
 def _convert_purchase_quantity(name: str, quantity: float, unit: str) -> tuple[float, str]:
     normalized_unit = str(unit or "g").strip()
+    if name == "にんじん":
+        if normalized_unit == "kg":
+            return quantity * 1000, "g"
+        return quantity, "g"
     for rule_name, order_unit, step, base_units in ROUNDING_RULES:
         if name != rule_name:
             continue
