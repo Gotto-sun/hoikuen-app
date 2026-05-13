@@ -608,14 +608,10 @@ ROUNDING_ORDER_RULES = [
     ("にんじん", "本", 0.5, {"g": 150.0}, re.compile(r"にんじん|人参")),
     ("きのこ類", "袋", 1.0, {"g": 100.0}, re.compile(r"きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム")),
     ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}, re.compile(r"ヨーグルト|牧場の朝")),
-    ("ツナ油漬", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"ツナ油漬|ツナ缶|ツナ")),
-    ("クリームコーン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"クリームコーン缶|クリームコーン|コーン缶")),
-    ("みかん缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"みかん缶|ミカン缶|蜜柑缶")),
-    ("パイン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"パイン缶|パイナップル缶|パイン")),
-    ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"缶詰|桃缶")),
+    ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}, re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
 ]
 
-PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|よやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|ブロッコリー|クリームコーン|豆乳|オレンジ濃縮果汁|オレンジ果汁|粉かんてん|寒天|みかん缶|豚ひき肉|豚挽き肉|豚肉|豚もも肉|豚肉もも|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|ツナ缶|ツナ油漬|パイン缶|パイナップル缶|パイン|スパゲティ|スパゲッティ|パスタ|パイシート|カレーフレーク|S&Bカレーフレーク|SBカレーフレーク|だいこん|大根|缶詰|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
+PRIORITY_FOOD_PATTERN = re.compile(r"にんじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|馬鈴薯|キャベツ|白菜|きゅうり|胡瓜|もやし|わかめ|若布|ひじき|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|牛乳|ミルク|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|ツナ|缶詰|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご")
 LOOSE_NUMBER_PATTERN = re.compile(r"(?<![0-9])([0-9]+(?:\.[0-9]+)?)(?:\s*(" + UNIT_PATTERN + r"))?", re.IGNORECASE)
 CANONICAL_INGREDIENT_PATTERNS = [
     ("しょうゆせんべい", re.compile(r"しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|しょうゆせんし|醤油\s*せんべい|せんい")),
@@ -623,23 +619,10 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("ひじき", re.compile(r"ひじき")),
     ("豚ひき肉", re.compile(r"豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ン一-龥])ひき\s*内|豚ミンチ|評[O0]き琴")),
     ("木綿豆腐", re.compile(r"木綿\s*豆腐|震記一一意|豆\s*(?:褒|腐|放)")),
-    ("ブロッコリー", re.compile(r"ブロッ?コリ[ー－]?|プロッ?コリ[ー－]?|ブロツコリ[ー－]?")),
-    ("クリームコーン缶", re.compile(r"クリーム\s*コーン\s*(?:缶|かん)?|コーン缶")),
-    ("豆乳", re.compile(r"豆乳|とうにゅう|トウニュウ|豆[孔礼]")),
-    ("オレンジ濃縮果汁", re.compile(r"オレンジ\s*(?:濃縮)?\s*果汁|濃縮\s*オレンジ\s*果汁")),
-    ("粉かんてん", re.compile(r"粉\s*(?:かんてん|寒天)|かんてん|寒天|粉かんでん")),
-    ("みかん缶", re.compile(r"みかん\s*(?:缶|かん)|ミカン缶|蜜柑缶")),
-    ("豚肉(もも)", re.compile(r"豚\s*(?:肉)?\s*もも\s*(?:肉)?|豚肉[（(]もも[）)]")),
-    ("SBカレーフレーク", re.compile(r"S\s*&\s*B\s*カレー\s*フレーク|Ｓ\s*＆\s*Ｂ\s*カレー\s*フレーク|SB\s*カレー\s*フレーク|カレー\s*フレーク", re.IGNORECASE)),
-    ("だいこん", re.compile(r"だいこん|大根|ダイコン|たいこん")),
-    ("ツナ油漬", re.compile(r"ツナ\s*(?:油漬け?|油づけ|缶)?")),
-    ("パイン缶", re.compile(r"パイン\s*(?:缶|かん)?|パイナップル\s*(?:缶)?")),
-    ("スパゲティ", re.compile(r"スパゲッ?ティ|スパゲテイ|パスタ")),
     ("たまねぎ", re.compile(r"たまねぎ|玉ねぎ|玉葱|たまねを|療半と")),
     ("片栗粉", re.compile(r"片栗粉|片\s*(?:困|栗)\s*粉|用本明|有本塊")),
-    ("もやし", re.compile(r"もやし|よやし|(?:^|[^ぁ-んァ-ン一-龥])もや(?:$|[^ぁ-んァ-ン一-龥])")),
+    ("もやし", re.compile(r"もやし|(?:^|[^ぁ-んァ-ン一-龥])もや(?:$|[^ぁ-んァ-ン一-龥])")),
     ("きゅうり", re.compile(r"きゅうり|きゆうり|きゅうの|胡瓜")),
-    ("パイシート(冷凍)", re.compile(r"(?:冷凍)?\s*パイシート|パイシート\s*[（(]冷凍[）)]|バイシート")),
     ("カットわかめ", re.compile(r"カット\s*わかめ|わかめ|若布")),
     ("じゃがいも", re.compile(r"じゃがいも|とゃがいも|馬鈴薯|(?:^|[^ぁ-んァ-ン一-龥])がし(?:$|[^ぁ-んァ-ン一-龥])")),
     ("にんじん", re.compile(r"にんじん|にんん|人参|(?<![0-9])0\s*80\s*66\s*9(?![0-9])")),
@@ -653,7 +636,7 @@ CANONICAL_INGREDIENT_PATTERNS = [
     ("まいたけ", re.compile(r"まいたけ|舞茸|マイタケ")),
     ("エリンギ", re.compile(r"エリンギ")),
     ("ヨーグルト", re.compile(r"ヨーグルト|牧場の朝")),
-    ("缶詰", re.compile(r"缶詰|桃缶")),
+    ("缶詰", re.compile(r"缶詰|ツナ|コーン缶|みかん缶|桃缶|パイン缶")),
 ]
 
 
@@ -1202,13 +1185,7 @@ def is_excluded_ingredient(name: str) -> bool:
     return bool(EXCLUDED_INGREDIENT_PATTERN.search(re.sub(r"\s+", "", str(name or ""))))
 
 def normalize_ingredient_for_grouping(name: str) -> str:
-    cleaned = clean_ingredient_name(name).strip()
-    if any(cleaned == label for label, _pattern in CANONICAL_INGREDIENT_PATTERNS):
-        return cleaned
-    master_names = _FOOD_MASTER_NAMES
-    if master_names is not None and cleaned in master_names:
-        return cleaned
-    return re.sub(r"^(冷凍|国産|生|千切り|皮むき)", "", re.sub(r"[（(].*?[）)]", "", cleaned)).strip()
+    return re.sub(r"^(冷凍|国産|生|千切り|皮むき)", "", re.sub(r"[（(].*?[）)]", "", clean_ingredient_name(name))).strip()
 
 
 _FOOD_MASTER_NAMES: set[str] | None = None
@@ -1225,7 +1202,7 @@ def food_master_names() -> set[str]:
     try:
         with path.open(encoding="utf-8-sig", newline="") as csv_file:
             for row in csv.DictReader(csv_file):
-                name = clean_ingredient_name(row.get("正式名称", "")).strip()
+                name = normalize_ingredient_for_grouping(row.get("正式名称", ""))
                 if name:
                     names.add(name)
     except OSError as exc:
@@ -1235,12 +1212,8 @@ def food_master_names() -> set[str]:
 
 
 def is_in_food_master(name: str) -> bool:
-    names = food_master_names()
-    cleaned = clean_ingredient_name(name).strip()
-    if cleaned in names:
-        return True
     key = normalize_ingredient_for_grouping(name)
-    return bool(key and key in names)
+    return bool(key and key in food_master_names())
 
 def fixed_order_key(name: str) -> str | None:
     for _label, key, pattern in FIXED_ORDER_RULES:
