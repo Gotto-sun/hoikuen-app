@@ -121,7 +121,7 @@ FORCED_INGREDIENT_CORRECTIONS = {
     "パプリカ(赤)": ("パプリカ(赤)", "赤パプリカ", "パプリカ赤"),
     "しらす干し": ("しらす干し", "シラス干し", "しらす"),
     "チンゲンサイ": ("チンゲンサイ", "青梗菜", "チンゲン菜"),
-    "オレンジ": ("オレンジ", "みかん"),
+    "オレンジ": ("オレンジ",),
     "マカロニ": ("マカロニ", "マカロ二"),
     "きな粉": ("きな粉", "きなこ", "黄粉"),
     "油揚げ": ("油揚げ", "油あげ"),
@@ -134,6 +134,8 @@ FORCED_INGREDIENT_CORRECTIONS = {
     "エリンギ": ("エリンギ",),
     "缶詰": ("缶詰", "桃缶"),
 }
+WEEKDAY_PATTERN = re.compile(r"月曜日|火曜日|水曜日|木曜日|金曜日|[月火水木金](?:曜)?")
+
 CORRECTIONS = {alias: label for label, aliases in FORCED_INGREDIENT_CORRECTIONS.items() for alias in aliases}
 COLUMNS = [
     "区分",
@@ -148,6 +150,7 @@ COLUMNS = [
     "備考",
     "仕入先",
     "発注単位",
+    "曜日",
 ]
 EXCLUDED_COLUMNS = ["行番号", "元の行", "除外対象", "除外理由"]
 logger = logging.getLogger(__name__)
@@ -260,6 +263,7 @@ def _row_from_values(
     ocr_confidence: float,
     forced_review_note: str = "",
     section: str = "",
+    weekday: str = "",
 ) -> dict[str, object]:
     normalized = normalize_food_name(raw_food_name, master)
     notes: list[str] = []
@@ -289,6 +293,7 @@ def _row_from_values(
         "備考": "、".join(notes),
         "仕入先": normalized.supplier,
         "発注単位": normalized.order_unit,
+        "曜日": weekday or _weekday_for_line(line),
     }
 
 
@@ -342,32 +347,52 @@ def _line_has_total_usage_label(line: str) -> bool:
     return re.search(r"総使用量|総量|合計|使用量合計|総重量", compact) is not None and not _line_has_under_three_label(line)
 
 
-def _quantity_after_under_three_label(line: str) -> str:
+def _quantity_after_under_three_label(line: str) -> tuple[str, str]:
     normalized = _normalize_line(line).replace(",", "")
-    match = re.search(r"(?:3歳未満|３歳未満|未満児|乳児)[^0-9０-９]*([0-9]+(?:\.[0-9]+)?)", normalized)
-    return match.group(1) if match else ""
+    match = re.search(
+        r"(?:3歳未満|３歳未満|未満児|乳児)[^0-9０-９]*([0-9]+(?:\.[0-9]+)?)(?:\s*(" + UNIT_PATTERN + r"))?",
+        normalized,
+    )
+    if not match:
+        return "", ""
+    return match.group(1), match.group(2) or "g"
 
 
-def _quantity_near_ocr_line(lines: list[tuple[int, str]], index: int) -> str:
-    current_numbers = _numbers_from_row(lines[index][1]) if index < len(lines) else []
-    search_indexes = (index,) if current_numbers else (index, index + 1)
-    for row_index in search_indexes:
-        if row_index >= len(lines):
-            continue
-        line = lines[row_index][1]
-        quantity = _quantity_after_under_three_label(line)
-        if not quantity:
-            if _line_has_total_usage_label(line):
-                continue
-            quantity = _under_three_quantity_from_numbers(_numbers_from_row(line))
-        if not quantity:
-            continue
-        try:
-            if float(quantity) > 0:
-                return quantity
-        except ValueError:
-            continue
+def _weekday_for_line(line: str) -> str:
+    match = WEEKDAY_PATTERN.search(_compact_for_match(line))
+    return match.group(0)[:1] if match else ""
+
+
+def _weekday_near_ocr_line(lines: list[tuple[int, str]], index: int) -> str:
+    for row_index in range(index, -1, -1):
+        weekday = _weekday_for_line(lines[row_index][1])
+        if weekday:
+            return weekday
     return ""
+
+
+def _unit_after_quantity(line: str, quantity: str) -> str:
+    normalized = _normalize_line(line).replace(",", "")
+    match = re.search(r"(?<![0-9.])" + re.escape(quantity) + r"(?![0-9.])\s*(" + UNIT_PATTERN + r")", normalized)
+    return match.group(1) if match else "g"
+
+
+def _quantity_near_ocr_line(lines: list[tuple[int, str]], index: int) -> tuple[str, str]:
+    if index >= len(lines):
+        return "", ""
+    line = lines[index][1]
+    if _line_has_total_usage_label(line):
+        return "", ""
+    quantity, unit = _quantity_after_under_three_label(line)
+    if not quantity:
+        quantity = _under_three_quantity_from_numbers(_numbers_from_row(line))
+        unit = _unit_after_quantity(line, quantity) if quantity else ""
+    if not quantity:
+        return "", ""
+    try:
+        return (quantity, unit or "g") if float(quantity) > 0 else ("", "")
+    except ValueError:
+        return "", ""
 
 
 def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: float) -> pd.DataFrame:
@@ -393,7 +418,7 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
             excluded_rows.append(_excluded_row(line_number, line, corrected_name, "除外対象の食材です"))
             continue
 
-        quantity_text = _quantity_near_ocr_line(lines, index)
+        quantity_text, unit_text = _quantity_near_ocr_line(lines, index)
         if not NUMBER_RE.fullmatch(quantity_text):
             excluded_rows.append(_excluded_row(line_number, line, corrected_name, "3歳未満の数値を取得できません"))
             continue
@@ -403,7 +428,7 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
             excluded_rows.append(_excluded_row(line_number, line, corrected_name, "食材マスタに一致しません"))
             continue
 
-        key = f"{corrected_name}|{quantity_text}|g"
+        key = f"{corrected_name}|{quantity_text}|{unit_text or 'g'}"
         if key in seen:
             continue
         seen.add(key)
@@ -413,10 +438,11 @@ def extract_food_candidates(text: str, master: pd.DataFrame, ocr_confidence: flo
                 line=line,
                 raw_food_name=corrected_name,
                 quantity=float(quantity_text),
-                unit="g",
+                unit=unit_text or "g",
                 master=master,
                 ocr_confidence=ocr_confidence,
                 section="OCR全文",
+                weekday=_weekday_near_ocr_line(lines, index),
             )
         )
 
