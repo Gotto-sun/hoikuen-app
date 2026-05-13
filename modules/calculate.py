@@ -66,7 +66,7 @@ STANDARD_NAME_RULES = [
     ("パプリカ(赤)", re.compile(r"パプリカ赤|赤パプリカ")),
     ("しらす干し", re.compile(r"しらす干し|シラス干し|しらす")),
     ("チンゲンサイ", re.compile(r"チンゲンサイ|青梗菜|チンゲン菜")),
-    ("オレンジ", re.compile(r"オレンジ|みかん")),
+    ("オレンジ", re.compile(r"オレンジ")),
     ("マカロニ", re.compile(r"マカロニ|マカロ二")),
     ("きな粉", re.compile(r"きな粉|きなこ|黄粉")),
     ("油揚げ", re.compile(r"油揚げ|油あげ")),
@@ -85,7 +85,6 @@ ROUNDING_RULES = [
     ("まいたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("エリンギ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
     ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}),
-    ("コーン缶", "缶", 1.0, {"缶": 1.0, "個": 1.0, "g": 190.0}),
     ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
 ]
 
@@ -126,6 +125,10 @@ def _format_quantity(quantity: float) -> str:
     return f"{quantity:.3f}".rstrip("0").rstrip(".")
 
 
+def _people_count(weekday: object) -> int:
+    return 5 if str(weekday or "").strip().startswith("月") else 7
+
+
 def _convert_purchase_quantity(name: str, quantity: float, unit: str) -> tuple[float, str]:
     normalized_unit = str(unit or "g").strip()
     if name == "にんじん":
@@ -159,6 +162,8 @@ def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
 
     work["補正後食材名"] = work.apply(lambda row: _standard_name(row.get("補正後食材名", row.get("食材名", ""))), axis=1)
     work["数量"] = pd.to_numeric(work["数量"], errors="coerce")
+    work["人数"] = work["曜日"].apply(_people_count) if "曜日" in work.columns else 7
+    work["数量"] = work["数量"] * work["人数"]
     grouped = (
         work.groupby(["補正後食材名", "単位", "発注単位", "仕入先"], dropna=False, as_index=False)
         .agg(
