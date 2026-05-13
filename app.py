@@ -1,35 +1,27 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
-import pandas as pd
 import streamlit as st
 
-from modules.calculate import aggregate_candidates
-from modules.export_excel import build_order_dataframe, dataframe_to_excel_bytes
-from modules.extract import extract_food_candidates
-from modules.normalize import load_food_master
 from modules.ocr import raw_ocr_pages_for_upload
 
-st.set_page_config(page_title="OCRエンジン直読み確認モード", page_icon="🍱", layout="wide")
+st.set_page_config(page_title="OCR全文確認モード", page_icon="🍱", layout="wide")
 
-st.title("🍱 原画像OCR全文から食材抽出")
-st.caption("固定表OCRは使わず、原画像OCR全文から食材名を補正し、3歳未満の数量を抽出します。")
-
-st.info("原画像OCR全文 → 食材名補正 → 数値抽出の順で処理します。")
+st.title("🍱 OCR全文確認")
+st.caption("画像/PDFを読み込んだら、OCR処理を必ず実行して全文を表示します。")
 
 logger = logging.getLogger(__name__)
-FOOD_MASTER_PATH = "data/food_master.csv"
 
 with st.sidebar:
     st.header("確認順")
     st.write("1. 画像表示OK")
-    st.write("2. OCR全文表示OK")
-    st.write("3. 食材名補正")
-    st.write("4. 3歳未満数量抽出")
+    st.write("2. OCR処理を強制実行")
+    st.write("3. OCR全文を必ず表示")
     st.divider()
-    st.write("使わない処理")
+    st.write("一旦停止中")
+    st.write("- 食材抽出")
+    st.write("- Excel出力")
     st.write("- 固定表切り出し")
     st.write("- 二値化")
     st.write("- トリミング")
@@ -56,26 +48,23 @@ if st.session_state.get("upload_key") != current_upload_key:
     st.session_state["upload_key"] = current_upload_key
     st.session_state.pop("raw_ocr_pages", None)
 
-if st.button("原画像OCR全文から食材を抽出する", type="primary"):
-    with st.spinner("原画像OCR全文を取得し、食材と数量を抽出しています..."):
+# ファイルアップロード後に必ずOCR関数を呼びます。
+if "raw_ocr_pages" not in st.session_state:
+    with st.spinner("OCR全文を取得しています..."):
         try:
             st.session_state["raw_ocr_pages"] = raw_ocr_pages_for_upload(
                 uploaded_file.name, file_bytes, mime_type=uploaded_file.type
             )
         except Exception as exc:  # noqa: BLE001 - 画面で利用者にわかりやすく表示します。
-            st.error(str(exc))
-            logger.exception("原画像OCR確認モード失敗: file_name=%s", uploaded_file.name)
+            print("OCR ERROR:", exc)
+            logger.exception("OCR全文確認モード失敗: file_name=%s", uploaded_file.name)
+            st.error(f"OCRエラー: {exc}")
             st.stop()
 
-raw_ocr_pages = st.session_state.get("raw_ocr_pages")
-if not raw_ocr_pages:
-    st.info("ボタンを押すと、原画像表示とOCR全文表示を実行します。")
-    st.stop()
+raw_ocr_pages = st.session_state.get("raw_ocr_pages", [])
 
 st.subheader("原画像OCR確認")
-st.info("この画面では固定表OCR・表切り出しを実行しません。取得済みOCR全文だけから抽出します。")
-
-all_candidates = []
+st.info("OCR全文の表示を優先するため、抽出処理は一旦停止しています。")
 
 for page in raw_ocr_pages:
     st.markdown(f"### {page.page_number}ページ目")
@@ -91,37 +80,16 @@ for page in raw_ocr_pages:
         else:
             st.info(diagnostic)
 
-    st.text_area(
-        f"OCR全文：{page.page_number}ページ目 / 信頼度 {page.ocr_confidence}",
-        page.ocr_text or "（空）",
-        height=360,
-        key=f"raw-ocr-{page.page_number}",
-    )
+    text = page.ocr_text or ""
+    if not text.strip():
+        st.warning("OCRが空です")
 
-    candidates = extract_food_candidates(page.ocr_text, load_food_master(Path(FOOD_MASTER_PATH)), page.ocr_confidence)
-    if not candidates.empty:
-        all_candidates.append(candidates)
-    st.markdown("#### 抽出結果")
-    if candidates.empty:
-        st.warning("食材を抽出できませんでした。")
-    else:
-        st.dataframe(
-            candidates[["補正後食材名", "数量", "単位", "元の行", "備考"]],
-            use_container_width=True,
-            hide_index=True,
-        )
+    label = "OCR全文" if len(raw_ocr_pages) == 1 else f"OCR全文（{page.page_number}ページ目）"
+    st.text_area(label, text, height=400, key=f"raw-ocr-{page.page_number}")
 
-if all_candidates:
-    aggregated = aggregate_candidates(pd.concat(all_candidates, ignore_index=True))
-    st.markdown("### 発注書出力")
-    if aggregated.empty:
-        st.warning("発注書へ出力できる食材がありません。")
-    else:
-        st.dataframe(aggregated[["食材名", "発注数量", "発注単位"]], use_container_width=True, hide_index=True)
-        order_df = build_order_dataframe(aggregated, "", "")
-        st.download_button(
-            "発注書Excelをダウンロード",
-            data=dataframe_to_excel_bytes(order_df),
-            file_name="発注書.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+    # OCR全文の確認を優先するため、extract処理は一旦コメントアウトします。
+    # candidates = extract_food_candidates(
+    #     page.ocr_text,
+    #     load_food_master(Path(FOOD_MASTER_PATH)),
+    #     page.ocr_confidence,
+    # )

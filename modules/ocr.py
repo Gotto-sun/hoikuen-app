@@ -331,21 +331,40 @@ def run_tesseract(image: Image.Image, lang: str = "jpn+eng") -> OCRResult:
     )
 
 
-def run_raw_pillow_rgb_ocr(image: Image.Image, lang: str = "jpn+eng", context: str = "原画像そのままOCR") -> OCRResult:
+def run_raw_pillow_rgb_ocr(image: Image.Image, lang: str = "jpn", context: str = "原画像そのままOCR") -> OCRResult:
     """Pillowで読み込んだ原画像をRGB化し、そのままTesseractへ渡します。"""
 
-    rgb = ImageOps.exif_transpose(image).convert("RGB")
-    _assert_valid_ocr_image(rgb, context)
-    _image_blankness_message(rgb, context)
+    img = ImageOps.exif_transpose(image).convert("RGB")
+    _assert_valid_ocr_image(img, context)
+    _image_blankness_message(img, context)
+
+    try:
+        text = pytesseract.image_to_string(img, lang="jpn")
+    except Exception as e:  # noqa: BLE001 - OCR失敗理由を標準出力へ必ず出します。
+        print("OCR ERROR:", e)
+        logger.exception("OCR ERROR: context=%s", context)
+        text = ""
+
+    print("OCR RESULT↓↓↓↓")
+    print(text)
+
+    if not text.strip():
+        print("OCRが空です")
+
     config = f"--oem 3 --psm 6 --dpi {FIXED_OCR_DPI}"
-    text = pytesseract.image_to_string(rgb, lang=lang, config=config).strip()
-    data = pytesseract.image_to_data(
-        rgb,
-        lang=lang,
-        config=config,
-        output_type=pytesseract.Output.DICT,
-    )
-    confidence = _confidence_from_data(data)
+    try:
+        data = pytesseract.image_to_data(
+            img,
+            lang=lang,
+            config=config,
+            output_type=pytesseract.Output.DICT,
+        )
+        confidence = _confidence_from_data(data)
+    except Exception as exc:  # noqa: BLE001 - OCR全文表示を止めないため信頼度だけ0にします。
+        print("OCR ERROR:", exc)
+        logger.exception("OCR信頼度取得失敗: context=%s", context)
+        confidence = 0.0
+
     logger.info("OCR全文 START: context=%s engine=Tesseract原画像RGB confidence=%s", context, confidence)
     logger.info("%s", text or "（空）")
     logger.info("OCR全文 END: context=%s", context)
