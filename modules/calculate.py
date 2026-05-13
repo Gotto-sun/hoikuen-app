@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import re
 
 import pandas as pd
@@ -75,19 +74,6 @@ STANDARD_NAME_RULES = [
     ("フライドポテト", re.compile(r"フライドポテト|ポテトフライ")),
     ("なめこ", re.compile(r"なめこ|ナメコ")),
 ]
-ROUNDING_RULES = [
-    ("牛乳", "本", 2.0, {"ml": 450.0, "g": 450.0, "L": 0.45, "l": 0.45}),
-    ("キャベツ", "個", 0.25, {"g": 1200.0, "kg": 1.2}),
-    ("はくさい", "個", 0.125, {"g": 2000.0, "kg": 2.0}),
-    ("しめじ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
-    ("えのきたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
-    ("しいたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
-    ("まいたけ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
-    ("エリンギ", "袋", 1.0, {"g": 100.0, "kg": 0.1}),
-    ("ヨーグルト", "パック", 2.0, {"個": 3.0, "g": 210.0}),
-    ("缶詰", "缶", 1.0, {"缶": 1.0, "個": 1.0}),
-]
-
 
 def _compact(value: object) -> str:
     return re.sub(r"\s+", "", str(value or ""))
@@ -113,12 +99,6 @@ def _valid_row(row: pd.Series) -> bool:
     return bool(pd.notna(quantity) and float(quantity) > 0)
 
 
-def _ceil_to_step(quantity: float, step: float) -> float:
-    if step <= 0:
-        return quantity
-    return math.ceil((quantity - 1e-9) / step) * step
-
-
 def _format_quantity(quantity: float) -> str:
     if abs(quantity - round(quantity)) < 1e-9:
         return str(int(round(quantity)))
@@ -129,25 +109,8 @@ def _people_count(weekday: object) -> int:
     return 5 if str(weekday or "").strip().startswith("月") else 7
 
 
-def _convert_purchase_quantity(name: str, quantity: float, unit: str) -> tuple[float, str]:
-    normalized_unit = str(unit or "g").strip()
-    if name == "にんじん":
-        if normalized_unit == "kg":
-            return quantity * 1000, "g"
-        return quantity, "g"
-    for rule_name, order_unit, step, base_units in ROUNDING_RULES:
-        if name != rule_name:
-            continue
-        base = base_units.get(normalized_unit)
-        converted = quantity / base if base else quantity
-        return _ceil_to_step(converted, step), order_unit
-    if normalized_unit == "缶":
-        return math.ceil(quantity), "缶"
-    return quantity, normalized_unit
-
-
 def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
-    """3歳未満児量だけを食材名ごとに合算し、発注単位に変換します。"""
+    """3歳未満児量を人数分に再計算し、食材名と単位ごとに合算します。"""
 
     if candidates.empty:
         return candidates.copy()
@@ -165,7 +128,7 @@ def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
     work["人数"] = work["曜日"].apply(_people_count) if "曜日" in work.columns else 7
     work["数量"] = work["数量"] * work["人数"]
     grouped = (
-        work.groupby(["補正後食材名", "単位", "発注単位", "仕入先"], dropna=False, as_index=False)
+        work.groupby(["補正後食材名", "単位", "仕入先"], dropna=False, as_index=False)
         .agg(
             必要量=("数量", "sum"),
             OCR信頼度=("OCR信頼度", "min"),
@@ -174,10 +137,7 @@ def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
         )
         .rename(columns={"補正後食材名": "食材名"})
     )
-    converted = grouped.apply(
-        lambda row: _convert_purchase_quantity(str(row["食材名"]), float(row["必要量"]), str(row["単位"])), axis=1
-    )
-    grouped["発注数量"] = [_format_quantity(quantity) for quantity, _unit in converted]
-    grouped["発注単位"] = [unit for _quantity, unit in converted]
+    grouped["発注数量"] = grouped["必要量"].apply(lambda quantity: _format_quantity(float(quantity)))
+    grouped["発注単位"] = grouped["単位"]
     grouped = grouped[grouped["発注数量"] != "0"]
     return grouped.sort_values("食材名").reset_index(drop=True)
