@@ -617,7 +617,7 @@
     const roundingOrderRules = [
       { label: "牛乳", unit: "本", step: 1, base: { ml: 450, g: 450 }, tests: [/牛乳|ミルク/] },
       { label: "キャベツ", unit: "個", step: 0.25, base: { g: 1200 }, tests: [/キャベツ/] },
-      { label: "白菜", unit: "個", step: 0.125, base: { g: 2000 }, tests: [/白菜/] },
+      { label: "はくさい", unit: "個", step: 0.125, base: { g: 2000 }, tests: [/はくさい|白菜/] },
       { label: "にんじん", unit: "本", step: 0.5, base: { g: 150 }, tests: [/にんじん|人参/] },
       { label: "きのこ類", unit: "袋", step: 1, base: { g: 100 }, tests: [/きのこ|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|マッシュルーム/] },
       { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] },
@@ -627,8 +627,15 @@
       { label: "パイン缶", unit: "缶", step: 1, base: { 缶: 1, 個: 1 }, tests: [/パイン缶|パイナップル缶|パイン/] }
     ];
     const priorityFoodPattern = /にんじん|にんん|にんヒじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯|カットわかめ|わかめ|若布|ひじき|ひじ|牛乳|ミルク|キャベツ|白菜|きゅうり|胡瓜|もやし|よやし|ブロッコリー|ブロコリー|クリームコーン|豆乳|オレンジ濃縮果汁|オレンジ果汁|粉かんてん|寒天|みかん缶|豚もも肉|豚肉もも|カレーフレーク|S&Bカレーフレーク|SBカレーフレーク|だいこん|大根|ツナ|ツナ缶|ツナ油漬|パイン缶|パイナップル缶|パイン|スパゲティ|スパゲッティ|パスタ|パイシート|しめじ|えのき|しいたけ|椎茸|まいたけ|舞茸|エリンギ|きのこ|豚ひき肉|豚挽き肉|豚肉|鶏肉|牛肉|ミンチ|豆腐|木綿豆腐|絹豆腐|油揚げ|卵|玉子|食パン|パン|ジャム|ヨーグルト|チーズ|米粉|小麦粉|片栗粉|せんべい|鮭|さけ|さば|鯖|白身魚|ちくわ|ハム|ベーコン|コーン|バナナ|りんご|みかん|いちご/;
+      { label: "しめじ", unit: "袋", step: 1, base: { g: 100 }, tests: [/しめじ|シメジ/] },
+      { label: "えのきたけ", unit: "袋", step: 1, base: { g: 100 }, tests: [/えのきたけ|えのき茸|えのき|エノキ/] },
+      { label: "しいたけ", unit: "袋", step: 1, base: { g: 100 }, tests: [/しいたけ|椎茸|シイタケ/] },
+      { label: "まいたけ", unit: "袋", step: 1, base: { g: 100 }, tests: [/まいたけ|舞茸|マイタケ/] },
+      { label: "エリンギ", unit: "袋", step: 1, base: { g: 100 }, tests: [/エリンギ/] },
+      { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] }
+    ];
+    const priorityFoodPattern = /にんじん|にんん|にんヒじん|人参|たまねぎ|玉ねぎ|玉葱|じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯|カットわかめ|わかめ|若布|ひじき|ひじ|牛乳|ミルク|キャベツ|キャヘツ|ほうれんそう|ほうれん草|しめじ|中華めん|中華麺|豚肉|豚もも肉|はくさい|白菜|たけのこ|筍|かまぼこ|蒲鉾|ブロッコリー|チーズ|ヨーグルト|豆乳|調整豆乳|鮭|さけ|さつまいも|ベーコン|えのき|わかめふりかけ|さわら|鰆|バター|ちくわ|竹輪|アスパラ|ウインナー|ウィンナー|ソーセージ|鶏ひき肉|鶏挽き肉|パプリカ|しらす|チンゲンサイ|青梗菜|オレンジ|マカロニ|きな粉|きなこ|油揚げ|かぼちゃ|南瓜|ごぼう|牛蒡|フライドポテト|なめこ|もやし|きゅうり|胡瓜|しいたけ|椎茸|まいたけ|舞茸|エリンギ|豆腐|木綿豆腐|絹豆腐|卵|玉子|食パン|パン|ジャム|ツナ|さば|鯖|白身魚|ハム|コーン|バナナ|りんご|みかん|いちご/;
     const canonicalIngredientPatterns = [
-      { label: "しょうゆせんべい", aliases: ["しょうゆせんべい", "醤油せんべい", "せんい"], tests: [/しょう\s*ゆ?\s*せんべい|しょうゆ?\s*せんべい|醤油\s*せんべい|せんい/] },
       { label: "牛乳", aliases: ["牛乳", "乳", "ぎゅうにゅう", "ミルク"], tests: [/牛乳|ミルク|^乳$/] },
       { label: "ひじき", aliases: ["ひじき", "ひじ", "ヒジキ"], tests: [/ひじき|^ひじ.*$/] },
       { label: "豚ひき肉", aliases: ["豚ひき肉", "豚挽き肉", "豚ひき内", "豚ミンチ"], tests: [/豚\s*(?:ひき|挽き|挽)\s*(?:肉|内)|(?:^|[^ぁ-んァ-ヶ一-龠々])ひき\s*内|豚ミンチ/] },
@@ -650,13 +657,49 @@
       { label: "もやし", aliases: ["もやし", "もや", "よやし"], tests: [/もやし|よやし/] },
       { label: "きゅうり", aliases: ["きゅうり", "きゆうり", "胡瓜"], tests: [/きゅうり|きゆうり|胡瓜/] },
       { label: "パイシート(冷凍)", aliases: ["パイシート(冷凍)", "パイシート（冷凍）", "パイシート", "冷凍パイシート"], tests: [/(?:冷凍)?\s*パイシート|パイシート\s*[（(]冷凍[）)]|バイシート/] },
+      { label: "もやし", aliases: ["もやし"], tests: [/もやし/] },
+      { label: "きゅうり", aliases: ["きゅうり", "きゆうり", "胡瓜"], tests: [/きゅうり|きゆうり|胡瓜/] },
+      { label: "わかめふりかけ", aliases: ["わかめふりかけ", "若布ふりかけ"], tests: [/わかめ\s*ふりかけ|若布\s*ふりかけ/] },
       { label: "カットわかめ", aliases: ["カットわかめ", "わかめ", "若布", "カット若布"], tests: [/カット\s*わかめ|わかめ|若布/] },
       { label: "じゃがいも", aliases: ["じゃがいも", "ジャガイモ", "じゃが芋", "とゃがいも", "馬鈴薯"], tests: [/じゃがいも|ジャガイモ|じゃが芋|とゃがいも|馬鈴薯/] },
       { label: "にんじん", aliases: ["にんじん", "にんん", "にんヒじん", "人参", "ニンジン"], tests: [/にんじん|にんん|にんヒじん|人参/] },
       { label: "食パン", aliases: ["食パン"], tests: [/食パン/] },
-      { label: "いちごジャム", aliases: ["いちごジャム", "でちこジャ", "苺ジャム"], tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] }
+      { label: "いちごジャム", aliases: ["いちごジャム", "でちこジャ", "苺ジャム"], tests: [/いちご\s*ジャム|でちこ\s*ジャ|苺\s*ジャム/] },
+      { label: "キャベツ", aliases: ["キャベツ", "キャヘツ", "きゃべつ"], tests: [/キャベツ|キャヘツ|きゃべつ/] },
+      { label: "ほうれんそう", aliases: ["ほうれんそう", "ほうれん草"], tests: [/ほうれんそう|ほうれん草/] },
+      { label: "しめじ", aliases: ["しめじ", "シメジ"], tests: [/しめじ|シメジ/] },
+      { label: "中華めん", aliases: ["中華めん", "中華麺", "中華メン"], tests: [/中華\s*(?:めん|麺|メン)/] },
+      { label: "豚肉(もも)", aliases: ["豚肉(もも)", "豚もも肉", "豚肉もも", "豚モモ肉", "豚肉"], tests: [/豚\s*(?:肉\(?もも\)?|もも肉|モモ肉)|豚肉/] },
+      { label: "はくさい", aliases: ["はくさい", "白菜"], tests: [/はくさい|白菜/] },
+      { label: "たけのこ", aliases: ["たけのこ", "筍", "竹の子"], tests: [/たけのこ|筍|竹の子/] },
+      { label: "かまぼこ", aliases: ["かまぼこ", "蒲鉾"], tests: [/かまぼこ|蒲鉾/] },
+      { label: "ブロッコリー", aliases: ["ブロッコリー", "ブロツコリー"], tests: [/ブロッコリー|ブロツコリー/] },
+      { label: "チーズ", aliases: ["チーズ", "スライスチーズ", "粉チーズ"], tests: [/チーズ/] },
+      { label: "ヨーグルト", aliases: ["ヨーグルト", "牧場の朝"], tests: [/ヨーグルト|牧場の朝/] },
+      { label: "調整豆乳", aliases: ["調整豆乳", "調製豆乳", "豆乳"], tests: [/調[整製]\s*豆乳|豆乳/] },
+      { label: "鮭(皮なし)", aliases: ["鮭(皮なし)", "鮭", "さけ", "サケ"], tests: [/鮭|さけ|サケ/] },
+      { label: "さつまいも", aliases: ["さつまいも", "さつま芋", "サツマイモ", "薩摩芋"], tests: [/さつまいも|さつま芋|サツマイモ|薩摩芋/] },
+      { label: "ベーコン", aliases: ["ベーコン"], tests: [/ベーコン|ベ-コン/] },
+      { label: "えのきたけ", aliases: ["えのきたけ", "えのき", "えのき茸", "エノキ"], tests: [/えのきたけ|えのき茸|えのき|エノキ/] },
+      { label: "さわら", aliases: ["さわら", "鰆", "サワラ"], tests: [/さわら|鰆|サワラ/] },
+      { label: "バター", aliases: ["バター", "無塩バター"], tests: [/バター|無塩バター/] },
+      { label: "ちくわ", aliases: ["ちくわ", "竹輪"], tests: [/ちくわ|竹輪/] },
+      { label: "グリーンアスパラガス", aliases: ["グリーンアスパラガス", "グリーンアスパラ", "アスパラガス", "アスパラ"], tests: [/グリーン\s*アスパラガス|グリーン\s*アスパラ|アスパラガス|アスパラ/] },
+      { label: "ウインナーソーセージ", aliases: ["ウインナーソーセージ", "ウィンナーソーセージ", "ウインナー", "ウィンナー", "ソーセージ"], tests: [/ウ[イィ]ンナー\s*ソーセージ|ウ[イィ]ンナー|ソーセージ/] },
+      { label: "鶏ひき肉", aliases: ["鶏ひき肉", "鶏挽き肉", "鶏ミンチ"], tests: [/鶏\s*(?:ひき|挽き|挽)\s*肉|鶏ミンチ/] },
+      { label: "パプリカ(赤)", aliases: ["パプリカ(赤)", "赤パプリカ", "パプリカ赤"], tests: [/赤\s*パプリカ|パプリカ\s*赤|パプリカ\(?赤\)?/] },
+      { label: "しらす干し", aliases: ["しらす干し", "シラス干し", "しらす"], tests: [/しらす\s*干し|シラス\s*干し|しらす/] },
+      { label: "チンゲンサイ", aliases: ["チンゲンサイ", "青梗菜", "チンゲン菜"], tests: [/チンゲンサイ|青梗菜|チンゲン菜/] },
+      { label: "オレンジ", aliases: ["オレンジ", "みかん"], tests: [/オレンジ|みかん/] },
+      { label: "マカロニ", aliases: ["マカロニ", "マカロ二"], tests: [/マカロニ|マカロ二/] },
+      { label: "きな粉", aliases: ["きな粉", "きなこ", "黄粉"], tests: [/きな粉|きなこ|黄粉/] },
+      { label: "油揚げ", aliases: ["油揚げ", "油あげ"], tests: [/油揚げ|油あげ/] },
+      { label: "かぼちゃ", aliases: ["かぼちゃ", "南瓜", "カボチャ"], tests: [/かぼちゃ|南瓜|カボチャ/] },
+      { label: "ごぼう", aliases: ["ごぼう", "牛蒡", "ゴボウ"], tests: [/ごぼう|牛蒡|ゴボウ/] },
+      { label: "フライドポテト", aliases: ["フライドポテト", "ポテトフライ"], tests: [/フライド\s*ポテト|ポテト\s*フライ/] },
+      { label: "なめこ", aliases: ["なめこ", "ナメコ"], tests: [/なめこ|ナメコ/] }
     ];
-    const excludedIngredientPattern = /(スチコン|オーブン|コンビモード|レンジ|機器|器具|コンソメ|ョヨンツメ|ヨ肥外|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|調味料全般|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
+    const excludedIngredientPattern = /(しょうゆせんべい|醤油せんべい|せんい|片栗粉|片\s*(?:困|栗)\s*粉|スチコン|オーブン|コンビモード|レンジ|機器|器具|コンソメ|ョヨンツメ|ヨ肥外|米$|^米$|精白米|白米|ごはん|御飯|だし|出汁|だし汁|煮干しだし|かつおだし|昆布だし|水$|調味料|調味料全般|食塩|塩$|砂糖|しょうゆ$|醤油$|みそ|味噌|酢$|油$|サラダ油|ごま油|酒$|みりん|こしょう|胡椒|ソース|ケチャップ|マヨネーズ|中華だし|カレー粉)/;
     const recipeInstructionPattern = /(作り方|つくり方|手順|注釈|説明|説明文|調理方法|下処理|切る|切って|切り|ゆでる|茹でる|煮る|煮込む|焼く|炒める|蒸す|揚げる|混ぜる|和える|加える|入れる|のせる|盛る|塗る|洗う|さらす|水気|一口大|短冊|千切り|みじん切り|いちょう切り|薄切り|乱切り|小房|皮をむく|火を通す|味を調える|味をととのえる|味を整える|する)/;
     const maxImageOcrSizeBytes = 60 * 1024 * 1024;
     const maxImageOcrDimension = 800;
@@ -666,7 +709,10 @@
     const maxOcrCandidatePatterns = 1;
     const lightImageJpegQuality = 0.55;
     const ocrTimeoutMessage = "タイムアウト：画像が重すぎるため処理を中断しました";
-    const foodMasterNames = new Set(canonicalIngredientPatterns.map(rule => rule.label));
+    const foodMasterNames = new Set(canonicalIngredientPatterns.flatMap(rule => {
+      const names = [rule.label].concat(rule.aliases || []);
+      return names.flatMap(name => [name, String(name).replace(/[（(].*?[）)]/g, "").trim()]).filter(Boolean);
+    }));
     let rows = [];
 
     menuCsvBtn.addEventListener("click", event => {
@@ -1749,11 +1795,7 @@
       const cleanUnit = normalizeUnit(unit || "g");
       const numericQuantity = numberValue(quantity);
       if (!cleanName || !cleanUnit || !peopleForWeekday(weekday) || isSuspiciousIngredientName(cleanName) || isExcludedIngredient(cleanName)) return false;
-      if (!isInFoodMaster(cleanName)) {
-        target.push({ name: cleanName, quantity: "数量要確認", unit: "", weekday, source: "要確認" });
-        return true;
-      }
-      if (!isNumericCell(quantity) || !numericQuantity) return false;
+      if (!isInFoodMaster(cleanName) || !isNumericCell(quantity) || !numericQuantity) return false;
       target.push({ name: cleanName, quantity: round(numericQuantity), unit: cleanUnit, weekday, source: "献立CSV" });
       return true;
     }
@@ -1765,8 +1807,8 @@
       const seen = new Set();
       sourceRows.forEach(row => {
         const name = cleanIngredientName(row.name);
-        if (!name || isExcludedIngredient(name) || isSuspiciousIngredientName(name)) return;
-        if (row.quantity !== "数量要確認" && isInFoodMaster(name)) return;
+        if (!name || isExcludedIngredient(name) || isSuspiciousIngredientName(name) || !isInFoodMaster(name)) return;
+        if (row.quantity !== "数量要確認") return;
         const key = normalizeIngredientForGrouping(name);
         if (!key || seen.has(key)) return;
         seen.add(key);
@@ -2078,14 +2120,7 @@
       const numericQuantity = numberValue(quantity);
       const weekday = row.weekday || detectWeekday(row.sourceLine || "") || "月";
       if (!cleanName || !cleanUnit || isExcludedIngredient(cleanName) || isSuspiciousIngredientName(cleanName)) return;
-      if (quantity === "数量要確認" || !isInFoodMaster(cleanName)) {
-        const key = [normalizeIngredientForGrouping(cleanName), "数量要確認"].join("|");
-        if (seen.has(key)) return;
-        seen.add(key);
-        target.push({ name: cleanName, quantity: "数量要確認", unit: "", weekday, source: row.source || "要確認" });
-        return;
-      }
-      if (!isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0) return;
+      if (quantity === "数量要確認" || !isInFoodMaster(cleanName) || !isNumericCell(quantity) || !numericQuantity || numericQuantity <= 0) return;
       const key = [weekday, normalizeIngredientForGrouping(cleanName), quantity, cleanUnit].join("|");
       if (seen.has(key)) return;
       seen.add(key);
