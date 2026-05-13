@@ -332,14 +332,34 @@ def _under_three_quantity_from_numbers(numbers: list[str]) -> str:
     return ""
 
 
+def _line_has_under_three_label(line: str) -> bool:
+    compact = _compact_for_match(line)
+    return re.search(r"3歳未満|３歳未満|未満児|乳児", compact) is not None and re.search(r"人数|対象|区分|年齢", compact) is None
+
+
+def _line_has_total_usage_label(line: str) -> bool:
+    compact = _compact_for_match(line)
+    return re.search(r"総使用量|総量|合計|使用量合計|総重量", compact) is not None and not _line_has_under_three_label(line)
+
+
+def _quantity_after_under_three_label(line: str) -> str:
+    normalized = _normalize_line(line).replace(",", "")
+    match = re.search(r"(?:3歳未満|３歳未満|未満児|乳児)[^0-9０-９]*([0-9]+(?:\.[0-9]+)?)", normalized)
+    return match.group(1) if match else ""
+
+
 def _quantity_near_ocr_line(lines: list[tuple[int, str]], index: int) -> str:
     current_numbers = _numbers_from_row(lines[index][1]) if index < len(lines) else []
     search_indexes = (index,) if current_numbers else (index, index + 1)
     for row_index in search_indexes:
         if row_index >= len(lines):
             continue
-        numbers = _numbers_from_row(lines[row_index][1])
-        quantity = _under_three_quantity_from_numbers(numbers)
+        line = lines[row_index][1]
+        quantity = _quantity_after_under_three_label(line)
+        if not quantity:
+            if _line_has_total_usage_label(line):
+                continue
+            quantity = _under_three_quantity_from_numbers(_numbers_from_row(line))
         if not quantity:
             continue
         try:

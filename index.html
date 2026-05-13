@@ -2169,12 +2169,19 @@
     function chooseUnderThreeQuantityIndex(cells, underThreeColumn) {
       const numericIndexes = cells.map((cell, index) => isNumberCell(cell) ? index : -1).filter(index => index >= 0);
       if (!numericIndexes.length) return -1;
-      if (numericIndexes.length >= 4) return numericIndexes[2];
-      if (numericIndexes.length >= 3) return numericIndexes[1];
+
+      const labeledIndex = underThreeQuantityIndexByLabel(cells);
+      if (labeledIndex >= 0) return labeledIndex;
+
       if (underThreeColumn >= 0) {
         const rightSide = numericIndexes.find(index => index >= underThreeColumn);
-        if (rightSide !== undefined) return rightSide;
+        if (rightSide !== undefined && !isTotalUsageCell(cells[rightSide - 1])) return rightSide;
+        return -1;
       }
+
+      if (rowHasTotalUsageLabel(cells)) return -1;
+      if (numericIndexes.length >= 4) return numericIndexes[2];
+      if (numericIndexes.length >= 3) return numericIndexes[1];
       if (numericIndexes.length >= 2) return numericIndexes[1];
       return numericIndexes[0];
     }
@@ -2182,10 +2189,39 @@
     function chooseSameRowQuantityIndex(cells) {
       const numericIndexes = cells.map((cell, index) => isNumberCell(cell) ? index : -1).filter(index => index >= 0);
       if (!numericIndexes.length) return -1;
+      const labeledIndex = underThreeQuantityIndexByLabel(cells);
+      if (labeledIndex >= 0) return labeledIndex;
+      if (rowHasTotalUsageLabel(cells)) return -1;
       if (numericIndexes.length >= 4) return numericIndexes[2];
       if (numericIndexes.length >= 3) return numericIndexes[1];
       if (numericIndexes.length >= 2) return numericIndexes[1];
       return numericIndexes[0];
+    }
+
+    function underThreeQuantityIndexByLabel(cells) {
+      for (let index = 0; index < cells.length; index++) {
+        if (!isUnderThreeQuantityCell(cells[index])) continue;
+        if (isNumberCell(cells[index])) return index;
+        for (let offset = 1; offset <= 2; offset++) {
+          const rightIndex = index + offset;
+          if (rightIndex < cells.length && isNumberCell(cells[rightIndex])) return rightIndex;
+        }
+      }
+      return -1;
+    }
+
+    function isUnderThreeQuantityCell(value) {
+      const text = normalizeOcrLine(value).replace(/\s/g, "");
+      return /(3歳未満|３歳未満|未満児|乳児)/.test(text) && !/人数|対象|区分|年齢/.test(text);
+    }
+
+    function isTotalUsageCell(value) {
+      const text = normalizeOcrLine(value).replace(/\s/g, "");
+      return /(総使用量|総量|合計|使用量合計|総重量)/.test(text) && !/(3歳未満|３歳未満|未満児|乳児)/.test(text);
+    }
+
+    function rowHasTotalUsageLabel(cells) {
+      return cells.some(cell => isTotalUsageCell(cell));
     }
 
     function rowHasNumberValue(cells) {
@@ -2218,10 +2254,7 @@
     }
 
     function findUnderThreeColumn(cells) {
-      return cells.findIndex(cell => {
-        const text = normalizeOcrLine(cell).replace(/\s/g, "");
-        return /(3歳未満|３歳未満|未満児|乳児)/.test(text) && !/人数|対象|区分|年齢/.test(text);
-      });
+      return cells.findIndex(cell => isUnderThreeQuantityCell(cell));
     }
 
     function isNumberCell(value) {
