@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 
 import pandas as pd
@@ -15,6 +16,9 @@ SENTENCE_PATTERN = re.compile(
     r"作り方|つくり方|手順|説明|説明文|調理方法|下処理|切る|切って|煮る|焼く|炒める|蒸す|"
     r"揚げる|混ぜる|加える|入れる|してください|します|です|ます"
 )
+CUCUMBER_GRAMS_PER_PIECE = 100
+CUCUMBER_UNIT = "本"
+
 STANDARD_NAME_RULES = [
     ("鶏もも(皮なし)", re.compile(r"鶏もも皮なし|鶏もも肉皮ない|鶏もも肉|鶏モモ(?!肉)|鶏モモ肉|鶏肉|とりもも肉")),
     ("クリームコーン缶", re.compile(r"クリームコーン缶|クリームコーン|クリームコーンかん|クリームコーン館")),
@@ -108,6 +112,28 @@ def _people_count(weekday: object) -> int:
     return 5 if str(weekday or "").strip().startswith("月") else 7
 
 
+def _quantity_in_order_unit(name: str, quantity: float, unit: object) -> tuple[float, str]:
+    """食材ごとの発注単位に合わせて数量と単位を補正します。"""
+
+    normalized_unit = str(unit or "").strip() or "g"
+    if name != "きゅうり":
+        return quantity, normalized_unit
+
+    lower_unit = normalized_unit.lower()
+    if lower_unit in {"g", "ｇ", "グラム"}:
+        return quantity / CUCUMBER_GRAMS_PER_PIECE, CUCUMBER_UNIT
+    if lower_unit in {"kg", "ｋｇ", "㎏", "キロ"}:
+        return (quantity * 1000) / CUCUMBER_GRAMS_PER_PIECE, CUCUMBER_UNIT
+    return quantity, CUCUMBER_UNIT
+
+
+def _format_order_quantity(row: pd.Series) -> str:
+    quantity = float(row["必要量"])
+    if row.get("食材名") == "きゅうり":
+        return str(max(1, math.ceil(quantity)))
+    return _format_quantity(quantity)
+
+
 def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
     """3歳未満児量を人数分に再計算し、食材名と単位ごとに合算します。"""
 
@@ -126,6 +152,13 @@ def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
     work["数量"] = pd.to_numeric(work["数量"], errors="coerce")
     work["人数"] = work["曜日"].apply(_people_count) if "曜日" in work.columns else 7
     work["数量"] = work["数量"] * work["人数"]
+    converted = work.apply(
+        lambda row: _quantity_in_order_unit(str(row["補正後食材名"]), float(row["数量"]), row.get("単位", "g")),
+        axis=1,
+        result_type="expand",
+    )
+    work["数量"] = converted[0]
+    work["単位"] = converted[1]
     grouped = (
         work.groupby(["補正後食材名", "単位", "仕入先"], dropna=False, as_index=False)
         .agg(
@@ -136,7 +169,7 @@ def aggregate_candidates(candidates: pd.DataFrame) -> pd.DataFrame:
         )
         .rename(columns={"補正後食材名": "食材名"})
     )
-    grouped["発注数量"] = grouped["必要量"].apply(lambda quantity: _format_quantity(float(quantity)))
+    grouped["発注数量"] = grouped.apply(_format_order_quantity, axis=1)
     grouped["発注単位"] = grouped["単位"]
     grouped = grouped[grouped["発注数量"] != "0"]
     return grouped.sort_values("食材名").reset_index(drop=True)
