@@ -625,6 +625,7 @@
       { label: "まいたけ", unit: "袋", step: 1, base: { g: 100 }, tests: [/まいたけ|舞茸|マイタケ/] },
       { label: "エリンギ", unit: "袋", step: 1, base: { g: 100 }, tests: [/エリンギ/] },
       { label: "ヨーグルト", unit: "パック", step: 1, base: { 個: 3, g: 210 }, tests: [/ヨーグルト|牧場の朝/] },
+      { label: "きゅうり", unit: "本", step: 1, base: { g: 100, kg: 0.1 }, tests: [/きゅうり|きゆうり|さゅうり|胡瓜/] },
       { label: "ツナ油漬け缶", unit: "缶", step: 1, base: { 缶: 1, 個: 1 }, tests: [/ツナ/] },
       { label: "コーン缶", unit: "缶", step: 1, base: { 缶: 1, 個: 1 }, tests: [/コーン缶|コーン笛/] }
     ];
@@ -2564,12 +2565,25 @@
     }
 
     function buildOrderExportRow(row) {
+      const normalizedRow = normalizeOrderRowForOutput(row);
       const exportRow = Array(orderSheetHeaders.length).fill("");
       exportRow[orderSheetColumns.check] = "□";
-      exportRow[orderSheetColumns.ingredientName] = String(row.name || "").trim();
-      exportRow[orderSheetColumns.orderQuantity] = exportQuantityValue(row.quantity);
-      exportRow[orderSheetColumns.orderUnit] = String(row.unit || "").trim();
+      exportRow[orderSheetColumns.ingredientName] = normalizedRow.name;
+      exportRow[orderSheetColumns.orderQuantity] = exportQuantityValue(normalizedRow.quantity);
+      exportRow[orderSheetColumns.orderUnit] = normalizedRow.unit;
       return keepProtectedOrderColumnsBlank(exportRow);
+    }
+
+    function normalizeOrderRowForOutput(row) {
+      const name = String(row.name || "").trim();
+      const unit = normalizeUnit(row.unit || "");
+      const quantity = numberValue(row.quantity);
+      if (/きゅうり|きゆうり|さゅうり|胡瓜/.test(name) && quantity > 0) {
+        if (unit === "g") return { name: "きゅうり", quantity: Math.max(1, Math.ceil(quantity / 100)), unit: "本" };
+        if (unit === "kg") return { name: "きゅうり", quantity: Math.max(1, Math.ceil((quantity * 1000) / 100)), unit: "本" };
+        return { name: "きゅうり", quantity: Math.max(1, Math.ceil(quantity)), unit: "本" };
+      }
+      return { name, quantity: row.quantity, unit: String(row.unit || "").trim() };
     }
 
     function keepProtectedOrderColumnsBlank(row) {
